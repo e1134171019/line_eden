@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 import json
 import os
@@ -11,7 +12,7 @@ from src.automation.scheduled_runner import parse_summary, run_scheduled_agent
 
 
 # 建立固定時刻供開始與結束狀態使用。
-def _now_provider() -> callable:
+def _now_provider() -> Callable[[], datetime]:
     moments = iter(
         (
             datetime(2026, 7, 28, 8, 0, tzinfo=timezone.utc),
