@@ -27,37 +27,48 @@ class FakeService:
 
 
 # 建立不接觸網路與正式資料庫的 CLI 測試環境。
-def _patch_service(monkeypatch: Any) -> FakeService:
+def _patch_service(
+    monkeypatch: Any,
+) -> tuple[FakeService, list[bool]]:
     service = FakeService()
-    monkeypatch.setattr(main, "build_service", lambda: service)
+    profile_flags: list[bool] = []
+
+    # 記錄 CLI 是否要求載入私密背景。
+    def fake_build_service(profile_required: bool = True) -> FakeService:
+        profile_flags.append(profile_required)
+        return service
+
+    monkeypatch.setattr(main, "build_service", fake_build_service)
     monkeypatch.setattr(main, "print_summary", lambda _: None)
     monkeypatch.setattr(main, "print_items", lambda *_: None)
-    return service
+    return service, profile_flags
 
 
-# 驗證 dry-run 不檢查 LINE 設定。
+# 驗證 dry-run 不檢查 LINE，但會載入個人背景。
 def test_dry_run_skips_line_validation(monkeypatch: Any) -> None:
-    service = _patch_service(monkeypatch)
+    service, profile_flags = _patch_service(monkeypatch)
     monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
 
     main.main(["--dry-run"])
 
     assert service.calls == ["run:True"]
+    assert profile_flags == [True]
 
 
-# 驗證初始化基準不檢查 LINE 並呼叫正確服務方法。
-def test_initialize_baseline_skips_line_validation(monkeypatch: Any) -> None:
-    service = _patch_service(monkeypatch)
+# 驗證初始化基準不檢查 LINE，也不載入個人背景。
+def test_initialize_baseline_skips_private_settings(monkeypatch: Any) -> None:
+    service, profile_flags = _patch_service(monkeypatch)
     monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
 
     main.main(["--initialize-baseline"])
 
     assert service.calls == ["initialize_baseline"]
+    assert profile_flags == [False]
 
 
-# 驗證正式模式才檢查 LINE 設定。
+# 驗證正式模式檢查 LINE 並載入個人背景。
 def test_live_mode_validates_line_settings(monkeypatch: Any) -> None:
-    service = _patch_service(monkeypatch)
+    service, profile_flags = _patch_service(monkeypatch)
     validation_calls: list[str] = []
     monkeypatch.setattr(main, "validate_settings", lambda: validation_calls.append("validate"))
 
@@ -65,6 +76,7 @@ def test_live_mode_validates_line_settings(monkeypatch: Any) -> None:
 
     assert validation_calls == ["validate"]
     assert service.calls == ["run:False"]
+    assert profile_flags == [True]
 
 
 # 驗證 dry-run 與基準初始化不能同時使用。
