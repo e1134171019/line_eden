@@ -21,12 +21,22 @@
 
 ## Windows PowerShell 安裝
 
+正式執行環境：
+
 ```powershell
 cd C:/scholarship-agent
 python -m venv .venv
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 & "./.venv/Scripts/Activate.ps1"
 python -m pip install -r requirements.txt
+```
+
+開發與測試環境：
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m ruff check .
+python -m pytest tests/
 ```
 
 ## LINE 私密設定
@@ -72,9 +82,22 @@ code profile.json
 }
 ```
 
+## 自動測試與依賴更新
+
+GitHub Actions 會在推送到 `main` 或建立 Pull Request 時自動執行：
+
+```text
+Ruff 靜態檢查
+→ pytest
+→ 測試覆蓋率報告
+```
+
+Dependabot 每週檢查 Python 套件與 GitHub Actions 版本，並以 Pull Request 提出更新。
+
 ## 執行測試
 
 ```powershell
+python -m ruff check .
 python -m pytest tests/
 ```
 
@@ -126,11 +149,18 @@ python main.py
 
 可明確排除：
 
-- 日間部限定，但背景為進修部。
-- 研究所、非大專、新生或應屆畢業等明確年級限制。
+- 明確限定日間部，但背景為進修部。
+- 明確限定研究所、非大專、新生或應屆畢業等資格。
 - 公告明確排除進修部或在職學生。
-- 特定家庭或法定身分與背景不符。
+- 特定家庭或法定身分為必要條件且背景不符。
 - 學業平均或操行成績未達門檻。
+
+已降低下列誤判：
+
+- 「日間部及進修部均可申請」不會排除進修部。
+- 「大學生及研究生均可申請」不會排除學士生。
+- 「清寒學生優先但不限清寒」不會排除一般學生。
+- 可辨識「不得低於 80 分」類型的成績門檻。
 
 可確認正向匹配：
 
@@ -144,6 +174,7 @@ python main.py
 ## 安全檢查
 
 ```powershell
+python -m ruff check .
 python -m pytest tests/
 python main.py --dry-run
 git status --ignored
