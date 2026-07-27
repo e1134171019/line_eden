@@ -37,7 +37,6 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       STUDENT_PROFILE_B64: ${{ secrets.STUDENT_PROFILE_B64 }}
       STATE_PASSPHRASE: ${{ secrets.STATE_PASSPHRASE }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TZ: Asia/Taipei
 
@@ -63,15 +62,12 @@ jobs:
 
           operation = os.environ["OPERATION"]
           required = []
-          if operation in {"initialize", "run", "report", "dry-run"}:
+          if operation in {"initialize", "run", "dry-run"}:
               required.append("STATE_PASSPHRASE")
+          if operation in {"run", "report"}:
+              required += ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID"]
           if operation in {"run", "report", "dry-run"}:
-              required += [
-                  "LINE_CHANNEL_ACCESS_TOKEN",
-                  "LINE_USER_ID",
-                  "GEMINI_API_KEY",
-                  "STUDENT_PROFILE_B64",
-              ]
+              required += ["GEMINI_API_KEY", "STUDENT_PROFILE_B64"]
           elif operation == "test-line":
               required += ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID"]
           missing = [name for name in required if not os.getenv(name, "").strip()]
@@ -80,27 +76,42 @@ jobs:
           print(f"Secrets 檢查完成，operation={operation}")
           PY
 
-      - name: Restore encrypted cloud state
-        if: env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
+      - name: Find latest cloud state
+        id: latest_state
+        if: env.OPERATION == 'run' || env.OPERATION == 'dry-run'
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p cloud-state data
-          artifact_run_id="$(
+          run_id="$(
             gh api \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=scholarship-agent-state&per_page=100" \
               --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .workflow_run.id'
           )"
-          if [[ -z "$artifact_run_id" || "$artifact_run_id" == "null" ]]; then
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
             echo "找不到雲端狀態；請先手動執行 initialize。" >&2
             exit 1
           fi
-          gh run download "$artifact_run_id" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name scholarship-agent-state \
-            --dir cloud-state
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "將從 workflow run $run_id 還原狀態。"
+
+      - name: Download encrypted cloud state
+        if: env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        uses: actions/download-artifact@v5
+        with:
+          name: scholarship-agent-state
+          path: cloud-state
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.latest_state.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decrypt cloud state
+        if: env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
           test -f cloud-state/scholarship-state.tar.gz.gpg
           printf '%s' "$STATE_PASSPHRASE" | \
             gpg --batch --yes --pinentry-mode loopback \
@@ -141,47 +152,7 @@ jobs:
                 python main.py --use-gemini
                 ;;
               report)
-                python main.py --dry-run --use-gemini
-                python - <<'PY'
-          from pathlib import Path
-
-          from config import (
-              HTTP_TIMEOUT_SECONDS,
-              LINE_API_URL,
-              LINE_CHANNEL_ACCESS_TOKEN,
-              LINE_USER_ID,
-              validate_settings,
-          )
-          from src.notifiers.line_notifier import send_text_message
-
-          validate_settings()
-          lines = Path("cloud-run.log").read_text(encoding="utf-8", errors="replace").splitlines()
-          selected = [
-              line
-              for line in lines
-              if line.startswith((
-                  "蒐集公告數量：",
-                  "適合且待通知：",
-                  "明確適合：",
-                  "資格待確認：",
-                  "明確不符合：",
-                  "Gemini 生成呼叫：",
-                  "Gemini 快取命中：",
-                  "- ",
-                  "  http",
-              ))
-          ]
-          body = "\n".join(selected).strip() or "本次沒有可顯示的公告摘要。"
-          message = f"獎學金真實檢查報告\n{body}"[:4800]
-          send_text_message(
-              api_url=LINE_API_URL,
-              channel_access_token=LINE_CHANNEL_ACCESS_TOKEN,
-              user_id=LINE_USER_ID,
-              text=message,
-              timeout_seconds=HTTP_TIMEOUT_SECONDS,
-          )
-          print("真實檢查報告已傳送至 LINE。")
-          PY
+                python -m src.automation.line_audit_report
                 ;;
               dry-run)
                 python main.py --dry-run --use-gemini
@@ -202,7 +173,7 @@ jobs:
 
       - name: Encrypt updated cloud state
         id: state
-        if: always() && env.OPERATION != 'test-line'
+        if: always() && (env.OPERATION == 'initialize' || env.OPERATION == 'run' || env.OPERATION == 'dry-run')
         shell: bash
         run: |
           set -euo pipefail
