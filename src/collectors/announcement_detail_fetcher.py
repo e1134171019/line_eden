@@ -8,7 +8,7 @@ import httpx
 from config import ATTACHMENT_TEXT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.extractors.announcement_content_extractor import extract_announcement_text
-from src.extractors.attachment_link_extractor import extract_attachment_links
+from src.extractors.attachment_link_extractor import extract_attachment_inventory
 from src.extractors.document_text_extractor import detect_document_kind, extract_document_text
 from src.models.scholarship import Scholarship
 
@@ -85,12 +85,15 @@ class AnnouncementDetailFetcher:
     ) -> DetailFetchResult:
         html = self._decode_html(resource)
         body = extract_announcement_text(html, title, resource.url)
-        links = extract_attachment_links(html, resource.url, title, self.max_attachment_count)
-        results = [self._attachment_result(client, url) for url in links]
+        inventory = extract_attachment_inventory(
+            html, resource.url, title, self.max_attachment_count,
+        )
+        results = [self._attachment_result(client, url) for url in inventory.selected_urls]
         texts = [text for text, diagnostic in results if diagnostic.status == "success"]
         diagnostics = tuple(diagnostic for _, diagnostic in results)
         source = self._success_diagnostic("source", requested_url, resource, "html", body)
-        return DetailFetchResult(self._combine_text(body, texts), source, diagnostics, len(links))
+        combined = self._combine_text(body, texts)
+        return DetailFetchResult(combined, source, diagnostics, inventory.discovered_count)
 
     # 下載並解析單一附件，完整保留成功、忽略或錯誤原因。
     def _attachment_result(
