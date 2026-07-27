@@ -3,7 +3,11 @@
 from dataclasses import dataclass
 import re
 
-from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
+from config import (
+    ATTACHMENT_TEXT_MARKER,
+    GEMINI_PARTIAL_EXCLUSION_MARKER,
+    UNRESOLVED_ATTACHMENT_MARKER,
+)
 from src.evaluators.eligibility_completeness import (
     find_completeness_unknowns,
     find_hard_exclusions,
@@ -59,6 +63,14 @@ def _deduplicate_reasons(reasons: list[str]) -> list[str]:
     return unique
 
 
+# 主要附件未解析時，只加入 Gemini 有證據的部分硬性排除文字。
+def _trusted_unresolved_text(title: str, detail_text: str) -> str:
+    if GEMINI_PARTIAL_EXCLUSION_MARKER not in detail_text:
+        return title
+    partial = detail_text.split(GEMINI_PARTIAL_EXCLUSION_MARKER, 1)[1]
+    return _normalize_rule_text(f"{title}。{partial}")
+
+
 @dataclass(frozen=True)
 class EligibilityDecision:
     """單筆公告對指定學生背景的資格判斷結果。"""
@@ -101,7 +113,7 @@ class EligibilityEvaluator:
             return EligibilityDecision(ELIGIBLE, tuple(dict.fromkeys(matches)))
         return EligibilityDecision(REVIEW, ("公告未提供足夠條件，暫不推播。",))
 
-    # 主要辦法未解析時，正文雜訊不得產生硬性排除，標題限制仍保留。
+    # 主要辦法未解析時，正文雜訊不得產生硬性排除；只信任標題及 Gemini 證據。
     def _find_exclusions(
         self,
         title: str,
@@ -109,7 +121,11 @@ class EligibilityEvaluator:
         detail_text: str,
         profile: StudentProfile,
     ) -> list[str]:
-        trusted_text = title if UNRESOLVED_ATTACHMENT_MARKER in detail_text else text
+        trusted_text = (
+            _trusted_unresolved_text(title, detail_text)
+            if UNRESOLVED_ATTACHMENT_MARKER in detail_text
+            else text
+        )
         exclusions = find_hard_exclusions(title, trusted_text, profile)
         exclusions.extend(find_alias_exclusions(title, trusted_text, profile))
         exclusions.extend(find_graduation_exclusions(title, trusted_text, profile))

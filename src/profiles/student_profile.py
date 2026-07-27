@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from config import ELIGIBILITY_RULE_VERSION
+
 
 @dataclass(frozen=True)
 class StudentProfile:
@@ -25,10 +27,14 @@ class StudentProfile:
     special_statuses: tuple[str, ...]
     research_keywords: tuple[str, ...]
 
-    # 建立不含可逆個資內容的設定指紋。
+    # 將背景與資格規則版本共同轉成不可逆指紋，規則更新後會自動重算。
     def fingerprint(self) -> str:
-        payload = json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        payload = {
+            "eligibility_rule_version": ELIGIBILITY_RULE_VERSION,
+            "profile": asdict(self),
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 # 從私密 JSON 檔案載入並驗證學生背景。
