@@ -51,11 +51,14 @@ def filter_missing_score_exclusions(
 # 只有申請資格語境中的一般大專生文字才能作為符合證據。
 def filter_general_college_matches(matches: list[str], text: str) -> list[str]:
     contextual = _has_general_college_context(text)
-    return [
+    filtered = [
         reason
         for reason in matches
         if reason != GENERAL_COLLEGE_REASON or contextual
     ]
+    if contextual and GENERAL_COLLEGE_REASON not in filtered:
+        filtered.append(GENERAL_COLLEGE_REASON)
+    return filtered
 
 
 # 從公告文字擷取缺少的學業或操行成績資料。
