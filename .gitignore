@@ -5,6 +5,7 @@ tests/output/
 __pycache__/
 *.pyc
 .env
+profile.json
 *.log
 .pytest_cache/
 data/*.db
