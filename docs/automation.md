@@ -22,12 +22,26 @@ scripts/run-scholarship-agent.ps1
 
 `logs/`、`data/*.db`、`.env` 與 `profile.json` 均不會提交到 GitHub。
 
+## PowerShell 版本
+
+腳本同時支援 Windows PowerShell 5.1 與 PowerShell 7。不要在已開啟的 PowerShell 終端內再次輸入 `powershell ...`；直接用呼叫運算子 `&` 執行腳本即可。
+
+安裝排程時，程式會取得目前執行中的 PowerShell host 路徑：
+
+```text
+Windows PowerShell 5.1 → powershell.exe
+PowerShell 7 → pwsh.exe
+```
+
+工作排程器會保存這個完整路徑，不再寫死 `powershell.exe`。
+
 ## 安裝前檢查
 
 在專案根目錄執行：
 
 ```powershell
 Set-Location C:/scholarship-agent
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Test-Path .venv/Scripts/python.exe
 Test-Path .env
@@ -42,7 +56,7 @@ python main.py --use-gemini
 ## 手動測試排程啟動器
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run-scholarship-agent.ps1
+& "./scripts/run-scholarship-agent.ps1"
 ```
 
 此指令會執行正式模式，可能在發現 `eligible` 新公告時傳送 LINE。測試完成後檢查：
@@ -55,7 +69,7 @@ Get-ChildItem logs | Sort-Object LastWriteTime -Descending | Select-Object -Firs
 不使用 Gemini 的測試方式：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run-scholarship-agent.ps1 -NoGemini
+& "./scripts/run-scholarship-agent.ps1" -NoGemini
 ```
 
 ## 建立每日工作排程
@@ -63,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File scripts/run-scholarship-agent.ps1 -NoGe
 以下範例每天上午 8:00 執行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-scholarship-task.ps1 `
+& "./scripts/install-scholarship-task.ps1" `
   -DailyAt "08:00" `
   -RunNow
 ```
@@ -86,7 +100,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install-scholarship-task.ps1 `
 ## 查看狀態
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/show-scholarship-task-status.ps1
+& "./scripts/show-scholarship-task-status.ps1"
 ```
 
 它會顯示：
@@ -109,7 +123,7 @@ Get-Content data/last_run.json -Raw
 ## 移除工作排程
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/remove-scholarship-task.ps1
+& "./scripts/remove-scholarship-task.ps1"
 ```
 
 移除排程不會刪除：
@@ -128,11 +142,26 @@ logs/
 重新執行安裝腳本即可覆蓋同名排程：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-scholarship-task.ps1 `
+& "./scripts/install-scholarship-task.ps1" `
   -DailyAt "19:30"
 ```
 
 ## 故障排查
+
+### `powershell` 不是可辨識的命令
+
+你很可能正在使用 PowerShell 7，其命令名稱是 `pwsh`。在目前終端直接執行腳本即可：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+& "./scripts/run-scholarship-agent.ps1"
+```
+
+也可確認目前 host：
+
+```powershell
+(Get-Process -Id $PID).Path
+```
 
 ### 找不到虛擬環境 Python
 
