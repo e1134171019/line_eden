@@ -7,8 +7,21 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent
 ENV_PATH = BASE_DIR / ".env"
+DATA_DIR = BASE_DIR / "data"
+
 LINE_API_URL = "https://api.line.me/v2/bot/message/push"
-REQUEST_TIMEOUT_SECONDS = 10.0
+LHU_SCHOLARSHIP_URL = "https://www.lhu.edu.tw/p/422-1000-4.php?Lang=zh-tw"
+SCHOLARSHIP_DB_FILENAME = "scholarships.db"
+HTTP_TIMEOUT_SECONDS = 10.0
+HTTP_USER_AGENT = "ScholarshipAgent/2.0 (+https://www.lhu.edu.tw/)"
+SCHOLARSHIP_FILTER_KEYWORDS = (
+    "獎學金",
+    "助學金",
+    "就學貸款",
+    "補助",
+)
+
+REQUEST_TIMEOUT_SECONDS = HTTP_TIMEOUT_SECONDS
 TEST_MESSAGE = "Eden 獎學金助手：LINE Messaging API 測試成功。"
 
 load_dotenv(ENV_PATH)
