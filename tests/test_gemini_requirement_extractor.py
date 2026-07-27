@@ -119,5 +119,18 @@ def test_extraction_builds_deterministic_rule_text() -> None:
 
     assert "申請對象為大專院校在校生" in text
     assert "不包括進修部" in text
-    assert "申請資格須具備低收入戶" in text
+    assert "申請資格限於低收入戶" in text
     assert "學業平均80分以上" in text
+
+
+# 驗證多個學制放在同一句，避免日間部被誤認為唯一對象。
+def test_multiple_program_types_are_joined_in_one_rule() -> None:
+    extraction = GeminiRequirementExtraction(
+        document_type="scholarship_rules",
+        criteria_complete=True,
+        needs_more_pages=False,
+        program_types_included=["日間部", "進修部"],
+        evidence=[RequirementEvidence(page=1, text="日間部及進修部均可申請")],
+    )
+
+    assert "申請對象為日間部及進修部學生" in extraction.to_rule_text()
