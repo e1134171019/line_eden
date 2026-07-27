@@ -64,6 +64,18 @@ def test_doctoral_title_is_ineligible() -> None:
     assert "研究所" in decision.reason_text() or "博士" in decision.reason_text()
 
 
+# 同一公告含一般學生獎與博士生獎時，不得把整筆公告視為博士生專屬。
+def test_mixed_general_and_doctoral_awards_stay_review() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _item("李長榮優秀學生獎、李長榮博士生匹配獎學金"),
+        "相關資訊請自行下載。",
+        _profile(),
+    )
+
+    assert decision.status == REVIEW
+    assert "研究所" not in decision.reason_text()
+
+
 # 低(中低)收入戶括號縮寫必須展開成必要特殊身分。
 def test_parenthesized_low_income_status_is_ineligible() -> None:
     decision = EligibilityEvaluator().evaluate(
