@@ -60,7 +60,9 @@ jobs:
           import os
 
           operation = os.environ["OPERATION"]
-          required = ["STATE_PASSPHRASE"]
+          required = []
+          if operation in {"initialize", "run", "dry-run"}:
+              required.append("STATE_PASSPHRASE")
           if operation in {"run", "dry-run"}:
               required += [
                   "LINE_CHANNEL_ACCESS_TOKEN",
