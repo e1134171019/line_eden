@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
+import re
+import unicodedata
 
 
 # 正規化文字欄位，避免雜訊造成雜湊不穩定。
@@ -13,13 +15,15 @@ def _normalize_text(text: str) -> str:
 # 將日期轉成 YYYY-MM-DD；格式異常時保留原值。
 def _normalize_date(date_text: str) -> str:
     value = _normalize_text(date_text)
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
-    except ValueError:
-        return value
+    for pattern in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"):
+        try:
+            return datetime.strptime(value, pattern).date().isoformat()
+        except ValueError:
+            continue
+    return value
 
 
-# 由穩定欄位建立內容雜湊，供資料去重。
+# 由穩定欄位建立單一來源內容雜湊，維持既有 SQLite 相容性。
 def build_content_hash(source: str, title: str, published_date: str, source_url: str) -> str:
     payload = "|".join([
         _normalize_text(source),
@@ -28,6 +32,21 @@ def build_content_hash(source: str, title: str, published_date: str, source_url:
         _normalize_text(source_url),
     ])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+# 移除轉知、公告與版面符號，保留年度及獎學金名稱供跨來源去重。
+def normalize_dedup_title(title: str) -> str:
+    value = unicodedata.normalize("NFKC", _normalize_text(title)).lower()
+    value = re.sub(r"[【〖\[（(][^】〗\]）)]{0,20}[】〗\]）)]", "", value)
+    value = re.sub(r"^(轉知|公告|重要資訊|最新消息|訊息公告|有關|檢送|函轉)+[：:－\-｜|]*", "", value)
+    value = re.sub(r"[\s\W_]+", "", value, flags=re.UNICODE)
+    return value
+
+
+# 建立跨來源去重雜湊；不同來源的同名同年度公告會共用此值。
+def build_dedup_hash(title: str) -> str:
+    normalized = normalize_dedup_title(title)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 # 依標題關鍵字判斷公告類型。
@@ -53,6 +72,7 @@ class Scholarship:
     notice_kind: str = "unknown"
     eligibility_status: str = ""
     eligibility_reason: str = ""
+    dedup_hash: str = ""
 
     # 將原始欄位正規化並產生 Scholarship 物件。
     @classmethod
@@ -79,4 +99,5 @@ class Scholarship:
                 published_date=normalized_date,
                 source_url=normalized_url,
             ),
+            dedup_hash=build_dedup_hash(normalized_title),
         )
