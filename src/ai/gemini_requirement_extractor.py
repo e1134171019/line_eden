@@ -8,8 +8,12 @@ from typing import Literal
 from google import genai
 from google.genai import types
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pypdf import PdfReader, PdfWriter
+
+COLLEGE_TERMS = ("大專", "大學", "學院", "大學部", "學士")
+GRADUATE_TERMS = ("研究所", "研究生", "碩士", "博士")
+DEPARTMENT_MARKERS = ("科系", "學系", "系所", "學院", "學門", "專業")
 
 
 class RequirementEvidence(BaseModel):
@@ -37,9 +41,26 @@ class GeminiRequirementExtraction(BaseModel):
     minimum_conduct_grade: float | None = None
     rank_requirement: str | None = None
     residence_requirement: str | None = None
+    application_deadline: str | None = None
     explicit_exclusions: list[str] = Field(default_factory=list)
     other_required_conditions: list[str] = Field(default_factory=list)
     evidence: list[RequirementEvidence] = Field(default_factory=list)
+
+    # 校正模型偶爾將科系名稱放入學制欄位，並統一大專與研究所層級用語。
+    @model_validator(mode="after")
+    def normalize_semantic_fields(self) -> "GeminiRequirementExtraction":
+        included_programs, misplaced_included = _split_department_values(
+            self.program_types_included,
+        )
+        excluded_programs, misplaced_excluded = _split_department_values(
+            self.program_types_excluded,
+        )
+        self.program_types_included = included_programs
+        self.program_types_excluded = excluded_programs
+        self.departments_included = _unique(self.departments_included + misplaced_included)
+        self.departments_excluded = _unique(self.departments_excluded + misplaced_excluded)
+        self.degree_levels = _canonical_degree_levels(self.degree_levels)
+        return self
 
     # 將結構化欄位轉成既有規則可判斷的中文資格句型。
     def to_rule_text(self) -> str:
@@ -53,6 +74,8 @@ class GeminiRequirementExtraction(BaseModel):
         lines.extend(_joined_rules("申請資格限於", self.required_special_statuses))
         lines.extend(_score_rules(self.minimum_average_grade, self.minimum_conduct_grade))
         lines.extend(_optional_rules(self.rank_requirement, self.residence_requirement))
+        if self.application_deadline:
+            lines.append(f"申請截止日{self.application_deadline}")
         lines.extend(_list_rules("不包括", self.explicit_exclusions))
         lines.extend(self.other_required_conditions)
         return "。".join(item.strip("。 ") for item in lines if item.strip()) + "。"
@@ -184,10 +207,11 @@ def _build_prompt(title: str, selected_pages: int) -> str:
 
 規則：
 1. 只抽取文件明確寫出的申請資格，不得推測、補齊或評估任何學生是否符合。
-2. 保留文件中的中文身分、學制、科系、年級、成績、排名與戶籍用語。
-3. 若所提供頁面不足以涵蓋主要申請資格，criteria_complete=false 且 needs_more_pages=true。
-4. evidence 只放支持資格欄位的短句與實際頁碼，不要抄寫整份文件。
-5. 申請表、封面或無關文件須正確標示 document_type，不得假裝是完整辦法。
+2. 保留文件中的中文身分、學制、科系、年級、成績、排名、戶籍與截止日期用語。
+3. program_types 只能放日間部、進修部、在職專班等學制；科系、學系、學院必須放 departments。
+4. 若所提供頁面不足以涵蓋主要申請資格，criteria_complete=false 且 needs_more_pages=true。
+5. evidence 只放支持資格欄位的短句與實際頁碼，不要抄寫整份文件。
+6. 申請表、封面或無關文件須正確標示 document_type，不得假裝是完整辦法。
 """.strip()
 
 
@@ -217,3 +241,31 @@ def _score_rules(average: float | None, conduct: float | None) -> list[str]:
 # 加入排名與戶籍等非空白限制文字。
 def _optional_rules(rank: str | None, residence: str | None) -> list[str]:
     return [item for item in (rank, residence) if item and item.strip()]
+
+
+# 將誤放在學制欄位的科系名稱分離。
+def _split_department_values(values: list[str]) -> tuple[list[str], list[str]]:
+    programs: list[str] = []
+    departments: list[str] = []
+    for value in values:
+        target = departments if any(marker in value for marker in DEPARTMENT_MARKERS) else programs
+        target.append(value)
+    return _unique(programs), _unique(departments)
+
+
+# 將多種大專與研究所文字統一成既有規則可理解的對象。
+def _canonical_degree_levels(values: list[str]) -> list[str]:
+    canonical: list[str] = []
+    for value in values:
+        if any(term in value for term in COLLEGE_TERMS):
+            canonical.append("大學生")
+        if any(term in value for term in GRADUATE_TERMS):
+            canonical.append("研究生")
+        if not any(term in value for term in COLLEGE_TERMS + GRADUATE_TERMS):
+            canonical.append(value)
+    return _unique(canonical)
+
+
+# 保留原始順序並移除空白與重複值。
+def _unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value.strip() for value in values if value.strip()))
