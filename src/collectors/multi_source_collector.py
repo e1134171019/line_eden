@@ -7,6 +7,16 @@ import unicodedata
 from src.collectors.base_collector import BaseCollector
 from src.models.scholarship import Scholarship
 
+_GENERIC_TITLES = {
+    "獎學金",
+    "助學金",
+    "獎助學金",
+    "獎學金公告",
+    "助學金公告",
+    "獎助學金公告",
+    "申請公告",
+}
+
 
 @dataclass(frozen=True)
 class CollectorFailure:
@@ -97,9 +107,9 @@ class MultiSourceCollector(BaseCollector):
 
 
 def build_cross_source_key(item: Scholarship) -> str:
-    """建立跨來源鍵；一般公告忽略轉載日期，短泛稱則保留日期防止誤合併。"""
+    """建立跨來源鍵；具名公告忽略轉載日期，泛稱公告保留日期。"""
     title = _normalize_title(item.title)
-    if len(title) < 12:
+    if title in _GENERIC_TITLES:
         return f"{title}|{item.published_date.strip()}"
     return title
 
