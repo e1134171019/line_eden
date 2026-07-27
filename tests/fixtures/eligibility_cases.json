@@ -1,0 +1,93 @@
+[
+  {
+    "name": "日間部限定",
+    "title": "日間部學生獎學金",
+    "detail": "申請對象限本校日間部學生。",
+    "expected": "ineligible",
+    "reason_contains": "日間部"
+  },
+  {
+    "name": "日間部與進修部皆可",
+    "title": "在校生獎學金",
+    "detail": "申請對象為日間部及進修部學生，均可申請。",
+    "expected": "eligible",
+    "reason_contains": "進修部"
+  },
+  {
+    "name": "大學生與研究生皆可",
+    "title": "優秀在校生獎學金",
+    "detail": "大學生及研究生均可申請，學業平均不得低於 80 分。",
+    "expected": "eligible",
+    "reason_contains": "成績"
+  },
+  {
+    "name": "研究生限定",
+    "title": "研究生學術獎學金",
+    "detail": "申請資格限於碩士班及博士班研究生。",
+    "expected": "ineligible",
+    "reason_contains": "研究所"
+  },
+  {
+    "name": "清寒身分只是優先",
+    "title": "在校生希望獎學金",
+    "detail": "大專在校生均可申請，清寒學生優先，非清寒學生亦可申請。",
+    "expected": "eligible",
+    "reason_contains": "大專"
+  },
+  {
+    "name": "低收入戶限定",
+    "title": "低收入戶學生助學金",
+    "detail": "申請對象限具有低收入戶資格之在校學生。",
+    "expected": "ineligible",
+    "reason_contains": "低收入戶"
+  },
+  {
+    "name": "成績不得低於八十分",
+    "title": "優秀學生獎學金",
+    "detail": "大專在校生之學業平均成績不得低於 80 分。",
+    "expected": "eligible",
+    "reason_contains": "成績"
+  },
+  {
+    "name": "成績至少九十五分",
+    "title": "高成就獎學金",
+    "detail": "申請人學業平均至少 95 分。",
+    "expected": "ineligible",
+    "reason_contains": "95"
+  },
+  {
+    "name": "班排名前百分之十",
+    "title": "優秀學生獎學金",
+    "detail": "大專在校生且班排名前 10% 可申請。",
+    "expected": "eligible",
+    "reason_contains": "排名"
+  },
+  {
+    "name": "班排名前百分之五",
+    "title": "頂尖學生獎學金",
+    "detail": "申請資格為班級排名前 5%。",
+    "expected": "ineligible",
+    "reason_contains": "5%"
+  },
+  {
+    "name": "新北市戶籍符合",
+    "title": "新北市學生獎學金",
+    "detail": "申請人須設籍於新北市，並為大專在校生。",
+    "expected": "eligible",
+    "reason_contains": "戶籍"
+  },
+  {
+    "name": "臺北市戶籍不符",
+    "title": "臺北市學生獎學金",
+    "detail": "申請人須設籍於臺北市，並為大專在校生。",
+    "expected": "ineligible",
+    "reason_contains": "臺北市"
+  },
+  {
+    "name": "資格只在附件",
+    "title": "希望獎助學金",
+    "detail": "申請資格詳見附件，申請表另行下載。",
+    "expected": "review",
+    "reason_contains": "附件"
+  }
+]
