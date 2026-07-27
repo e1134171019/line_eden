@@ -10,6 +10,8 @@ from src.models.scholarship import Scholarship
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.scholarship_service import ScholarshipService
 
+TEST_SUMMARY_BATCH_SIZE = 5
+
 
 class FakeCollector(BaseCollector):
     """回傳測試指定公告的蒐集器。"""
@@ -40,7 +42,13 @@ def _build_service(
     notifier: Callable[[str], None],
 ) -> tuple[ScholarshipService, ScholarshipRepository]:
     repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
-    service = ScholarshipService(FakeCollector(items), repository, notifier)
+    service = ScholarshipService(
+        FakeCollector(items),
+        repository,
+        notifier,
+        include_keywords=None,
+        summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
+    )
     return service, repository
 
 
@@ -88,39 +96,64 @@ def test_service_new_item_after_baseline_is_pending(tmp_path: Path) -> None:
         FakeCollector([old_item, new_item]),
         repository,
         lambda _: None,
+        include_keywords=None,
+        summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
     result = next_service.run(dry_run=True)
 
     assert [item.content_hash for item in result.pending_items] == [new_item.content_hash]
 
 
-# 驗證 LINE 成功後才移除待通知狀態。
-def test_service_live_success_marks_notified(tmp_path: Path) -> None:
+# 驗證同一則摘要中的每筆公告都有自己的連結。
+def test_service_summary_contains_each_item_link(tmp_path: Path) -> None:
     sent_messages: list[str] = []
-    item = _build_item(1)
-    service, repository = _build_service(tmp_path, [item], sent_messages.append)
+    items = [_build_item(1), _build_item(2), _build_item(3)]
+    service, repository = _build_service(tmp_path, items, sent_messages.append)
 
     result = service.run(dry_run=False)
 
-    assert result.notified_count == 1
+    assert result.notified_count == 3
     assert len(sent_messages) == 1
+    for item in items:
+        assert item.title in sent_messages[0]
+        assert item.source_url in sent_messages[0]
     assert repository.list_pending() == []
 
 
-# 驗證 LINE 失敗時公告仍維持待通知。
-def test_service_live_failure_keeps_pending(tmp_path: Path) -> None:
-    item = _build_item(1)
+# 驗證超過單則上限時會分批，且每批公告都有連結。
+def test_service_splits_large_summary_into_batches(tmp_path: Path) -> None:
+    sent_messages: list[str] = []
+    items = [_build_item(index) for index in range(1, 7)]
+    service, repository = _build_service(tmp_path, items, sent_messages.append)
 
-    # 模擬外部 LINE API 發生錯誤。
-    def failed_notifier(_: str) -> None:
-        raise RuntimeError("LINE API error")
+    result = service.run(dry_run=False)
 
-    service, repository = _build_service(tmp_path, [item], failed_notifier)
+    assert result.notified_count == 6
+    assert len(sent_messages) == 2
+    assert "https://example.com/6" in sent_messages[0]
+    assert "https://example.com/1" not in sent_messages[0]
+    assert "https://example.com/1" in sent_messages[1]
+    assert repository.list_pending() == []
+
+
+# 驗證 LINE 失敗時，失敗批次與後續公告仍維持待通知。
+def test_service_batch_failure_keeps_unsent_items_pending(tmp_path: Path) -> None:
+    items = [_build_item(index) for index in range(1, 7)]
+    sent_messages: list[str] = []
+
+    # 第二批推播時模擬 LINE API 發生錯誤。
+    def failed_second_batch(message: str) -> None:
+        sent_messages.append(message)
+        if len(sent_messages) == 2:
+            raise RuntimeError("LINE API error")
+
+    service, repository = _build_service(tmp_path, items, failed_second_batch)
 
     with pytest.raises(RuntimeError, match="LINE API error"):
         service.run(dry_run=False)
 
-    assert [pending.content_hash for pending in repository.list_pending()] == [item.content_hash]
+    pending_urls = [item.source_url for item in repository.list_pending()]
+    assert pending_urls == ["https://example.com/1"]
 
 
 # 驗證關鍵字過濾只保留目標公告。
@@ -143,6 +176,7 @@ def test_service_filter_by_keywords(tmp_path: Path) -> None:
         repository,
         lambda _: None,
         include_keywords=("獎學金", "助學金"),
+        summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
 
     result = service.run(dry_run=True)
