@@ -12,6 +12,7 @@ DATA_DIR = BASE_DIR / "data"
 LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 LHU_SCHOLARSHIP_URL = "https://www.lhu.edu.tw/p/422-1000-4.php?Lang=zh-tw"
 SCHOLARSHIP_DB_FILENAME = "scholarships.db"
+LINE_SUMMARY_BATCH_SIZE = 5
 HTTP_TIMEOUT_SECONDS = 10.0
 HTTP_USER_AGENT = "ScholarshipAgent/2.0 (+https://www.lhu.edu.tw/)"
 SCHOLARSHIP_FILTER_KEYWORDS = (
