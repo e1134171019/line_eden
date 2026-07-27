@@ -16,7 +16,11 @@ SCHOLARSHIP_DB_FILENAME = "scholarships.db"
 LINE_SUMMARY_BATCH_SIZE = 5
 NOTIFY_REVIEW_ITEMS = False
 HTTP_TIMEOUT_SECONDS = 10.0
-HTTP_USER_AGENT = "ScholarshipAgent/3.0 (+https://www.lhu.edu.tw/)"
+HTTP_USER_AGENT = "ScholarshipAgent/3.1 (+https://www.lhu.edu.tw/)"
+MAX_ATTACHMENT_COUNT = 3
+MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
+MAX_PDF_PAGES = 40
+ATTACHMENT_TEXT_MARKER = "【附件內容】"
 SCHOLARSHIP_FILTER_KEYWORDS = (
     "獎學金",
     "助學金",
