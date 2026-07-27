@@ -30,6 +30,6 @@ def test_print_audit_includes_fetch_diagnostics(capsys: object) -> None:
     main.print_audit(result)
 
     output = capsys.readouterr().out
-    assert "附件診斷：發現 1，成功 0，失敗 1" in output
+    assert "附件診斷：發現 1，嘗試 1，成功 0，失敗 1" in output
     assert "403 Forbidden" in output
     assert "https://example.com/rules.pdf" in output
