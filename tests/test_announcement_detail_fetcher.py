@@ -4,6 +4,7 @@ import pytest
 
 from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
+from src.diagnostics.detail_fetch_diagnostics import ResourceDiagnostic
 
 
 # 建立具有固定安全限制的測試擷取器。
@@ -79,7 +80,7 @@ def test_activity_site_uses_detail_container() -> None:
     assert "宋江陣頭" not in text
 
 
-# 驗證成功解析附件時會加入附件內容標記。
+# 驗證成功解析主要辦法時會加入附件內容標記。
 def test_combine_text_marks_resolved_attachments() -> None:
     text = _fetcher()._combine_text("公告正文", ["附件資格內容"])
 
@@ -90,6 +91,42 @@ def test_combine_text_marks_resolved_attachments() -> None:
 # 驗證有附件但沒有解析文字時加入安全標記。
 def test_unresolved_attachment_is_marked() -> None:
     text = _fetcher()._mark_unresolved_attachments("公告正文", 1, [])
+
+    assert UNRESOLVED_ATTACHMENT_MARKER in text
+
+
+# 公告明示資格在附件但附件數為零時仍必須失敗關閉。
+def test_declared_attachment_without_link_is_marked() -> None:
+    body = "相關助學金項目及內容，請參考附件。學業平均80分以上。"
+
+    text = _fetcher()._mark_unresolved_attachments(
+        body,
+        0,
+        [],
+        body_text=body,
+    )
+
+    assert UNRESOLVED_ATTACHMENT_MARKER in text
+
+
+# 次要證明文件成功不能掩蓋主要辦法掃描失敗。
+def test_supporting_document_does_not_resolve_failed_rules() -> None:
+    rules = ResourceDiagnostic(
+        "attachment", "https://example.com/rules.pdf", "", "application/pdf",
+        1000, "pdf", "error", 0, "掃描檔", "rules",
+    )
+    supporting = ResourceDiagnostic(
+        "attachment", "https://example.com/proof.docx", "", "application/docx",
+        500, "docx", "success", 100, "", "supporting_document",
+    )
+
+    text = _fetcher()._mark_unresolved_attachments(
+        "公告正文",
+        2,
+        [],
+        diagnostics=(rules, supporting),
+        discovered_rules_count=1,
+    )
 
     assert UNRESOLVED_ATTACHMENT_MARKER in text
 
