@@ -14,10 +14,11 @@ on:
       operation:
         description: "執行模式；第一次先選 initialize"
         required: true
-        default: run
+        default: daily
         type: choice
         options:
           - initialize
+          - daily
           - run
           - report
           - dry-run
@@ -36,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      OPERATION: ${{ github.event_name == 'schedule' && 'run' || github.event_name == 'push' && 'report' || inputs.operation }}
+      OPERATION: ${{ github.event_name == 'schedule' && 'daily' || github.event_name == 'push' && 'daily' || inputs.operation }}
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -67,11 +68,11 @@ jobs:
 
           operation = os.environ["OPERATION"]
           required = []
-          if operation in {"initialize", "run", "dry-run"}:
+          if operation in {"initialize", "daily", "run", "dry-run"}:
               required.append("STATE_PASSPHRASE")
-          if operation in {"run", "report"}:
+          if operation in {"daily", "run", "report"}:
               required += ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID"]
-          if operation in {"run", "report", "dry-run"}:
+          if operation in {"daily", "run", "report", "dry-run"}:
               required += ["GEMINI_API_KEY", "STUDENT_PROFILE_B64"]
           elif operation == "test-line":
               required += ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID"]
@@ -83,7 +84,7 @@ jobs:
 
       - name: Find latest cloud state
         id: latest_state
-        if: env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run'
         shell: bash
         run: |
           set -euo pipefail
@@ -102,7 +103,7 @@ jobs:
           echo "將從 workflow run $run_id 還原狀態。"
 
       - name: Download encrypted cloud state
-        if: env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run'
         uses: actions/download-artifact@v5
         with:
           name: scholarship-agent-state
@@ -112,7 +113,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Decrypt cloud state
-        if: env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run'
         shell: bash
         run: |
           set -euo pipefail
@@ -128,7 +129,7 @@ jobs:
           rm -f cloud-state/scholarship-state.tar.gz
 
       - name: Build private profile file
-        if: env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
         shell: bash
         run: |
           python - <<'PY'
@@ -152,6 +153,9 @@ jobs:
             case "$OPERATION" in
               initialize)
                 python main.py --initialize-baseline
+                ;;
+              daily)
+                python -m src.automation.daily_line_digest
                 ;;
               run)
                 python main.py --use-gemini
@@ -178,7 +182,7 @@ jobs:
 
       - name: Encrypt updated cloud state
         id: state
-        if: always() && (env.OPERATION == 'initialize' || env.OPERATION == 'run' || env.OPERATION == 'dry-run')
+        if: always() && (env.OPERATION == 'initialize' || env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run')
         shell: bash
         run: |
           set -euo pipefail
@@ -229,6 +233,7 @@ jobs:
             echo ""
             echo "- 台灣排程時間：每日 07:30"
             echo "- 執行模式：\`$OPERATION\`"
+            echo "- 每日 LINE 摘要：\`${{ env.OPERATION == 'daily' && '固定傳送' || '依模式決定' }}\`"
             echo "- Agent exit code：\`${{ steps.agent.outputs.exit_code || '未執行' }}\`"
             echo "- 雲端狀態已保存：\`${{ steps.state.outputs.has_state || 'false' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
