@@ -1,0 +1,61 @@
+# -*- coding: utf-8 -*-
+
+APPLICATION = "application"
+POLICY = "policy"
+RESULT = "result"
+INFORMATION = "information"
+UNKNOWN = "unknown"
+
+RESULT_MARKERS = ("獲獎名單", "錄取名單", "得獎名單", "核定名單", "結果公告")
+POLICY_MARKERS = ("修正", "修訂", "條文", "法規", "作業要點", "函送", "廢止")
+APPLICATION_MARKERS = (
+    "申請公告",
+    "受理申請",
+    "開放申請",
+    "開始申請",
+    "申辦公告",
+    "申請期間",
+    "截止日期",
+    "徵件",
+    "報名",
+)
+INFORMATION_MARKERS = ("說明會", "注意事項", "相關事宜", "宣導", "提醒")
+AWARD_MARKERS = ("獎學金", "助學金", "獎助學金", "補助")
+
+
+# 依標題與正文判斷公告是否為可申請機會。
+def classify_notice(title: str, detail_text: str) -> str:
+    normalized_title = " ".join(title.split())
+    normalized_text = " ".join(detail_text.split())
+    if _contains_any(normalized_title, RESULT_MARKERS):
+        return RESULT
+    if _is_policy_notice(normalized_title):
+        return POLICY
+    if _is_application_notice(normalized_title, normalized_text):
+        return APPLICATION
+    if _contains_any(normalized_title, INFORMATION_MARKERS):
+        return INFORMATION
+    return UNKNOWN
+
+
+# 判斷標題是否明確屬於法規或制度修正。
+def _is_policy_notice(title: str) -> bool:
+    if _contains_any(title, POLICY_MARKERS):
+        return True
+    return title.endswith("辦法") and not _contains_any(title, APPLICATION_MARKERS)
+
+
+# 判斷標題或正文是否具有當期申請行動訊號。
+def _is_application_notice(title: str, detail_text: str) -> bool:
+    if _contains_any(title, APPLICATION_MARKERS):
+        return True
+    if _contains_any(title, AWARD_MARKERS):
+        return True
+    if "就學貸款" in title and any(marker in title for marker in ("申辦", "申請")):
+        return True
+    return _contains_any(detail_text, APPLICATION_MARKERS)
+
+
+# 判斷文字是否包含任一指定標記。
+def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in markers)
