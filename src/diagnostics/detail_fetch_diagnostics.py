@@ -16,6 +16,7 @@ class ResourceDiagnostic:
     status: str
     text_length: int
     error: str = ""
+    attachment_role: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -34,3 +35,10 @@ class DetailFetchResult:
     # 統計未成功解析的附件數量。
     def failed_attachment_count(self) -> int:
         return sum(item.status != "success" for item in self.attachments)
+
+    # 統計成功解析且可作為主要資格辦法的附件數量。
+    def successful_rules_count(self) -> int:
+        return sum(
+            item.status == "success" and item.attachment_role == "rules"
+            for item in self.attachments
+        )
