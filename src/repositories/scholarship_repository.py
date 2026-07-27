@@ -8,6 +8,7 @@ from src.models.scholarship import Scholarship
 
 SCHEMA_COLUMNS = {
     "category": "TEXT NOT NULL DEFAULT 'other'",
+    "notice_kind": "TEXT NOT NULL DEFAULT 'unknown'",
     "discovered_at": "TEXT",
     "baseline_at": "TEXT",
     "notified_at": "TEXT",
@@ -38,6 +39,7 @@ class ScholarshipRepository:
             published_date TEXT NOT NULL,
             source_url TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'other',
+            notice_kind TEXT NOT NULL DEFAULT 'unknown',
             content_hash TEXT NOT NULL UNIQUE,
             discovered_at TEXT NOT NULL,
             baseline_at TEXT,
@@ -101,8 +103,9 @@ class ScholarshipRepository:
         rows = [self._discovery_row(item) for item in scholarships]
         query = """
         INSERT OR IGNORE INTO scholarships (
-            source, title, published_date, source_url, category, content_hash, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            source, title, published_date, source_url, category, notice_kind,
+            content_hash, discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
@@ -117,6 +120,7 @@ class ScholarshipRepository:
             item.published_date,
             item.source_url,
             item.category,
+            item.notice_kind,
             item.content_hash,
             self._now_iso(),
         )
@@ -134,7 +138,7 @@ class ScholarshipRepository:
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
 
-    # 取出符合推播狀態的公告。
+    # 取出符合推播狀態且屬於申請型的公告。
     def list_notifiable(
         self,
         profile_hash: str,
@@ -144,6 +148,7 @@ class ScholarshipRepository:
         placeholders = ",".join(["?"] * len(statuses))
         condition = (
             "notified_at IS NULL AND baseline_at IS NULL AND profile_hash = ? "
+            "AND notice_kind = 'application' "
             f"AND eligibility_status IN ({placeholders})"
         )
         params = [profile_hash, *statuses]
@@ -153,6 +158,7 @@ class ScholarshipRepository:
     def _select_query(self, condition: str) -> str:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
+               COALESCE(notice_kind, 'unknown'),
                COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, '')
         FROM scholarships
         WHERE {condition}
@@ -178,24 +184,27 @@ class ScholarshipRepository:
             source_url=row[3],
             category=row[4],
             content_hash=row[5],
-            eligibility_status=row[6],
-            eligibility_reason=row[7],
+            notice_kind=row[6],
+            eligibility_status=row[7],
+            eligibility_reason=row[8],
         )
 
-    # 保存公告對指定背景的資格判斷。
+    # 保存公告用途與個人資格判斷。
     def mark_eligibility(
         self,
         content_hash: str,
         status: str,
         reason: str,
         profile_hash: str,
+        notice_kind: str = "application",
     ) -> int:
         query = """
         UPDATE scholarships
-        SET eligibility_status = ?, eligibility_reason = ?, profile_hash = ?, evaluated_at = ?
+        SET notice_kind = ?, eligibility_status = ?, eligibility_reason = ?,
+            profile_hash = ?, evaluated_at = ?
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
-        params = [status, reason, profile_hash, self._now_iso(), content_hash]
+        params = [notice_kind, status, reason, profile_hash, self._now_iso(), content_hash]
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(query, params)
             conn.commit()

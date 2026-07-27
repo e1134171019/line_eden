@@ -24,7 +24,7 @@ from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.notifiers.line_notifier import send_text_message
 from src.profiles.student_profile import load_student_profile
 from src.repositories.scholarship_repository import ScholarshipRepository
-from src.services.scholarship_service import ScholarshipService, ServiceResult
+from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
 
 
 # 解析命令列參數，並限制執行模式只能擇一。
@@ -32,6 +32,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="評估適合度但不傳 LINE")
+    modes.add_argument("--audit", action="store_true", help="重新稽核全部公告但不改資料庫")
     modes.add_argument(
         "--initialize-baseline",
         action="store_true",
@@ -85,13 +86,15 @@ def _build_detail_fetcher(
     return AnnouncementDetailFetcher(HTTP_TIMEOUT_SECONDS, HTTP_USER_AGENT)
 
 
-# 依命令列模式執行服務，基準初始化不會傳送 LINE。
+# 依命令列模式執行服務。
 def execute_service(
     args: argparse.Namespace,
     service: ScholarshipService,
-) -> ServiceResult:
+) -> ServiceResult | AuditResult:
     if args.initialize_baseline:
         return service.initialize_baseline()
+    if args.audit:
+        return service.audit()
     return service.run(dry_run=args.dry_run)
 
 
@@ -117,13 +120,36 @@ def print_items(label: str, items: list[object]) -> None:
         print(f"  {item.source_url}")
 
 
-# 執行命令列流程，正式模式才驗證 LINE 設定。
+# 印出不修改資料庫的全部公告稽核結果。
+def print_audit(result: AuditResult) -> None:
+    print(f"稽核公告數量：{len(result.records)}")
+    print(f"明確適合：{result.eligible_count}")
+    print(f"資格待確認：{result.review_count}")
+    print(f"不推播：{result.ineligible_count}")
+    for record in result.records:
+        item = record.item
+        print(f"- {item.published_date} | {item.notice_kind} | {item.eligibility_status}")
+        print(f"  {item.title} | {item.eligibility_reason}")
+        print(f"  正文摘要：{record.detail_excerpt or '無法擷取'}")
+        print(f"  {item.source_url}")
+    print(result.message)
+
+
+# 判斷目前是否為會傳送 LINE 的正式模式。
+def _is_live_mode(args: argparse.Namespace) -> bool:
+    return not args.dry_run and not args.audit and not args.initialize_baseline
+
+
+# 執行命令列流程，只有正式模式會驗證 LINE 設定。
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    if not args.dry_run and not args.initialize_baseline:
+    if _is_live_mode(args):
         validate_settings()
     service = build_service(profile_required=not args.initialize_baseline)
     result = execute_service(args, service)
+    if isinstance(result, AuditResult):
+        print_audit(result)
+        return
     print_summary(result)
     print_items("適合且待通知公告：", result.pending_items)
     print(result.message)

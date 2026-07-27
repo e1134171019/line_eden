@@ -9,6 +9,7 @@ from src.evaluators.eligibility_rules import (
     find_unknowns,
     normalize_text,
 )
+from src.evaluators.match_context import filter_contextual_matches
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 
@@ -63,6 +64,7 @@ class EligibilityEvaluator:
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
+        matches = filter_contextual_matches(matches, title, detail_text, profile)
         _add_general_college_match(text, matches)
         if matches:
             return EligibilityDecision(ELIGIBLE, tuple(matches))

@@ -1,21 +1,25 @@
 # Scholarship Agent
 
-目前包含三個階段：
+目前包含四個階段：
 
 1. LINE Messaging API 推播。
 2. 龍華獎學金公告蒐集、SQLite 去重、歷史基準與 dry-run。
-3. 讀取公告內頁，依本機私密學生背景判斷適合度，只推播明確適合的公告。
+3. 讀取公告主內容，依本機私密學生背景判斷適合度。
+4. 先區分申請型、法規型、結果型與資訊型，只推播申請型且明確適合的公告。
 
 ## 核心流程
 
 ```text
 公告列表
-→ 公告內頁文字
+→ 公告主內容擷取
+→ notice_kind 公告用途分類
 → 個人背景資格判斷
-→ eligible：可推播
+→ application + eligible：可推播
 → review：條件不足，預設不推播
-→ ineligible：明確不符，不推播
+→ policy / result / information / unknown：不推播
 ```
+
+公告正文擷取會排除頁首、導覽列、側欄、表單與頁尾，避免「電子郵件」、「電子工程系導覽」等固定頁面文字污染資格判斷。
 
 `review` 與 `ineligible` 仍會保存於 SQLite，避免每次重複分析。個人背景改變時，系統會以背景指紋重新評估尚未通知的公告。
 
@@ -103,7 +107,24 @@ python -m pytest tests/
 
 測試使用暫存資料庫與模擬 LINE 回應，不會呼叫真實 LINE API，也不會修改 `data/` 正式資料庫。
 
-## Dry-run：先看哪些公告會被推播
+## Audit：重新檢查全部公告
+
+```powershell
+python main.py --audit
+```
+
+Audit 會：
+
+- 重新抓取目前列表中的全部公告。
+- 重新擷取公告主內容。
+- 顯示 `notice_kind`、資格狀態、判斷原因與正文摘要。
+- 不驗證 LINE Token。
+- 不傳送 LINE。
+- 不修改 `baseline_at`、`notified_at` 或其他資料庫內容。
+
+適合在更新正文擷取或資格規則後，用現有歷史公告進行回歸檢查。
+
+## Dry-run：先看哪些新公告會被推播
 
 ```powershell
 python main.py --dry-run
@@ -112,12 +133,12 @@ python main.py --dry-run
 Dry-run 會：
 
 - 蒐集公告並保存 `discovered`。
-- 下載尚未評估公告的內頁文字。
+- 只下載尚未評估公告的主內容。
 - 使用 `profile.json` 判斷 `eligible`、`review`、`ineligible`。
-- 只列出明確適合且尚未通知的公告。
+- 只列出 `application + eligible` 且尚未通知的公告。
 - 不驗證 LINE Token，不傳送 LINE，不修改 `notified_at`。
 
-若公告內文無法讀取，或資格只存在尚未解析的附件中，狀態會是 `review`，預設不推播。
+若公告正文無法可靠定位，或資格只存在尚未解析的附件中，狀態會是 `review`，預設不推播。
 
 ## 首次上線：建立歷史基準
 
@@ -138,12 +159,25 @@ python main.py
 正式模式規則：
 
 - 驗證 `.env` 與 `profile.json`。
-- 只推播 `eligibility_status = eligible` 的公告。
+- 只推播 `notice_kind = application` 且 `eligibility_status = eligible` 的公告。
+- 法規修正、獲獎名單、說明會與用途不明公告不推播。
 - `review` 預設不推播；可由 `config.py` 的 `NOTIFY_REVIEW_ITEMS` 調整。
 - 摘要中的每筆公告都有日期、標題、符合原因與獨立網址。
 - 每則摘要最多列出 `LINE_SUMMARY_BATCH_SIZE` 筆。
 - 成功傳送後才寫入該批公告的 `notified_at`。
 - 發送失敗時保留 pending，供下次重試。
+
+## 公告用途分類
+
+```text
+application：目前可申請或申辦
+policy：辦法、要點、條文或法規修正
+result：獲獎、錄取或核定名單
+information：說明會、提醒或一般資訊
+unknown：訊號不足，採保守不推播
+```
+
+只有 `application` 會進入個人資格比對。
 
 ## 目前規則能力
 
@@ -153,21 +187,16 @@ python main.py
 - 明確限定研究所、非大專、新生或應屆畢業等資格。
 - 公告明確排除進修部或在職學生。
 - 特定家庭或法定身分為必要條件且背景不符。
-- 學業平均或操行成績未達門檻。
+- 學業平均、操行成績或排名未達門檻。
 
 已降低下列誤判：
 
 - 「日間部及進修部均可申請」不會排除進修部。
 - 「大學生及研究生均可申請」不會排除學士生。
 - 「清寒學生優先但不限清寒」不會排除一般學生。
+- 「電子郵件」與網站導覽不會視為電子工程背景。
+- 專業領域必須出現在標題或科系、學系、領域、主修等資格語境中。
 - 可辨識「不得低於 80 分」類型的成績門檻。
-
-可確認正向匹配：
-
-- 就讀學校或科系明確相符。
-- 電子、電機、電力、能源等背景關鍵字相符。
-- 一般大專在校生條件且未發現排除條件。
-- 優秀學生型獎學金且成績達基本方向。
 
 目前尚未解析 PDF、Word 等附件內容；附件是唯一資格來源時會標為 `review`，不會直接推播。
 
@@ -176,6 +205,7 @@ python main.py
 ```powershell
 python -m ruff check .
 python -m pytest tests/
+python main.py --audit
 python main.py --dry-run
 git status --ignored
 ```
