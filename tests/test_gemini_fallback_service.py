@@ -19,6 +19,7 @@ class FakeGeminiExtractor:
     model = "gemini-test"
 
     def __init__(self) -> None:
+        self.count_calls = 0
         self.extract_calls = 0
 
     # 回傳固定文件雜湊與兩頁裁切內容。
@@ -27,6 +28,7 @@ class FakeGeminiExtractor:
 
     # 回傳固定輸入 Token 預估。
     def count_tokens(self, title: str, document: PreparedGeminiDocument) -> int:
+        self.count_calls += 1
         return 400
 
     # 回傳具有證據的完整結構化資格。
@@ -88,6 +90,7 @@ def test_scanned_pdf_uses_gemini_once_then_cache(tmp_path: Path) -> None:
 
     assert first is not None and "學業平均80分以上" in first.rule_text
     assert second is not None and second.diagnostic.cache_hit is True
+    assert extractor.count_calls == 1
     assert extractor.extract_calls == 1
     assert service.usage_summary().calls == 1
     assert service.usage_summary().cache_hits == 1
@@ -103,12 +106,13 @@ def test_non_scanned_attachment_does_not_use_gemini(tmp_path: Path) -> None:
     fallback = service.analyze("一般獎學金", result)
 
     assert fallback is None
+    assert extractor.count_calls == 0
     assert extractor.extract_calls == 0
     assert service.usage_summary().calls == 0
 
 
-# 驗證呼叫預算用完時維持 review 且不呼叫生成 API。
-def test_budget_limit_skips_generation(tmp_path: Path) -> None:
+# 驗證呼叫預算用完時連 count_tokens 都不再呼叫。
+def test_budget_limit_skips_all_gemini_api_calls(tmp_path: Path) -> None:
     extractor = FakeGeminiExtractor()
     service = _service(tmp_path, extractor, max_calls=0)
 
@@ -117,4 +121,5 @@ def test_budget_limit_skips_generation(tmp_path: Path) -> None:
     assert result is not None
     assert result.rule_text == ""
     assert result.diagnostic.status == "budget_skipped"
+    assert extractor.count_calls == 0
     assert extractor.extract_calls == 0
