@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import re
 
+from config import ATTACHMENT_TEXT_MARKER
 from src.evaluators.eligibility_rules import (
     find_exclusions,
     find_matches,
@@ -10,6 +11,7 @@ from src.evaluators.eligibility_rules import (
     normalize_text,
 )
 from src.evaluators.match_context import filter_contextual_matches
+from src.evaluators.special_status_aliases import find_alias_exclusions
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 
@@ -31,6 +33,13 @@ def _add_general_college_match(text: str, matches: list[str]) -> None:
         reason = "公告適用一般大專在校生，未發現明確排除條件。"
         if reason not in matches:
             matches.append(reason)
+
+
+# 附件已成功解析時，只移除「仍需參閱附件」這一項未知原因。
+def _filter_resolved_attachment_unknowns(text: str, unknowns: list[str]) -> list[str]:
+    if ATTACHMENT_TEXT_MARKER not in text:
+        return unknowns
+    return [reason for reason in unknowns if "參閱附件" not in reason]
 
 
 @dataclass(frozen=True)
@@ -57,10 +66,11 @@ class EligibilityEvaluator:
     ) -> EligibilityDecision:
         title = normalize_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
-        exclusions = find_exclusions(text, title, profile)
+        exclusions = find_alias_exclusions(title, text, profile)
+        exclusions.extend(find_exclusions(text, title, profile))
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
-        unknowns = find_unknowns(text, profile)
+        unknowns = _filter_resolved_attachment_unknowns(text, find_unknowns(text, profile))
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
