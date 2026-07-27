@@ -30,6 +30,61 @@ def test_repository_dedup_and_mark_notified(tmp_path: Path) -> None:
     assert [item.content_hash for item in repo.list_pending()] == [second.content_hash]
 
 
+# 不同官方來源轉載同一公告時，SQLite 只新增第一筆。
+def test_repository_deduplicates_across_sources(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    school = Scholarship.from_raw(
+        "lhu",
+        "公告：115年優秀學生獎學金",
+        "2026-07-01",
+        "https://school.test/a",
+    )
+    government = Scholarship.from_raw(
+        "government",
+        "【公告】115年優秀學生獎學金",
+        "2026-07-02",
+        "https://government.test/a",
+    )
+
+    assert repo.discover([school]) == 1
+    assert repo.discover([government]) == 0
+    assert [item.source for item in repo.list_pending()] == ["lhu"]
+
+
+# 舊資料庫缺少 dedup_hash 時，初始化 repository 會安全補值。
+def test_repository_backfills_dedup_hash_for_old_database(tmp_path: Path) -> None:
+    db_path = tmp_path / "data" / "scholarships.db"
+    db_path.parent.mkdir(parents=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE scholarships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                title TEXT NOT NULL,
+                published_date TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                content_hash TEXT NOT NULL UNIQUE,
+                discovered_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO scholarships "
+            "(source, title, published_date, source_url, content_hash, discovered_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("lhu", "115年舊資料獎學金", "2026-07-01", "https://old.test", "old-hash", "now"),
+        )
+        conn.commit()
+
+    ScholarshipRepository(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT dedup_hash FROM scholarships").fetchone()
+    assert row is not None
+    assert row[0]
+
+
 # 驗證 baseline 與 notified 欄位分別保存狀態。
 def test_repository_baseline_state(tmp_path: Path) -> None:
     db_path = tmp_path / "data" / "scholarships.db"
