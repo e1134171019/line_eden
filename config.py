@@ -28,6 +28,10 @@ LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 LHU_SCHOLARSHIP_URL = "https://www.lhu.edu.tw/p/422-1000-4.php?Lang=zh-tw"
 SCHOLARSHIP_DB_FILENAME = "scholarships.db"
 GEMINI_CACHE_DB_FILENAME = "gemini_cache.db"
+AUTOMATION_LOCK_FILENAME = "scholarship-agent.lock"
+AUTOMATION_STATUS_FILENAME = "last_run.json"
+AUTOMATION_LOG_DIRNAME = "logs"
+AUTOMATION_STALE_LOCK_HOURS = 6
 LINE_SUMMARY_BATCH_SIZE = 5
 NOTIFY_REVIEW_ITEMS = False
 HTTP_TIMEOUT_SECONDS = 10.0
