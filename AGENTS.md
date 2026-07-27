@@ -18,7 +18,7 @@
 - 函式上方使用繁體中文註解。
 - 禁止 `import *`。
 - 禁止寫死絕對路徑。
-- 機密資料只放在 `.env`。
+- 本機機密資料只放在 `.env`；GitHub Actions 機密資料只放在 repository Secrets。
 
 ## 資格判斷規範
 - 任一必要資格明確不符時立即 `ineligible`。
@@ -37,6 +37,14 @@
 - 相同文件必須依內容雜湊、模型與提示版本使用快取。
 - 模型證據不足、頁面不完整或輸出驗證失敗時維持 `review`。
 - Audit 必須顯示模型抽取欄位與頁碼證據，供人工核對。
+
+## 雲端排程規範
+- GitHub Actions 第一次正式使用前必須明確執行 `initialize` 建立歷史基準。
+- 正式排程找不到既有雲端狀態時必須 fail closed，不得自動 baseline 或推播。
+- SQLite 狀態上傳 artifact 前必須加密，解密密碼只放 GitHub Actions Secret。
+- `profile.json` 只能由 Secret 在 runner 暫時建立，不得提交到 repository 或 artifact。
+- 本機排程與雲端排程不得同時正式運作，避免兩份 SQLite 各自重複推播。
+- Workflow 必須設定 concurrency，禁止正式流程重疊執行。
 
 ## 測試規範
 - 修改既有邏輯前先執行 `pytest tests/`。
