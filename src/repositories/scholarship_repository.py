@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
-from src.models.scholarship import Scholarship
+from src.models.scholarship import Scholarship, build_dedup_hash
 
 SCHEMA_COLUMNS = {
     "category": "TEXT NOT NULL DEFAULT 'other'",
     "notice_kind": "TEXT NOT NULL DEFAULT 'unknown'",
+    "dedup_hash": "TEXT",
     "discovered_at": "TEXT",
     "baseline_at": "TEXT",
     "notified_at": "TEXT",
@@ -41,6 +42,7 @@ class ScholarshipRepository:
             category TEXT NOT NULL DEFAULT 'other',
             notice_kind TEXT NOT NULL DEFAULT 'unknown',
             content_hash TEXT NOT NULL UNIQUE,
+            dedup_hash TEXT,
             discovered_at TEXT NOT NULL,
             baseline_at TEXT,
             notified_at TEXT,
@@ -52,9 +54,13 @@ class ScholarshipRepository:
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(query)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scholarships_dedup_hash "
+                "ON scholarships(dedup_hash)"
+            )
             conn.commit()
 
-    # 補齊舊版資料表缺少的狀態欄位。
+    # 補齊舊版資料表缺少的狀態欄位與跨來源去重鍵。
     def _migrate_schema(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             existing = self._column_names(conn)
@@ -62,6 +68,11 @@ class ScholarshipRepository:
                 if name not in existing:
                     conn.execute(f"ALTER TABLE scholarships ADD COLUMN {name} {definition}")
             self._fill_discovered_at(conn)
+            self._fill_dedup_hashes(conn)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scholarships_dedup_hash "
+                "ON scholarships(dedup_hash)"
+            )
             conn.commit()
 
     # 讀取目前資料表欄位名稱。
@@ -74,6 +85,17 @@ class ScholarshipRepository:
         conn.execute(
             "UPDATE scholarships SET discovered_at = ? WHERE discovered_at IS NULL",
             [self._now_iso()],
+        )
+
+    # 依既有標題補上跨來源去重鍵，不改動原 content_hash。
+    def _fill_dedup_hashes(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT id, title FROM scholarships "
+            "WHERE dedup_hash IS NULL OR dedup_hash = ''"
+        ).fetchall()
+        conn.executemany(
+            "UPDATE scholarships SET dedup_hash = ? WHERE id = ?",
+            [(build_dedup_hash(title), row_id) for row_id, title in rows],
         )
 
     # 產生 UTC ISO 時間字串。
@@ -96,16 +118,40 @@ class ScholarshipRepository:
             rows = conn.execute(query, content_hashes).fetchall()
         return {row[0] for row in rows}
 
-    # 新增已蒐集公告，重複資料將被忽略。
+    # 回傳已存在的跨來源去重鍵。
+    def get_existing_dedup_hashes(self, dedup_hashes: list[str]) -> set[str]:
+        values = [value for value in dedup_hashes if value]
+        if not values:
+            return set()
+        placeholders = ",".join(["?"] * len(values))
+        query = f"SELECT dedup_hash FROM scholarships WHERE dedup_hash IN ({placeholders})"
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(query, values).fetchall()
+        return {row[0] for row in rows if row[0]}
+
+    # 新增已蒐集公告；同來源重複及跨來源同名公告都會被忽略。
     def discover(self, scholarships: list[Scholarship]) -> int:
         if not scholarships:
             return 0
-        rows = [self._discovery_row(item) for item in scholarships]
+        existing = self.get_existing_dedup_hashes([
+            item.dedup_hash or build_dedup_hash(item.title) for item in scholarships
+        ])
+        new_items: list[Scholarship] = []
+        seen = set(existing)
+        for item in scholarships:
+            dedup_hash = item.dedup_hash or build_dedup_hash(item.title)
+            if dedup_hash in seen:
+                continue
+            seen.add(dedup_hash)
+            new_items.append(item)
+        if not new_items:
+            return 0
+        rows = [self._discovery_row(item) for item in new_items]
         query = """
         INSERT OR IGNORE INTO scholarships (
             source, title, published_date, source_url, category, notice_kind,
-            content_hash, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            content_hash, dedup_hash, discovered_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
@@ -122,6 +168,7 @@ class ScholarshipRepository:
             item.category,
             item.notice_kind,
             item.content_hash,
+            item.dedup_hash or build_dedup_hash(item.title),
             self._now_iso(),
         )
 
@@ -159,7 +206,8 @@ class ScholarshipRepository:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
                COALESCE(notice_kind, 'unknown'),
-               COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, '')
+               COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, ''),
+               COALESCE(dedup_hash, '')
         FROM scholarships
         WHERE {condition}
         ORDER BY published_date DESC, id DESC
@@ -187,6 +235,7 @@ class ScholarshipRepository:
             notice_kind=row[6],
             eligibility_status=row[7],
             eligibility_reason=row[8],
+            dedup_hash=row[9],
         )
 
     # 保存公告用途與個人資格判斷。
