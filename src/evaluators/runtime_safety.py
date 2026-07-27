@@ -6,32 +6,96 @@ import re
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 
-DEADLINE_CONTEXT = (
+APPLICATION_ACTION_MARKERS = (
+    "申請",
+    "報名",
+    "受理",
+    "收件",
+    "繳交",
+    "交至",
+    "寄至",
+    "寄送",
+    "送件",
+    "上傳",
+)
+DEADLINE_MARKERS = (
     "截止",
     "期限",
-    "申請期間",
-    "受理期間",
-    "前交",
-    "前完成",
-    "前自行",
-    "前寄",
-    "前送",
+    "期間",
+    "前",
+    "至",
     "止",
     "逾期",
     "郵戳",
 )
+DIRECT_APPLICANT_MARKERS = (
+    "請於",
+    "申請期間",
+    "申請時間",
+    "申請期限",
+    "申請截止",
+    "報名期間",
+    "報名時間",
+    "報名截止",
+    "受理期間",
+    "收件期間",
+    "完成申請",
+    "完成網路報名",
+    "線上申請",
+    "自行寄",
+    "交至",
+    "寄至",
+    "上傳",
+)
+NON_APPLICATION_TIME_MARKERS = (
+    "職涯輔導時間",
+    "輔導時間",
+    "活動時間",
+    "活動期間",
+    "執行期間",
+    "服務期間",
+    "課程日期",
+    "課程時間",
+    "上課時間",
+)
+ADMINISTRATIVE_MARKERS = (
+    "校方覆核",
+    "學校覆核",
+    "函送",
+    "彙送",
+    "審查期限",
+    "核定日期",
+)
 FULL_TIME_TERMS = ("全職學生", "全時學生", "全日制學生")
+DATE_PATTERN = re.compile(
+    r"(?:(?P<year_value>20\d{2}|\d{3})(?:年|[\-/.]))?"
+    r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
+)
 
 
-# 依公告日期推定未標年份的申請截止日，並只接受具截止語境的日期。
+# 只從學生申請行為語境擷取日期；同一期間取結束日，多個必要步驟取最早期限。
 def extract_application_deadline(text: str, published_date: str) -> date | None:
     published = _parse_iso_date(published_date)
-    candidates = [
-        parsed
-        for parsed in (_parse_deadline_match(match, published) for match in _date_matches(text))
-        if parsed is not None
-    ]
-    return max(candidates) if candidates else None
+    ranked: list[tuple[int, date]] = []
+    for segment in _deadline_segments(text):
+        if not _is_application_deadline_segment(segment):
+            continue
+        candidates = [
+            parsed
+            for parsed in (
+                _parse_date_match(match, published)
+                for match in DATE_PATTERN.finditer(segment)
+            )
+            if parsed is not None
+        ]
+        if not candidates:
+            continue
+        priority = 0 if any(marker in segment for marker in DIRECT_APPLICANT_MARKERS) else 1
+        ranked.append((priority, max(candidates)))
+    if not ranked:
+        return None
+    best_priority = min(priority for priority, _ in ranked)
+    return min(deadline for priority, deadline in ranked if priority == best_priority)
 
 
 # 申請期限已過時直接排除，避免歷史公告再次進入推播候選。
@@ -56,34 +120,53 @@ def find_runtime_unknowns(text: str, profile: StudentProfile) -> list[str]:
     return []
 
 
-# 找出公告中所有可能日期，保留前後文字供截止語境判斷。
-def _date_matches(text: str) -> list[re.Match[str]]:
-    pattern = re.compile(
-        r"(?:(?P<roc>\d{3})年|(?P<year>20\d{2})[年\-/.])?"
-        r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
+# 依標點與時間欄位切開文字，避免申請期限和活動日期互相污染。
+def _deadline_segments(text: str) -> list[str]:
+    label = (
+        r"(?=(?:本次)?(?:申請|報名|受理|收件|繳交|職涯輔導|輔導|活動|執行|服務|課程)"
+        r"(?:時間|期間|期限|截止|日期))"
     )
-    return list(pattern.finditer(text))
+    return [
+        segment.strip()
+        for segment in re.split(rf"[。；;\n]|{label}", text)
+        if segment.strip()
+    ]
 
 
-# 將單一日期候選轉成西元日期；沒有截止語境時忽略。
-def _parse_deadline_match(match: re.Match[str], published: date | None) -> date | None:
-    context = match.string[max(0, match.start() - 18):min(len(match.string), match.end() + 18)]
-    if not any(marker in context for marker in DEADLINE_CONTEXT):
-        return None
-    year = _match_year(match, published)
+# 只接受申請行為及截止語氣同時存在的片段，排除活動與行政時程。
+def _is_application_deadline_segment(segment: str) -> bool:
+    if any(marker in segment for marker in NON_APPLICATION_TIME_MARKERS):
+        return False
+    has_action = any(marker in segment for marker in APPLICATION_ACTION_MARKERS)
+    has_deadline = any(marker in segment for marker in DEADLINE_MARKERS)
+    if not has_action or not has_deadline:
+        return False
+    if any(marker in segment for marker in ADMINISTRATIVE_MARKERS):
+        return any(marker in segment for marker in DIRECT_APPLICANT_MARKERS)
+    return True
+
+
+# 將單一日期候選轉成西元日期；民國斜線日期同樣支援。
+def _parse_date_match(match: re.Match[str], published: date | None) -> date | None:
+    month = int(match.group("month"))
+    day = int(match.group("day"))
+    year = _match_year(match.group("year_value"), month, published)
     try:
-        return date(year, int(match.group("month")), int(match.group("day")))
+        return date(year, month, day)
     except ValueError:
         return None
 
 
-# ROC 年轉西元；未標年份時使用公告發布年份。
-def _match_year(match: re.Match[str], published: date | None) -> int:
-    if match.group("roc"):
-        return int(match.group("roc")) + 1911
-    if match.group("year"):
-        return int(match.group("year"))
-    return published.year if published else date.today().year
+# 民國年轉西元；跨年且未標年份時依公告日期推定下一年。
+def _match_year(year_value: str | None, month: int, published: date | None) -> int:
+    if year_value:
+        value = int(year_value)
+        return value + 1911 if len(year_value) == 3 else value
+    if not published:
+        return date.today().year
+    if published.month - month > 6:
+        return published.year + 1
+    return published.year
 
 
 # 解析 Scholarship 內標準化後的 YYYY-MM-DD 發布日期。
