@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import sys
 from typing import Callable
 
 from config import (
@@ -34,6 +35,14 @@ from src.services.scholarship_service import (
     ScholarshipService,
     ServiceResult,
 )
+
+
+# 讓 Windows CP950 終端遇到特殊符號時替換字元而不中斷。
+def configure_console_output() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="replace")
 
 
 # 解析命令列參數，並限制執行模式只能擇一。
@@ -164,6 +173,7 @@ def _is_live_mode(args: argparse.Namespace) -> bool:
 
 # 執行命令列流程，只有正式模式會驗證 LINE 設定。
 def main(argv: list[str] | None = None) -> None:
+    configure_console_output()
     args = parse_args(argv)
     if _is_live_mode(args):
         validate_settings()

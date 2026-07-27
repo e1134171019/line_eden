@@ -5,6 +5,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
+from config import ATTACHMENT_SCOPE_MAX_DEPTH
 from src.extractors.announcement_content_extractor import select_announcement_root
 
 SUPPORTED_SUFFIXES = (".pdf", ".docx")
@@ -21,7 +22,7 @@ class AttachmentLinkInventory:
     discovered_count: int
 
 
-# 從公告正文區塊擷取可解析的 PDF 與 DOCX 附件網址。
+# 從公告內容鄰近區塊擷取可解析的 PDF 與 DOCX 附件網址。
 def extract_attachment_links(
     html: str,
     base_url: str,
@@ -41,10 +42,31 @@ def extract_attachment_inventory(
 ) -> AttachmentLinkInventory:
     soup = BeautifulSoup(html, "html.parser")
     root = select_announcement_root(soup, title, base_url)
-    candidates = _collect_links(root, base_url)
+    scope = _select_attachment_scope(root, base_url)
+    candidates = _collect_links(scope, base_url)
     ranked = sorted(candidates, key=lambda item: item[0], reverse=True)
     selected = tuple(url for _, url in ranked[:max_count])
     return AttachmentLinkInventory(selected, len(ranked))
+
+
+# 向上尋找最小且包含附件清單的祖先容器。
+def _select_attachment_scope(root: Tag | None, base_url: str) -> Tag | None:
+    current = root
+    for _ in range(ATTACHMENT_SCOPE_MAX_DEPTH):
+        if current is None:
+            break
+        if _collect_links(current, base_url):
+            return current
+        current = _safe_parent(current)
+    return root
+
+
+# 取得下一層祖先，但避免退化成掃描整個 body。
+def _safe_parent(node: Tag) -> Tag | None:
+    parent = node.parent
+    if not isinstance(parent, Tag) or parent.name in {"body", "html"}:
+        return None
+    return parent
 
 
 # 收集附件連結並依內容價值建立排序分數。
@@ -67,7 +89,7 @@ def _is_supported_document(url: str, label: str) -> bool:
     path = urlparse(url).path.lower()
     if path.endswith(SUPPORTED_SUFFIXES):
         return True
-    normalized_label = label.lower()
+    normalized_label = label.lower().rstrip("。．. ")
     has_suffix = normalized_label.endswith(SUPPORTED_SUFFIXES)
     return has_suffix and any(marker in label for marker in DOCUMENT_LABELS)
 
