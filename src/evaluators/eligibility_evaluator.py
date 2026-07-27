@@ -36,7 +36,7 @@ class EligibilityDecision:
 class EligibilityEvaluator:
     """以公告文字與學生背景進行保守的規則式資格判斷。"""
 
-    # 評估公告，明確不符時直接排除，其餘依正向條件分類。
+    # 評估公告，只有明確限定且背景不符時才排除。
     def evaluate(
         self,
         scholarship: Scholarship,
@@ -69,27 +69,39 @@ class EligibilityEvaluator:
     # 判斷日間部、進修部或在職身分的明確限制。
     def _check_program(self, text: str, profile: StudentProfile) -> list[str]:
         reasons: list[str] = []
-        if "日間部" in text and "日間" not in profile.program_type:
-            reasons.append("公告限定日間部，與目前學制不符。")
-        if re.search(r"不(?:含|受理|接受).{0,6}進修部", text) and "進修" in profile.program_type:
+        day_only = self._has_exclusive_requirement(text, "日間部")
+        includes_evening = any(term in text for term in ("進修部", "進修學制", "日夜間均可"))
+        if day_only and not includes_evening and "日間" not in profile.program_type:
+            reasons.append("公告明確限定日間部，與目前學制不符。")
+        if re.search(r"不(?:含|受理|接受).{0,8}進修", text) and "進修" in profile.program_type:
             reasons.append("公告明確排除進修部。")
-        if re.search(r"不(?:含|受理|接受).{0,6}在職", text) and profile.employed:
+        if re.search(r"不(?:含|受理|接受).{0,8}在職", text) and profile.employed:
             reasons.append("公告明確排除在職學生。")
         return reasons
 
     # 判斷學位層級、新生或應屆畢業年級限制。
     def _check_degree_and_year(self, text: str, profile: StudentProfile) -> list[str]:
         reasons: list[str] = []
-        graduate_terms = ("研究生", "碩士班", "博士班", "碩博士")
-        if any(term in text for term in graduate_terms) and profile.degree_level == "學士":
-            reasons.append("公告限定研究所層級。")
-        if any(term in text for term in ("高中生", "高職生", "國中生", "國小生")):
-            reasons.append("公告限定非大專學制。")
-        if re.search(r"(?:限|僅限).{0,4}(?:新生|大一)", text) and profile.year > 1:
+        graduate_only = any(
+            self._has_exclusive_requirement(text, term)
+            for term in ("研究生", "碩士班", "博士班", "碩博士")
+        )
+        includes_undergraduate = any(term in text for term in ("大學生", "大學部", "學士班"))
+        if graduate_only and not includes_undergraduate and profile.degree_level == "學士":
+            reasons.append("公告明確限定研究所層級。")
+        if self._is_non_college_only(text):
+            reasons.append("公告明確限定非大專學制。")
+        if re.search(r"(?:限|僅限).{0,6}(?:新生|大一)", text) and profile.year > 1:
             reasons.append("公告限定新生或大一學生。")
-        if "應屆畢業" in text and profile.year < 4:
+        if self._has_exclusive_requirement(text, "應屆畢業") and profile.year < 4:
             reasons.append("公告限定應屆畢業生。")
         return reasons
+
+    # 判斷公告是否明確限定高中以下學制。
+    def _is_non_college_only(self, text: str) -> bool:
+        terms = ("高中生", "高職生", "國中生", "國小生")
+        includes_college = any(term in text for term in ("大專", "大學生", "大學部"))
+        return any(self._has_exclusive_requirement(text, term) for term in terms) and not includes_college
 
     # 判斷特定家庭或法定身分限制。
     def _check_special_status(
@@ -100,13 +112,21 @@ class EligibilityEvaluator:
     ) -> list[str]:
         profile_statuses = set(profile.special_statuses)
         for keyword in SPECIAL_STATUS_KEYWORDS:
-            required = keyword in title or re.search(
-                rf"(?:限|僅限|須|需|具有|具備|對象為).{{0,12}}{keyword}",
-                text,
-            )
+            if self._is_preference_only(text, keyword):
+                continue
+            required = keyword in title or self._has_exclusive_requirement(text, keyword)
             if required and keyword not in profile_statuses:
                 return [f"公告限定「{keyword}」身分。"]
         return []
+
+    # 判斷某身分只是優先條件，而非必要資格。
+    def _is_preference_only(self, text: str, keyword: str) -> bool:
+        patterns = (
+            rf"{re.escape(keyword)}.{{0,8}}優先",
+            rf"優先.{{0,8}}{re.escape(keyword)}",
+            rf"{re.escape(keyword)}.{{0,12}}(?:但)?不限",
+        )
+        return any(re.search(pattern, text) for pattern in patterns)
 
     # 判斷學業與操行成績門檻。
     def _check_grade_thresholds(
@@ -142,8 +162,21 @@ class EligibilityEvaluator:
     # 從公告文字中擷取指定成績欄位的最低分數。
     def _extract_threshold(self, text: str, labels: tuple[str, ...]) -> float | None:
         label_pattern = "|".join(re.escape(label) for label in labels)
-        match = re.search(rf"(?:{label_pattern}).{{0,12}}?(\d{{2,3}})(?:\.\d+)?\s*分?以上", text)
+        comparison = r"(?:達|為|需達|須達|不得低於|不低於)?\s*"
+        score = r"(\d{2,3}(?:\.\d+)?)\s*分?"
+        suffix = r"(?:以上|或以上|含以上)?"
+        match = re.search(rf"(?:{label_pattern}).{{0,16}}?{comparison}{score}{suffix}", text)
         return float(match.group(1)) if match else None
+
+    # 判斷文字是否明確將某資格設為唯一或必要條件。
+    def _has_exclusive_requirement(self, text: str, term: str) -> bool:
+        escaped = re.escape(term)
+        patterns = (
+            rf"(?:限|僅限|只限).{{0,10}}{escaped}",
+            rf"(?:申請對象|資格|對象).{{0,10}}(?:為|限).{{0,6}}{escaped}",
+            rf"須(?:為|具備|具有).{{0,6}}{escaped}",
+        )
+        return any(re.search(pattern, text) for pattern in patterns)
 
     # 壓縮公告空白，避免換行影響關鍵字判斷。
     def _normalize(self, text: str) -> str:
