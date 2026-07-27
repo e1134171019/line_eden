@@ -5,6 +5,7 @@ from typing import Callable
 
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.base_collector import BaseCollector
+from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
@@ -36,10 +37,11 @@ class ServiceResult:
 
 @dataclass(frozen=True)
 class AuditRecord:
-    """單筆歷史公告的重新評估結果。"""
+    """單筆歷史公告的評估結果與擷取診斷。"""
 
     item: Scholarship
     detail_excerpt: str
+    fetch_result: DetailFetchResult
 
 
 @dataclass(frozen=True)
@@ -156,7 +158,7 @@ class ScholarshipService:
                 notice_kind,
             )
 
-    # 評估單筆公告，非申請型與讀取失敗均不推播。
+    # 正式流程評估單筆公告，讀取失敗時保守不推播。
     def _evaluate_item(
         self,
         item: Scholarship,
@@ -166,6 +168,14 @@ class ScholarshipService:
         except Exception:
             decision = EligibilityDecision(REVIEW, ("公告正文讀取失敗，暫不推播。",))
             return decision, UNKNOWN, ""
+        return self._evaluate_detail(item, detail_text)
+
+    # 依已取得文字完成公告用途與資格判斷。
+    def _evaluate_detail(
+        self,
+        item: Scholarship,
+        detail_text: str,
+    ) -> tuple[EligibilityDecision, str, str]:
         notice_kind = classify_notice(item.title, detail_text)
         if notice_kind != APPLICATION:
             reason = f"非申請型公告（{notice_kind}），不推播。"
@@ -173,16 +183,33 @@ class ScholarshipService:
         decision = self.evaluator.evaluate(item, detail_text, self.profile)
         return decision, notice_kind, detail_text
 
-    # 建立不修改資料庫的單筆稽核結果。
+    # 建立不修改資料庫的單筆稽核結果與附件診斷。
     def _build_audit_record(self, item: Scholarship) -> AuditRecord:
-        decision, notice_kind, detail_text = self._evaluate_item(item)
+        fetch_result = self._fetch_audit_result(item)
+        if fetch_result.source.status == "error":
+            decision = EligibilityDecision(REVIEW, ("公告正文讀取失敗，暫不推播。",))
+            notice_kind = UNKNOWN
+        else:
+            decision, notice_kind, _ = self._evaluate_detail(item, fetch_result.text)
         evaluated = replace(
             item,
             notice_kind=notice_kind,
             eligibility_status=decision.status,
             eligibility_reason=decision.reason_text(),
         )
-        return AuditRecord(evaluated, self._excerpt(detail_text))
+        return AuditRecord(evaluated, self._excerpt(fetch_result.text), fetch_result)
+
+    # 使用支援診斷的擷取器；測試替身則建立基本成功診斷。
+    def _fetch_audit_result(self, item: Scholarship) -> DetailFetchResult:
+        fetch_method = getattr(self.detail_fetcher, "fetch_with_diagnostics", None)
+        if callable(fetch_method):
+            return fetch_method(item)
+        text = self.detail_fetcher.fetch_text(item)
+        source = ResourceDiagnostic(
+            "source", item.source_url, item.source_url, "text/plain",
+            len(text.encode("utf-8")), "html", "success", len(text), "",
+        )
+        return DetailFetchResult(text, source, tuple(), 0)
 
     # 統計稽核結果中的指定資格狀態。
     def _count_audit_status(self, records: list[AuditRecord], status: str) -> int:

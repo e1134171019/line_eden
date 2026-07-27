@@ -24,10 +24,16 @@ from config import (
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
+from src.formatters.audit_diagnostic_formatter import build_fetch_diagnostic_lines
 from src.notifiers.line_notifier import send_text_message
 from src.profiles.student_profile import load_student_profile
 from src.repositories.scholarship_repository import ScholarshipRepository
-from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
+from src.services.scholarship_service import (
+    AuditRecord,
+    AuditResult,
+    ScholarshipService,
+    ServiceResult,
+)
 
 
 # 解析命令列參數，並限制執行模式只能擇一。
@@ -136,12 +142,19 @@ def print_audit(result: AuditResult) -> None:
     print(f"資格待確認：{result.review_count}")
     print(f"不推播：{result.ineligible_count}")
     for record in result.records:
-        item = record.item
-        print(f"- {item.published_date} | {item.notice_kind} | {item.eligibility_status}")
-        print(f"  {item.title} | {item.eligibility_reason}")
-        print(f"  正文摘要：{record.detail_excerpt or '無法擷取'}")
-        print(f"  {item.source_url}")
+        _print_audit_record(record)
     print(result.message)
+
+
+# 印出單筆公告判斷、正文摘要與來源附件診斷。
+def _print_audit_record(record: AuditRecord) -> None:
+    item = record.item
+    print(f"- {item.published_date} | {item.notice_kind} | {item.eligibility_status}")
+    print(f"  {item.title} | {item.eligibility_reason}")
+    print(f"  正文摘要：{record.detail_excerpt or '無法擷取'}")
+    for line in build_fetch_diagnostic_lines(record.fetch_result):
+        print(line)
+    print(f"  {item.source_url}")
 
 
 # 判斷目前是否為會傳送 LINE 的正式模式。

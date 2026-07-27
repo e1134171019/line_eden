@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
@@ -12,6 +13,14 @@ HIGH_VALUE_LABELS = ("辦法", "資格", "簡章", "評選", "規定", "要點",
 LOW_VALUE_LABELS = ("申請表", "推薦書", "同意書", "切結書")
 
 
+@dataclass(frozen=True)
+class AttachmentLinkInventory:
+    """公告附件總數與依價值排序後的選取網址。"""
+
+    selected_urls: tuple[str, ...]
+    discovered_count: int
+
+
 # 從公告正文區塊擷取可解析的 PDF 與 DOCX 附件網址。
 def extract_attachment_links(
     html: str,
@@ -19,11 +28,23 @@ def extract_attachment_links(
     title: str,
     max_count: int,
 ) -> list[str]:
+    inventory = extract_attachment_inventory(html, base_url, title, max_count)
+    return list(inventory.selected_urls)
+
+
+# 建立附件總數與安全上限內的選取清單。
+def extract_attachment_inventory(
+    html: str,
+    base_url: str,
+    title: str,
+    max_count: int,
+) -> AttachmentLinkInventory:
     soup = BeautifulSoup(html, "html.parser")
     root = select_announcement_root(soup, title, base_url)
     candidates = _collect_links(root, base_url)
     ranked = sorted(candidates, key=lambda item: item[0], reverse=True)
-    return [url for _, url in ranked[:max_count]]
+    selected = tuple(url for _, url in ranked[:max_count])
+    return AttachmentLinkInventory(selected, len(ranked))
 
 
 # 收集附件連結並依內容價值建立排序分數。

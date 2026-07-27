@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from src.extractors.attachment_link_extractor import extract_attachment_links
+from src.extractors.attachment_link_extractor import (
+    extract_attachment_inventory,
+    extract_attachment_links,
+)
 
 
 # 驗證只擷取公告正文中的支援附件，並優先處理資格辦法。
@@ -50,3 +53,22 @@ def test_attachment_links_are_deduplicated() -> None:
     )
 
     assert links == ["https://example.com/files/rules.pdf"]
+
+
+# 驗證附件總數不會因最多解析數量而被截斷。
+def test_inventory_reports_total_and_selected_count() -> None:
+    html = """
+    <article><h1>一般獎學金</h1>
+      <a href="/a.pdf">資格辦法.pdf</a>
+      <a href="/b.pdf">申請須知.pdf</a>
+      <a href="/c.docx">申請表.docx</a>
+      <a href="/d.pdf">推薦書.pdf</a>
+    </article>
+    """
+
+    inventory = extract_attachment_inventory(
+        html, "https://example.com/news/1", "一般獎學金", max_count=2,
+    )
+
+    assert inventory.discovered_count == 4
+    assert len(inventory.selected_urls) == 2
