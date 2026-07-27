@@ -31,9 +31,13 @@ def test_report_lists_only_eligible_items() -> None:
         gemini_cache_hits=0,
     )
 
-    message = build_report_message(result)
+    message = build_report_message(
+        result,
+        ["龍華科技大學：成功 80 筆", "教育部留學獎學金：成功 5 筆"],
+    )
 
-    assert "來源：龍華科技大學" in message
+    assert "官方來源：5 個" in message
+    assert "龍華科技大學：成功 80 筆" in message
     assert "明確適合：1" in message
     assert "資格待確認：1（不推播）" in message
     assert "符合資格的獎學金" in message
