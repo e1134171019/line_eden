@@ -35,6 +35,36 @@ def test_extract_and_rank_supported_attachments() -> None:
     assert all("legacy.doc" not in link for link in links)
 
 
+# 驗證正文與附件為兄弟節點時會向上找到共同祖先。
+def test_extracts_lhu_attachment_outside_smallest_text_root() -> None:
+    html = """
+    <body>
+      <div class="mpgdetail">
+        <div class="mcont">
+          <h2>星隆獎學金</h2>
+          <p>相關資訊請自行下載，請於期限前繳交。</p>
+        </div>
+        <div class="mattachments">
+          <a href="/app/index.php?Action=downloadfile&amp;file=abc">
+            申請辦法暨申請書.pdf
+          </a>
+        </div>
+      </div>
+    </body>
+    """
+
+    links = extract_attachment_links(
+        html,
+        "https://activity.lhu.edu.tw/p/404-1051-37683.php",
+        "星隆獎學金",
+        max_count=3,
+    )
+
+    assert links == [
+        "https://activity.lhu.edu.tw/app/index.php?Action=downloadfile&file=abc",
+    ]
+
+
 # 驗證相同附件網址只保留一次。
 def test_attachment_links_are_deduplicated() -> None:
     html = """
