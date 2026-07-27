@@ -11,21 +11,27 @@ from config import (
     LINE_API_URL,
     LINE_CHANNEL_ACCESS_TOKEN,
     LINE_USER_ID,
-    SCHOLARSHIP_FILTER_KEYWORDS,
     SCHOLARSHIP_DB_FILENAME,
+    SCHOLARSHIP_FILTER_KEYWORDS,
     validate_settings,
 )
 from src.collectors.lhu_collector import LhuCollector
 from src.notifiers.line_notifier import send_text_message
 from src.repositories.scholarship_repository import ScholarshipRepository
-from src.services.scholarship_service import ScholarshipService
+from src.services.scholarship_service import ScholarshipService, ServiceResult
 
 
-# 解析命令列參數，支援 dry-run 模式。
-def parse_args() -> argparse.Namespace:
+# 解析命令列參數，並限制執行模式只能擇一。
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scholarship Agent 第二階段")
-    parser.add_argument("--dry-run", action="store_true", help="只顯示資料，不傳 LINE")
-    return parser.parse_args()
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--dry-run", action="store_true", help="只顯示資料，不傳 LINE")
+    modes.add_argument(
+        "--initialize-baseline",
+        action="store_true",
+        help="將目前公告設為歷史基準，不傳 LINE",
+    )
+    return parser.parse_args(argv)
 
 
 # 建立正式模式通知函式，封裝既有 LINE 推播核心呼叫。
@@ -42,10 +48,38 @@ def build_notifier() -> Callable[[str], None]:
     return _notify
 
 
-# 印出本次蒐集與新公告摘要。
-def print_summary(collected_count: int, new_count: int) -> None:
-    print(f"蒐集公告數量：{collected_count}")
-    print(f"新公告數量：{new_count}")
+# 建立公告蒐集、資料庫與通知服務。
+def build_service() -> ScholarshipService:
+    collector = LhuCollector(
+        LHU_SCHOLARSHIP_URL,
+        HTTP_TIMEOUT_SECONDS,
+        HTTP_USER_AGENT,
+    )
+    repository = ScholarshipRepository(DATA_DIR / SCHOLARSHIP_DB_FILENAME)
+    return ScholarshipService(
+        collector,
+        repository,
+        build_notifier(),
+        include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
+    )
+
+
+# 依命令列模式執行服務，基準初始化不會傳送 LINE。
+def execute_service(
+    args: argparse.Namespace,
+    service: ScholarshipService,
+) -> ServiceResult:
+    if args.initialize_baseline:
+        return service.initialize_baseline()
+    return service.run(dry_run=args.dry_run)
+
+
+# 印出本次蒐集、待通知、已通知與基準化摘要。
+def print_summary(result: ServiceResult) -> None:
+    print(f"蒐集公告數量：{len(result.collected)}")
+    print(f"待通知公告數量：{len(result.pending_items)}")
+    print(f"本次通知數量：{result.notified_count}")
+    print(f"本次基準化數量：{result.baseline_count}")
 
 
 # 逐筆列出公告資料，方便 dry-run 檢查。
@@ -58,23 +92,15 @@ def print_items(label: str, items: list[object]) -> None:
         print(f"- {item.published_date} | {item.category} | {item.title} | {item.source_url}")
 
 
-# 執行獎學金公告蒐集、去重與通知流程。
-def main() -> None:
-    args = parse_args()
-    if not args.dry_run:
+# 執行命令列流程，只有正式模式會驗證 LINE 設定。
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    if not args.dry_run and not args.initialize_baseline:
         validate_settings()
-    collector = LhuCollector(LHU_SCHOLARSHIP_URL, HTTP_TIMEOUT_SECONDS, HTTP_USER_AGENT)
-    repository = ScholarshipRepository(DATA_DIR / SCHOLARSHIP_DB_FILENAME)
-    service = ScholarshipService(
-        collector,
-        repository,
-        build_notifier(),
-        include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
-    )
-    result = service.run(dry_run=args.dry_run)
-    print_summary(len(result.collected), len(result.new_items))
+    result = execute_service(args, build_service())
+    print_summary(result)
     print_items("全部公告：", result.collected)
-    print_items("新公告：", result.new_items)
+    print_items("待通知公告：", result.pending_items)
     print(result.message)
 
 
