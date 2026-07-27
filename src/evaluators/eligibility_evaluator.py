@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import re
 
-from config import ATTACHMENT_TEXT_MARKER
+from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.evaluators.eligibility_completeness import (
     find_completeness_unknowns,
     find_hard_exclusions,
@@ -22,6 +22,7 @@ from src.evaluators.eligibility_safety_rules import (
     find_safety_unknowns,
 )
 from src.evaluators.match_context import filter_contextual_matches
+from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
 from src.evaluators.special_status_aliases import find_alias_exclusions
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
@@ -44,6 +45,20 @@ def _filter_resolved_attachment_unknowns(text: str, unknowns: list[str]) -> list
     return [reason for reason in unknowns if "參閱附件" not in reason]
 
 
+# 合併語意相同的排除原因，保留資訊較完整的一句。
+def _deduplicate_reasons(reasons: list[str]) -> list[str]:
+    unique = list(dict.fromkeys(reasons))
+    graduate_detailed = "公告限定研究所或博士生層級。"
+    graduate_generic = "公告限定研究所層級。"
+    if graduate_detailed in unique and graduate_generic in unique:
+        unique.remove(graduate_generic)
+    program_detailed = "公告明確排除進修部或進修推廣學制。"
+    program_generic = "公告明確排除進修部。"
+    if program_detailed in unique and program_generic in unique:
+        unique.remove(program_generic)
+    return unique
+
+
 @dataclass(frozen=True)
 class EligibilityDecision:
     """單筆公告對指定學生背景的資格判斷結果。"""
@@ -59,7 +74,7 @@ class EligibilityDecision:
 class EligibilityEvaluator:
     """協調資格規則並產生保守的適合度判斷。"""
 
-    # 評估公告，先排除硬性不符，再確認未知與適用對象完整性。
+    # 評估公告，先排除過期與硬性不符，再確認未知與適用對象完整性。
     def evaluate(
         self,
         scholarship: Scholarship,
@@ -68,7 +83,9 @@ class EligibilityEvaluator:
     ) -> EligibilityDecision:
         title = _normalize_rule_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
-        exclusions = self._find_exclusions(title, text, profile)
+        exclusions = find_deadline_exclusions(scholarship, text)
+        exclusions.extend(self._find_exclusions(title, text, detail_text, profile))
+        exclusions = _deduplicate_reasons(exclusions)
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
         unknowns = self._find_unknowns(text, profile)
@@ -84,23 +101,26 @@ class EligibilityEvaluator:
             return EligibilityDecision(ELIGIBLE, tuple(dict.fromkeys(matches)))
         return EligibilityDecision(REVIEW, ("公告未提供足夠條件，暫不推播。",))
 
-    # 合併硬性限制、身分別名、畢業年級與既有排除規則。
+    # 主要辦法未解析時，正文雜訊不得產生硬性排除，標題限制仍保留。
     def _find_exclusions(
         self,
         title: str,
         text: str,
+        detail_text: str,
         profile: StudentProfile,
     ) -> list[str]:
-        exclusions = find_hard_exclusions(title, text, profile)
-        exclusions.extend(find_alias_exclusions(title, text, profile))
-        exclusions.extend(find_graduation_exclusions(title, text, profile))
-        exclusions.extend(find_exclusions(text, title, profile))
+        trusted_text = title if UNRESOLVED_ATTACHMENT_MARKER in detail_text else text
+        exclusions = find_hard_exclusions(title, trusted_text, profile)
+        exclusions.extend(find_alias_exclusions(title, trusted_text, profile))
+        exclusions.extend(find_graduation_exclusions(title, trusted_text, profile))
+        exclusions.extend(find_exclusions(trusted_text, title, profile))
         filtered = filter_missing_score_exclusions(exclusions, profile)
-        return list(dict.fromkeys(filtered))
+        return _deduplicate_reasons(filtered)
 
-    # 合併附件、個人資料缺值與既有待確認原因。
+    # 合併附件、全職學生、個人資料缺值與既有待確認原因。
     def _find_unknowns(self, text: str, profile: StudentProfile) -> list[str]:
         unknowns = find_unknowns(text, profile)
         unknowns = _filter_resolved_attachment_unknowns(text, unknowns)
+        unknowns.extend(find_runtime_unknowns(text, profile))
         unknowns.extend(find_safety_unknowns(text, profile))
         return list(dict.fromkeys(unknowns))
