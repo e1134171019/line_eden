@@ -34,58 +34,84 @@ class FakeService:
 # 建立不接觸網路與正式資料庫的 CLI 測試環境。
 def _patch_service(
     monkeypatch: Any,
-) -> tuple[FakeService, list[bool]]:
+) -> tuple[FakeService, list[tuple[bool, bool]]]:
     service = FakeService()
-    profile_flags: list[bool] = []
+    build_flags: list[tuple[bool, bool]] = []
 
-    # 記錄 CLI 是否要求載入私密背景。
-    def fake_build_service(profile_required: bool = True) -> FakeService:
-        profile_flags.append(profile_required)
+    # 記錄 CLI 是否要求載入私密背景與 Gemini。
+    def fake_build_service(
+        profile_required: bool = True,
+        use_gemini: bool = False,
+    ) -> FakeService:
+        build_flags.append((profile_required, use_gemini))
         return service
 
     monkeypatch.setattr(main, "build_service", fake_build_service)
     monkeypatch.setattr(main, "print_summary", lambda _: None)
     monkeypatch.setattr(main, "print_items", lambda *_: None)
     monkeypatch.setattr(main, "print_audit", lambda _: None)
-    return service, profile_flags
+    return service, build_flags
 
 
 # 驗證 dry-run 不檢查 LINE，但會載入個人背景。
 def test_dry_run_skips_line_validation(monkeypatch: Any) -> None:
-    service, profile_flags = _patch_service(monkeypatch)
+    service, build_flags = _patch_service(monkeypatch)
     monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
 
     main.main(["--dry-run"])
 
     assert service.calls == ["run:True"]
-    assert profile_flags == [True]
+    assert build_flags == [(True, False)]
 
 
-# 驗證 audit 不檢查 LINE，也會載入個人背景。
-def test_audit_skips_line_validation(monkeypatch: Any) -> None:
-    service, profile_flags = _patch_service(monkeypatch)
+# 驗證 audit 預設不檢查 LINE，也不啟用 Gemini。
+def test_audit_skips_line_and_gemini_validation(monkeypatch: Any) -> None:
+    service, build_flags = _patch_service(monkeypatch)
     monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
+    monkeypatch.setattr(
+        main,
+        "validate_gemini_settings",
+        lambda: pytest.fail("未指定時不應驗證 Gemini"),
+    )
 
     main.main(["--audit"])
 
     assert service.calls == ["audit"]
-    assert profile_flags == [True]
+    assert build_flags == [(True, False)]
+
+
+# 驗證明確指定 Gemini 時會驗證 API 設定並注入備援。
+def test_audit_with_gemini_validates_api_settings(monkeypatch: Any) -> None:
+    service, build_flags = _patch_service(monkeypatch)
+    validation_calls: list[str] = []
+    monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
+    monkeypatch.setattr(
+        main,
+        "validate_gemini_settings",
+        lambda: validation_calls.append("gemini"),
+    )
+
+    main.main(["--audit", "--use-gemini"])
+
+    assert validation_calls == ["gemini"]
+    assert service.calls == ["audit"]
+    assert build_flags == [(True, True)]
 
 
 # 驗證初始化基準不檢查 LINE，也不載入個人背景。
 def test_initialize_baseline_skips_private_settings(monkeypatch: Any) -> None:
-    service, profile_flags = _patch_service(monkeypatch)
+    service, build_flags = _patch_service(monkeypatch)
     monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
 
     main.main(["--initialize-baseline"])
 
     assert service.calls == ["initialize_baseline"]
-    assert profile_flags == [False]
+    assert build_flags == [(False, False)]
 
 
 # 驗證正式模式檢查 LINE 並載入個人背景。
 def test_live_mode_validates_line_settings(monkeypatch: Any) -> None:
-    service, profile_flags = _patch_service(monkeypatch)
+    service, build_flags = _patch_service(monkeypatch)
     validation_calls: list[str] = []
     monkeypatch.setattr(main, "validate_settings", lambda: validation_calls.append("validate"))
 
@@ -93,7 +119,7 @@ def test_live_mode_validates_line_settings(monkeypatch: Any) -> None:
 
     assert validation_calls == ["validate"]
     assert service.calls == ["run:False"]
-    assert profile_flags == [True]
+    assert build_flags == [(True, False)]
 
 
 # 驗證三種安全模式不能同時使用。
@@ -102,3 +128,9 @@ def test_cli_modes_are_mutually_exclusive() -> None:
         main.parse_args(["--dry-run", "--initialize-baseline"])
     with pytest.raises(SystemExit):
         main.parse_args(["--dry-run", "--audit"])
+
+
+# 驗證建立基準時不能額外消耗 Gemini。
+def test_initialize_baseline_rejects_gemini() -> None:
+    with pytest.raises(SystemExit):
+        main.parse_args(["--initialize-baseline", "--use-gemini"])
