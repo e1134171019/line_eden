@@ -39,16 +39,50 @@ def _build_item(title: str) -> Scholarship:
     )
 
 
-# 驗證日間部限定公告會排除進修部學生。
+# 驗證日間部明確限定公告會排除進修部學生。
 def test_day_program_only_is_ineligible() -> None:
     decision = EligibilityEvaluator().evaluate(
-        _build_item("日間部學生獎學金"),
+        _build_item("學生獎學金"),
         "申請對象限本校日間部學生。",
         _build_profile(),
     )
 
     assert decision.status == INELIGIBLE
     assert "日間部" in decision.reason_text()
+
+
+# 驗證同時接受日間部與進修部時不會誤判排除。
+def test_day_and_evening_program_are_not_ineligible() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _build_item("全校學生獎學金"),
+        "本校日間部及進修部在校生均可申請。",
+        _build_profile(),
+    )
+
+    assert decision.status == ELIGIBLE
+
+
+# 驗證大學生與研究生均可申請時不會排除學士生。
+def test_undergraduate_and_graduate_are_not_ineligible() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _build_item("大專學生獎學金"),
+        "大學生及研究生均可申請，電子相關科系優先。",
+        _build_profile(),
+    )
+
+    assert decision.status == ELIGIBLE
+
+
+# 驗證研究所明確限定公告會排除學士生。
+def test_graduate_only_is_ineligible() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _build_item("研究獎學金"),
+        "申請對象限碩士班及博士班學生。",
+        _build_profile(),
+    )
+
+    assert decision.status == INELIGIBLE
+    assert "研究所" in decision.reason_text()
 
 
 # 驗證特定家庭身分公告會在背景不符時排除。
@@ -61,6 +95,17 @@ def test_special_status_mismatch_is_ineligible() -> None:
 
     assert decision.status == INELIGIBLE
     assert "癌友家庭子女" in decision.reason_text()
+
+
+# 驗證清寒只是優先條件時不會排除一般學生。
+def test_special_status_preference_is_not_ineligible() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _build_item("優秀學生獎學金"),
+        "大專院校在校生均可申請，清寒學生優先但不限清寒身分。",
+        _build_profile(),
+    )
+
+    assert decision.status == ELIGIBLE
 
 
 # 驗證電子電力領域且成績達標會判定適合。
@@ -80,6 +125,18 @@ def test_grade_below_threshold_is_ineligible() -> None:
     decision = EligibilityEvaluator().evaluate(
         _build_item("高成就獎學金"),
         "申請人學業平均成績 95 分以上。",
+        _build_profile(),
+    )
+
+    assert decision.status == INELIGIBLE
+    assert "95" in decision.reason_text()
+
+
+# 驗證「不得低於」文字也能解析成績門檻。
+def test_grade_not_lower_than_threshold_is_ineligible() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _build_item("高成就獎學金"),
+        "申請人平均成績不得低於 95 分。",
         _build_profile(),
     )
 
