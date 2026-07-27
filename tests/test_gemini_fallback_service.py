@@ -21,10 +21,12 @@ class FakeGeminiExtractor:
     def __init__(self) -> None:
         self.count_calls = 0
         self.extract_calls = 0
+        self.prepared_urls: list[str] = []
 
     # 回傳固定文件雜湊與兩頁裁切內容。
     def prepare_document(self, url: str) -> PreparedGeminiDocument:
-        return PreparedGeminiDocument(url, url, "hash-123", b"pdf", 2)
+        self.prepared_urls.append(url)
+        return PreparedGeminiDocument(url, url, f"hash-{url}", b"pdf", 2)
 
     # 回傳固定輸入 Token 預估。
     def count_tokens(self, title: str, document: PreparedGeminiDocument) -> int:
@@ -47,7 +49,7 @@ class FakeGeminiExtractor:
 
 
 # 建立包含掃描型 PDF 失敗診斷的公告擷取結果。
-def _scanned_fetch_result() -> DetailFetchResult:
+def _scanned_fetch_result(role: str = "unknown") -> DetailFetchResult:
     source = ResourceDiagnostic(
         "source",
         "https://example.com/notice",
@@ -69,6 +71,7 @@ def _scanned_fetch_result() -> DetailFetchResult:
         "error",
         0,
         "ValueError: PDF 沒有可擷取文字，可能是掃描檔",
+        role,
     )
     return DetailFetchResult("申請資格請參閱附件。", source, (attachment,), 1)
 
@@ -85,11 +88,14 @@ def test_scanned_pdf_uses_gemini_once_then_cache(tmp_path: Path) -> None:
     extractor = FakeGeminiExtractor()
     service = _service(tmp_path, extractor)
 
-    first = service.analyze("能源工程獎學金", _scanned_fetch_result())
-    second = service.analyze("能源工程獎學金", _scanned_fetch_result())
+    first = service.analyze("能源工程獎學金", _scanned_fetch_result("rules"))
+    second = service.analyze("能源工程獎學金", _scanned_fetch_result("rules"))
 
     assert first is not None and "學業平均80分以上" in first.rule_text
+    assert first.diagnostic.extracted_fields
+    assert first.diagnostic.evidence == ("第1頁：電子工程相關科系，平均八十分以上",)
     assert second is not None and second.diagnostic.cache_hit is True
+    assert second.diagnostic.extracted_fields
     assert extractor.count_calls == 1
     assert extractor.extract_calls == 1
     assert service.usage_summary().calls == 1
@@ -116,10 +122,46 @@ def test_budget_limit_skips_all_gemini_api_calls(tmp_path: Path) -> None:
     extractor = FakeGeminiExtractor()
     service = _service(tmp_path, extractor, max_calls=0)
 
-    result = service.analyze("能源工程獎學金", _scanned_fetch_result())
+    result = service.analyze("能源工程獎學金", _scanned_fetch_result("rules"))
 
     assert result is not None
     assert result.rule_text == ""
     assert result.diagnostic.status == "budget_skipped"
     assert extractor.count_calls == 0
     assert extractor.extract_calls == 0
+
+
+# 主要辦法與證明文件皆為掃描檔時，Gemini 必須選主要辦法。
+def test_rules_pdf_is_prioritized_over_supporting_document(tmp_path: Path) -> None:
+    extractor = FakeGeminiExtractor()
+    service = _service(tmp_path, extractor)
+    source = _scanned_fetch_result().source
+    supporting = ResourceDiagnostic(
+        "attachment", "https://example.com/proof.pdf", "", "application/pdf",
+        500, "pdf", "error", 0, "掃描檔", "supporting_document",
+    )
+    rules = ResourceDiagnostic(
+        "attachment", "https://example.com/rules.pdf", "", "application/pdf",
+        1000, "pdf", "error", 0, "掃描檔", "rules",
+    )
+    result = DetailFetchResult("申請資格請參閱附件。", source, (supporting, rules), 2)
+
+    fallback = service.analyze("能源工程獎學金", result)
+
+    assert fallback is not None
+    assert extractor.prepared_urls == ["https://example.com/rules.pdf"]
+
+
+# 只有次要證明文件為掃描檔時，不得浪費 Gemini 額度。
+def test_supporting_document_alone_does_not_use_gemini(tmp_path: Path) -> None:
+    extractor = FakeGeminiExtractor()
+    service = _service(tmp_path, extractor)
+
+    fallback = service.analyze(
+        "一般獎學金",
+        _scanned_fetch_result("supporting_document"),
+    )
+
+    assert fallback is None
+    assert extractor.prepared_urls == []
+    assert service.usage_summary().calls == 0
