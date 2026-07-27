@@ -5,6 +5,7 @@ import sys
 from typing import Callable
 
 from config import (
+    CIP_SCHOLARSHIP_URL,
     DATA_DIR,
     GEMINI_API_KEY,
     GEMINI_CACHE_DB_FILENAME,
@@ -25,7 +26,11 @@ from config import (
     MAX_ATTACHMENT_COUNT,
     MAX_DOWNLOAD_BYTES,
     MAX_PDF_PAGES,
+    MOE_EU_SCHOLARSHIP_URL,
+    MOE_OVERSEAS_SCHOLARSHIP_URL,
+    MOE_TOP100_SCHOLARSHIP_URL,
     NOTIFY_REVIEW_ITEMS,
+    OFFICIAL_SOURCE_COUNT,
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
@@ -35,6 +40,8 @@ from config import (
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtractor
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
+from src.collectors.multi_source_collector import CollectorSource, MultiSourceCollector
+from src.collectors.official_announcement_collector import OfficialAnnouncementCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.formatters.audit_diagnostic_formatter import build_fetch_diagnostic_lines
 from src.models.scholarship import Scholarship
@@ -65,7 +72,7 @@ def configure_console_output() -> None:
 
 # 解析命令列參數，Gemini 必須由使用者明確啟用。
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
+    parser = argparse.ArgumentParser(description="Scholarship Agent 多來源階段")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="評估適合度但不傳 LINE")
     modes.add_argument("--audit", action="store_true", help="重新稽核全部公告但不改獎學金狀態")
@@ -99,20 +106,77 @@ def build_notifier() -> Callable[[str], None]:
     return _notify
 
 
+# 建立五個官方來源；順序同時代表跨來源重複時的保留優先序。
+def _build_collector() -> MultiSourceCollector:
+    common = {
+        "timeout_seconds": HTTP_TIMEOUT_SECONDS,
+        "user_agent": HTTP_USER_AGENT,
+    }
+    sources = [
+        CollectorSource(
+            "lhu",
+            "龍華科技大學",
+            LhuCollector(LHU_SCHOLARSHIP_URL, **common),
+        ),
+        CollectorSource(
+            "moe-overseas",
+            "教育部留學獎學金",
+            OfficialAnnouncementCollector(
+                "moe-overseas",
+                "教育部留學獎學金",
+                MOE_OVERSEAS_SCHOLARSHIP_URL,
+                **common,
+                link_keywords=("獎學金", "甄選", "簡章", "報名", "資格", "錄取", "申請"),
+            ),
+        ),
+        CollectorSource(
+            "moe-eu",
+            "教育部歐盟獎學金",
+            OfficialAnnouncementCollector(
+                "moe-eu",
+                "教育部歐盟獎學金",
+                MOE_EU_SCHOLARSHIP_URL,
+                **common,
+                link_keywords=("獎學金", "甄選", "簡章", "報名", "資格", "錄取", "申請"),
+            ),
+        ),
+        CollectorSource(
+            "moe-top100",
+            "教育部世界百大合作獎學金",
+            OfficialAnnouncementCollector(
+                "moe-top100",
+                "教育部世界百大合作獎學金",
+                MOE_TOP100_SCHOLARSHIP_URL,
+                **common,
+                link_keywords=("獎學金", "甄選", "簡章", "報名", "資格", "錄取", "申請"),
+            ),
+        ),
+        CollectorSource(
+            "cip",
+            "原民會大專校院獎助學金",
+            OfficialAnnouncementCollector(
+                "cip",
+                "原民會大專校院獎助學金",
+                CIP_SCHOLARSHIP_URL,
+                **common,
+                link_keywords=("獎學金", "助學金", "獎助", "申請", "名額", "公告"),
+            ),
+        ),
+    ]
+    if len(sources) != OFFICIAL_SOURCE_COUNT:
+        raise RuntimeError("官方來源數量與設定不一致")
+    return MultiSourceCollector(sources)
+
+
 # 建立公告蒐集、資料庫、資格判斷與通知服務。
 def build_service(
     profile_required: bool = True,
     use_gemini: bool = False,
 ) -> ScholarshipService:
-    collector = LhuCollector(
-        LHU_SCHOLARSHIP_URL,
-        HTTP_TIMEOUT_SECONDS,
-        HTTP_USER_AGENT,
-    )
     repository = ScholarshipRepository(DATA_DIR / SCHOLARSHIP_DB_FILENAME)
     profile = load_student_profile(PROFILE_PATH) if profile_required else None
     return ScholarshipService(
-        collector,
+        _build_collector(),
         repository,
         build_notifier(),
         include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
@@ -172,6 +236,16 @@ def execute_service(
     if args.audit:
         return service.audit()
     return service.run(dry_run=args.dry_run)
+
+
+# 顯示本次五個來源的成功、失敗與去重後筆數。
+def print_source_summary(service: ScholarshipService) -> None:
+    collector = service.collector
+    if not isinstance(collector, MultiSourceCollector):
+        return
+    print("官方來源狀態：")
+    for line in collector.summary_lines():
+        print(f"- {line}")
 
 
 # 印出蒐集、適合度、通知、基準化與 Gemini 用量摘要。
@@ -265,6 +339,7 @@ def main(argv: list[str] | None = None) -> None:
         use_gemini=args.use_gemini,
     )
     result = execute_service(args, service)
+    print_source_summary(service)
     if isinstance(result, AuditResult):
         print_audit(result)
         return
