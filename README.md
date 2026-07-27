@@ -22,6 +22,9 @@ scholarship-agent/
 │   │   ├── __init__.py
 │   │   ├── base_collector.py
 │   │   └── lhu_collector.py
+│   ├── formatters/
+│   │   ├── __init__.py
+│   │   └── scholarship_message_formatter.py
 │   ├── models/
 │   │   ├── __init__.py
 │   │   └── scholarship.py
@@ -136,8 +139,11 @@ python main.py
 
 - 驗證 `.env` 中的 LINE 設定。
 - 只推播 `baseline_at IS NULL` 且 `notified_at IS NULL` 的公告。
-- LINE 成功送出後才寫入 `notified_at`。
-- LINE 發送失敗時保留 pending，供下次重試。
+- 同一次有多筆公告時，會整理為摘要訊息。
+- 每則摘要最多列出 `config.py` 的 `LINE_SUMMARY_BATCH_SIZE` 筆公告。
+- 摘要中的每一筆公告都包含自己的標題、日期與網址。
+- LINE 成功送出後才寫入該批公告的 `notified_at`。
+- LINE 發送失敗時，失敗批次與後續公告保留 pending，供下次重試。
 
 正式執行前應先完成歷史基準，避免將所有舊公告當成待通知資料。
 
