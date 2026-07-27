@@ -34,3 +34,10 @@ def test_validate_gemini_rejects_inconsistent_token_budget(
 
     with pytest.raises(RuntimeError, match="單份 Gemini input token"):
         config.validate_gemini_settings()
+
+
+# 頁數上限屬於模型輸入範圍，必須納入快取提示版本。
+def test_gemini_prompt_version_contains_page_scope() -> None:
+    expected = f"pages-{config.GEMINI_MAX_PAGES_PER_DOCUMENT}"
+
+    assert config.GEMINI_PROMPT_VERSION.endswith(expected)
