@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 
+from collections.abc import Sequence
+
 from config import (
     HTTP_TIMEOUT_SECONDS,
     LINE_API_URL,
     LINE_CHANNEL_ACCESS_TOKEN,
     LINE_USER_ID,
+    OFFICIAL_SOURCE_COUNT,
     validate_gemini_settings,
     validate_settings,
 )
 from main import build_service
+from src.collectors.multi_source_collector import MultiSourceCollector
 from src.evaluators.eligibility_evaluator import ELIGIBLE
 from src.notifiers.line_notifier import send_text_message
 from src.services.scholarship_service import AuditResult
@@ -17,19 +21,25 @@ MAX_LINE_TEXT_LENGTH = 4800
 MAX_ELIGIBLE_ITEMS = 5
 
 
-def build_report_message(result: AuditResult) -> str:
-    """將真實稽核結果整理成單則 LINE 報告，只列明確符合項目。"""
+def build_report_message(
+    result: AuditResult,
+    source_lines: Sequence[str] = (),
+) -> str:
+    """將五個官方來源的真實稽核結果整理成單則 LINE 報告。"""
     lines = [
         "獎學金真實檢查報告",
-        "來源：龍華科技大學",
+        f"官方來源：{OFFICIAL_SOURCE_COUNT} 個",
         f"稽核公告：{len(result.records)}",
         f"明確適合：{result.eligible_count}",
         f"資格待確認：{result.review_count}（不推播）",
         f"明確不符合：{result.ineligible_count}",
         f"Gemini 生成呼叫：{result.gemini_calls}",
         f"Gemini 快取命中：{result.gemini_cache_hits}",
-        "",
     ]
+    if source_lines:
+        lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
+    lines.append("")
+
     eligible = [
         record.item
         for record in result.records
@@ -52,11 +62,16 @@ def build_report_message(result: AuditResult) -> str:
 
 
 def main() -> None:
-    """重新稽核真實公告並傳送 LINE，不修改 baseline 或 notified_at。"""
+    """重新稽核五個官方來源並傳送 LINE，不修改 baseline 或 notified_at。"""
     validate_settings()
     validate_gemini_settings()
-    result = build_service(profile_required=True, use_gemini=True).audit()
-    message = build_report_message(result)
+    service = build_service(profile_required=True, use_gemini=True)
+    result = service.audit()
+    collector = service.collector
+    source_lines = (
+        collector.summary_lines() if isinstance(collector, MultiSourceCollector) else []
+    )
+    message = build_report_message(result, source_lines)
     send_text_message(
         api_url=LINE_API_URL,
         channel_access_token=LINE_CHANNEL_ACCESS_TOKEN,
