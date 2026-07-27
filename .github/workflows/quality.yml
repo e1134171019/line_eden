@@ -41,4 +41,20 @@ jobs:
         run: python -m ruff check .
 
       - name: Run tests
-        run: python -m pytest tests/ -x -q --tb=short --cov=src --cov-report=term-missing
+        shell: bash
+        run: |
+          log_file="pytest-${{ matrix.python-version }}.log"
+          set +e
+          python -m pytest tests/ -x -q --tb=short --cov=src --cov-report=term-missing > "$log_file" 2>&1
+          status=$?
+          cat "$log_file"
+          exit $status
+
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-${{ matrix.python-version }}
+          path: pytest-${{ matrix.python-version }}.log
+          if-no-files-found: error
+          retention-days: 7
