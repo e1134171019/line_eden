@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
+from typing import Callable
+
+import pytest
 
 from src.collectors.base_collector import BaseCollector
 from src.models.scholarship import Scholarship
@@ -9,6 +12,8 @@ from src.services.scholarship_service import ScholarshipService
 
 
 class FakeCollector(BaseCollector):
+    """回傳測試指定公告的蒐集器。"""
+
     # 初始化測試用固定公告資料。
     def __init__(self, items: list[Scholarship]) -> None:
         self.items = items
@@ -28,55 +33,94 @@ def _build_item(index: int) -> Scholarship:
     )
 
 
-# 驗證 dry-run 僅顯示結果且不觸發通知或寫入。
-def test_service_dry_run_no_notify_no_write(tmp_path: Path) -> None:
-    items = [_build_item(1), _build_item(2)]
-    collector = FakeCollector(items)
-    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+# 建立測試服務與暫存資料庫。
+def _build_service(
+    tmp_path: Path,
+    items: list[Scholarship],
+    notifier: Callable[[str], None],
+) -> tuple[ScholarshipService, ScholarshipRepository]:
+    repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    service = ScholarshipService(FakeCollector(items), repository, notifier)
+    return service, repository
+
+
+# 驗證重複 dry-run 仍保留相同待通知公告且不通知。
+def test_service_repeated_dry_run_keeps_pending(tmp_path: Path) -> None:
     sent_messages: list[str] = []
-    service = ScholarshipService(collector, repo, sent_messages.append)
+    service, repository = _build_service(
+        tmp_path,
+        [_build_item(1), _build_item(2)],
+        sent_messages.append,
+    )
 
-    result = service.run(dry_run=True)
+    first_result = service.run(dry_run=True)
+    second_result = service.run(dry_run=True)
 
-    assert len(result.collected) == 2
-    assert len(result.new_items) == 2
-    assert repo.is_empty()
+    assert len(first_result.pending_items) == 2
+    assert len(second_result.pending_items) == 2
+    assert len(repository.list_pending()) == 2
     assert sent_messages == []
 
 
-# 驗證首次大量新公告只送一則摘要通知。
-def test_service_first_run_send_summary_once(tmp_path: Path) -> None:
-    items = [_build_item(1), _build_item(2), _build_item(3)]
-    collector = FakeCollector(items)
-    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+# 驗證初始化基準後不再有待通知歷史公告。
+def test_service_initialize_baseline_clears_pending(tmp_path: Path) -> None:
+    service, repository = _build_service(
+        tmp_path,
+        [_build_item(1), _build_item(2), _build_item(3)],
+        lambda _: None,
+    )
+
+    result = service.initialize_baseline()
+
+    assert result.baseline_count == 3
+    assert result.pending_items == []
+    assert repository.list_pending() == []
+
+
+# 驗證基準建立後新增公告會成為唯一待通知資料。
+def test_service_new_item_after_baseline_is_pending(tmp_path: Path) -> None:
+    old_item = _build_item(1)
+    service, repository = _build_service(tmp_path, [old_item], lambda _: None)
+    service.initialize_baseline()
+
+    new_item = _build_item(2)
+    next_service = ScholarshipService(
+        FakeCollector([old_item, new_item]),
+        repository,
+        lambda _: None,
+    )
+    result = next_service.run(dry_run=True)
+
+    assert [item.content_hash for item in result.pending_items] == [new_item.content_hash]
+
+
+# 驗證 LINE 成功後才移除待通知狀態。
+def test_service_live_success_marks_notified(tmp_path: Path) -> None:
     sent_messages: list[str] = []
-    service = ScholarshipService(collector, repo, sent_messages.append)
+    item = _build_item(1)
+    service, repository = _build_service(tmp_path, [item], sent_messages.append)
 
     result = service.run(dry_run=False)
 
     assert result.notified_count == 1
     assert len(sent_messages) == 1
-    assert "首次同步摘要" in sent_messages[0]
+    assert repository.list_pending() == []
 
 
-# 驗證非首次執行只通知新進公告。
-def test_service_notify_only_new_items(tmp_path: Path) -> None:
-    old_item = _build_item(1)
-    new_item = _build_item(2)
-    first_collector = FakeCollector([old_item])
-    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
-    first_service = ScholarshipService(first_collector, repo, lambda _: None)
-    first_service.run(dry_run=False)
+# 驗證 LINE 失敗時公告仍維持待通知。
+def test_service_live_failure_keeps_pending(tmp_path: Path) -> None:
+    item = _build_item(1)
 
-    sent_messages: list[str] = []
-    second_collector = FakeCollector([old_item, new_item])
-    second_service = ScholarshipService(second_collector, repo, sent_messages.append)
+    # 模擬外部 LINE API 發生錯誤。
+    def failed_notifier(_: str) -> None:
+        raise RuntimeError("LINE API error")
 
-    result = second_service.run(dry_run=False)
+    service, repository = _build_service(tmp_path, [item], failed_notifier)
 
-    assert result.notified_count == 1
-    assert len(result.new_items) == 1
-    assert "公告 2" in sent_messages[0]
+    with pytest.raises(RuntimeError, match="LINE API error"):
+        service.run(dry_run=False)
+
+    assert [pending.content_hash for pending in repository.list_pending()] == [item.content_hash]
 
 
 # 驗證關鍵字過濾只保留目標公告。
@@ -93,11 +137,10 @@ def test_service_filter_by_keywords(tmp_path: Path) -> None:
         "2026-07-01",
         "https://example.com/drop",
     )
-    collector = FakeCollector([keep_item, drop_item])
-    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     service = ScholarshipService(
-        collector,
-        repo,
+        FakeCollector([keep_item, drop_item]),
+        repository,
         lambda _: None,
         include_keywords=("獎學金", "助學金"),
     )
@@ -105,5 +148,5 @@ def test_service_filter_by_keywords(tmp_path: Path) -> None:
     result = service.run(dry_run=True)
 
     assert len(result.collected) == 1
-    assert len(result.new_items) == 1
+    assert len(result.pending_items) == 1
     assert result.collected[0].title == "2026 優秀學生獎學金"
