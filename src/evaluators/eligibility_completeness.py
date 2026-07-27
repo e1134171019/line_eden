@@ -84,12 +84,16 @@ def _degree_exclusions(title: str, text: str, profile: StudentProfile) -> list[s
     if profile.degree_level != "學士":
         return []
     graduate_terms = ("博士生", "博士班", "碩士生", "碩士班", "研究生", "碩博士")
+    bachelor_terms = ("大學生", "大學部", "學士班", "大專學生", "大專在校生")
     awards = ("獎學金", "助學金", "補助", "申請", "獎勵")
-    title_limited = any(term in title for term in graduate_terms) and any(
-        award in title for award in awards
+    title_limited = (
+        any(term in title for term in graduate_terms)
+        and not any(term in title for term in bachelor_terms)
+        and any(award in title for award in awards)
     )
     text_limited = any(
         _sentence_requires_group(sentence, graduate_terms)
+        and not any(term in sentence for term in bachelor_terms)
         for sentence in _sentences(text)
     )
     if title_limited or text_limited:
