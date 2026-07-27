@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 import main
-from src.services.scholarship_service import ServiceResult
+from src.services.scholarship_service import AuditResult, ServiceResult
 
 
 @dataclass
@@ -25,6 +25,11 @@ class FakeService:
         self.calls.append("initialize_baseline")
         return ServiceResult([], [], 0, 0, "完成")
 
+    # 模擬全部公告稽核。
+    def audit(self) -> AuditResult:
+        self.calls.append("audit")
+        return AuditResult([], 0, 0, 0, "完成")
+
 
 # 建立不接觸網路與正式資料庫的 CLI 測試環境。
 def _patch_service(
@@ -41,6 +46,7 @@ def _patch_service(
     monkeypatch.setattr(main, "build_service", fake_build_service)
     monkeypatch.setattr(main, "print_summary", lambda _: None)
     monkeypatch.setattr(main, "print_items", lambda *_: None)
+    monkeypatch.setattr(main, "print_audit", lambda _: None)
     return service, profile_flags
 
 
@@ -52,6 +58,17 @@ def test_dry_run_skips_line_validation(monkeypatch: Any) -> None:
     main.main(["--dry-run"])
 
     assert service.calls == ["run:True"]
+    assert profile_flags == [True]
+
+
+# 驗證 audit 不檢查 LINE，也會載入個人背景。
+def test_audit_skips_line_validation(monkeypatch: Any) -> None:
+    service, profile_flags = _patch_service(monkeypatch)
+    monkeypatch.setattr(main, "validate_settings", lambda: pytest.fail("不應驗證 LINE"))
+
+    main.main(["--audit"])
+
+    assert service.calls == ["audit"]
     assert profile_flags == [True]
 
 
@@ -79,7 +96,9 @@ def test_live_mode_validates_line_settings(monkeypatch: Any) -> None:
     assert profile_flags == [True]
 
 
-# 驗證 dry-run 與基準初始化不能同時使用。
+# 驗證三種安全模式不能同時使用。
 def test_cli_modes_are_mutually_exclusive() -> None:
     with pytest.raises(SystemExit):
         main.parse_args(["--dry-run", "--initialize-baseline"])
+    with pytest.raises(SystemExit):
+        main.parse_args(["--dry-run", "--audit"])
