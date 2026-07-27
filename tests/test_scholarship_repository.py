@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 
@@ -41,7 +42,7 @@ def test_repository_baseline_state(tmp_path: Path) -> None:
 
     assert marked == 1
     assert repo.list_pending() == []
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         row = conn.execute(
             "SELECT baseline_at, notified_at FROM scholarships WHERE content_hash = ?",
             [item.content_hash],
