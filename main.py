@@ -234,9 +234,9 @@ def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
     print(f"  Gemini來源：{diagnostic.source_url}")
 
 
-# 顯示本次執行的 Gemini 實際 API 次數與 Token。
+# 顯示本次執行的 Gemini 生成次數與實際 Token。
 def _print_gemini_usage(result: object) -> None:
-    print(f"Gemini API 呼叫：{result.gemini_calls}")
+    print(f"Gemini 生成呼叫：{result.gemini_calls}")
     print(f"Gemini 快取命中：{result.gemini_cache_hits}")
     print(f"Gemini input tokens：{result.gemini_input_tokens}")
     print(f"Gemini output tokens：{result.gemini_output_tokens}")
