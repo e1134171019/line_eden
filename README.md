@@ -21,6 +21,8 @@
 
 ## Windows PowerShell 安裝
 
+正式執行環境：
+
 ```powershell
 cd C:/scholarship-agent
 python -m venv .venv
@@ -28,6 +30,14 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 & "./.venv/Scripts/Activate.ps1"
 python -m pip install -r requirements.txt
 ```
+
+開發與測試環境改用：
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
+`requirements.txt` 只保留正式執行需要的套件；pytest、coverage 與 Ruff 集中在 `requirements-dev.txt`。
 
 ## LINE 私密設定
 
@@ -66,19 +76,42 @@ code profile.json
   "conduct_grade": 85,
   "class_rank": 1,
   "class_size": 20,
-  "residence": "",
+  "residence": "新北市",
   "special_statuses": [],
   "research_keywords": ["電子", "電力", "能源"]
 }
 ```
 
-## 執行測試
+## 本機品質檢查
 
 ```powershell
-python -m pytest tests/
+python -m ruff check .
+python -m pytest tests/ --cov=src --cov-report=term-missing
 ```
 
 測試使用暫存資料庫與模擬 LINE 回應，不會呼叫真實 LINE API，也不會修改 `data/` 正式資料庫。
+
+## GitHub 自動檢查
+
+`.github/workflows/quality.yml` 會在 push 與 Pull Request 時，使用 Python 3.11、3.13 執行：
+
+```text
+安裝 requirements-dev.txt
+→ Ruff 靜態檢查
+→ pytest + coverage
+```
+
+`.github/dependabot.yml` 每週檢查 pip 與 GitHub Actions 依賴更新。
+
+建議在 GitHub 的 `Settings → Branches` 對 `main` 啟用：
+
+- Require a pull request before merging
+- Require status checks to pass before merging
+- 將 `test (3.11)`、`test (3.13)` 設為必要檢查
+- Block force pushes
+- Block branch deletion
+
+這些倉庫管理設定需要由 GitHub 網頁啟用，程式檔案本身無法代替 Branch Protection。
 
 ## Dry-run：先看哪些公告會被推播
 
@@ -130,20 +163,32 @@ python main.py
 - 研究所、非大專、新生或應屆畢業等明確年級限制。
 - 公告明確排除進修部或在職學生。
 - 特定家庭或法定身分與背景不符。
-- 學業平均或操行成績未達門檻。
+- 學業平均、操行成績或班級排名未達門檻。
+- 戶籍限制與 `profile.json` 不符。
+
+已降低的常見誤判：
+
+- 「日間部及進修部皆可申請」不會因出現日間部而排除。
+- 「大學生及研究生皆可申請」不會因出現研究生而排除。
+- 「清寒學生優先，非清寒亦可」不會把清寒誤當必要資格。
+- 支援「不得低於」「至少」「須達」等成績門檻句型。
+- 支援班排名前 N 名、前 N% 與臺／台異體字戶籍比對。
 
 可確認正向匹配：
 
 - 就讀學校或科系明確相符。
 - 電子、電機、電力、能源等背景關鍵字相符。
-- 一般大專在校生條件且未發現排除條件。
-- 優秀學生型獎學金且成績達基本方向。
+- 一般大專在校生條件且未發現明確排除條件。
+- 成績、排名、戶籍或進修部資格明確符合。
+
+匿名化規則案例集中在 `tests/fixtures/eligibility_cases.json`，新增規則或修正網站解析時應同步補案例。
 
 目前尚未解析 PDF、Word 等附件內容；附件是唯一資格來源時會標為 `review`，不會直接推播。
 
 ## 安全檢查
 
 ```powershell
+python -m ruff check .
 python -m pytest tests/
 python main.py --dry-run
 git status --ignored
