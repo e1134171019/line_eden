@@ -41,6 +41,27 @@ def test_extract_deadline_uses_published_year() -> None:
     assert deadline == date(2026, 7, 24)
 
 
+# 民國斜線日期範圍應取申請期間的結束日。
+def test_extract_deadline_supports_roc_slash_range() -> None:
+    text = "申請期間：115/03/10~115/04/20，請至協會網站登錄提出申請。"
+
+    assert extract_application_deadline(text, "2026-03-19") == date(2026, 4, 20)
+
+
+# 活動或輔導結束日不得冒充申請截止日。
+def test_non_application_activity_date_is_ignored() -> None:
+    text = "申請時間：即日起至額滿為止。職涯輔導時間：115年3月至6月12日止。"
+
+    assert extract_application_deadline(text, "2026-03-05") is None
+
+
+# 多個時程應優先選擇申請人必須完成動作的最早截止日。
+def test_applicant_deadline_precedes_school_review_date() -> None:
+    text = "線上申請自115年4月1日至4月20日止。校方覆核至5月22日止。"
+
+    assert extract_application_deadline(text, "2026-03-19") == date(2026, 4, 20)
+
+
 # 截止日已過時不得再成為推播候選。
 def test_expired_application_is_ineligible() -> None:
     reasons = find_deadline_exclusions(
