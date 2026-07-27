@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from src.ai.gemini_requirement_extractor import (
+    GeminiApiResult,
     GeminiRequirementExtraction,
     GeminiRequirementExtractor,
+    PreparedGeminiDocument,
 )
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.repositories.gemini_cache_repository import GeminiCacheEntry, GeminiCacheRepository
@@ -55,9 +57,13 @@ class GeminiUsageLimiter:
         self.input_tokens = 0
         self.output_tokens = 0
 
+    # 在 count_tokens 前先判斷是否仍有任何生成額度。
+    def has_capacity(self) -> bool:
+        return self.calls < self.max_calls and self.input_tokens < self.max_input_tokens
+
     # 在生成前預留一次呼叫與估算輸入 Token。
     def reserve(self, estimated_tokens: int) -> bool:
-        if self.calls >= self.max_calls:
+        if not self.has_capacity():
             return False
         if self.input_tokens + estimated_tokens > self.max_input_tokens:
             return False
@@ -116,6 +122,8 @@ class GeminiFallbackService:
         cached = self.cache.get(cache_key)
         if cached is not None:
             return self._cached_result(cached, document.selected_pages)
+        if not self.limiter.has_capacity():
+            return self._budget_skipped(document)
         return self._call_gemini(title, cache_key, document)
 
     # 回傳本次執行的呼叫、快取與 Token 統計。
@@ -123,14 +131,20 @@ class GeminiFallbackService:
         return self.limiter.summary()
 
     # Token 計數通過預算後才真正呼叫生成 API。
-    def _call_gemini(self, title: str, cache_key: str, document: object) -> GeminiFallbackResult:
+    def _call_gemini(
+        self,
+        title: str,
+        cache_key: str,
+        document: PreparedGeminiDocument,
+    ) -> GeminiFallbackResult:
+        if not self.limiter.has_capacity():
+            return self._budget_skipped(document)
         try:
             estimated = self.extractor.count_tokens(title, document)
         except Exception as error:
             return self._failure(document.requested_url, document.selected_pages, error)
         if not self.limiter.reserve(estimated):
-            message = "已達本次 Gemini 呼叫或輸入 Token 上限，維持 review。"
-            return self._diagnostic_result("budget_skipped", document, 0, 0, 0, message)
+            return self._budget_skipped(document)
         try:
             api_result = self.extractor.extract(title, document)
         except Exception as error:
@@ -178,7 +192,12 @@ class GeminiFallbackService:
         return GeminiFallbackResult(_usable_rule_text(extraction), diagnostic)
 
     # 建立本次 API 成功但可能仍不足的結果。
-    def _extraction_result(self, extraction: object, document: object, api_result: object) -> GeminiFallbackResult:
+    def _extraction_result(
+        self,
+        extraction: GeminiRequirementExtraction,
+        document: PreparedGeminiDocument,
+        api_result: GeminiApiResult,
+    ) -> GeminiFallbackResult:
         diagnostic = _usable_diagnostic(
             extraction,
             document.final_url,
@@ -192,7 +211,12 @@ class GeminiFallbackService:
         return GeminiFallbackResult(_usable_rule_text(extraction), diagnostic)
 
     # 保存模型回傳 JSON 與實際 Token，快取內容不含 profile.json。
-    def _save_success(self, cache_key: str, document: object, api_result: object) -> None:
+    def _save_success(
+        self,
+        cache_key: str,
+        document: PreparedGeminiDocument,
+        api_result: GeminiApiResult,
+    ) -> None:
         entry = GeminiCacheEntry(
             cache_key,
             document.document_hash,
@@ -209,7 +233,13 @@ class GeminiFallbackService:
         self.cache.save(entry)
 
     # 保存已消耗呼叫但失敗的結果，避免每次執行重複花費。
-    def _save_error(self, cache_key: str, document: object, tokens: int, error: Exception) -> None:
+    def _save_error(
+        self,
+        cache_key: str,
+        document: PreparedGeminiDocument,
+        tokens: int,
+        error: Exception,
+    ) -> None:
         entry = GeminiCacheEntry(
             cache_key,
             document.document_hash,
@@ -240,11 +270,16 @@ class GeminiFallbackService:
         )
         return GeminiFallbackResult("", diagnostic)
 
+    # 建立預算已用完的診斷，且不再呼叫 count_tokens。
+    def _budget_skipped(self, document: PreparedGeminiDocument) -> GeminiFallbackResult:
+        message = "已達本次 Gemini 呼叫或輸入 Token 上限，維持 review。"
+        return self._diagnostic_result("budget_skipped", document, 0, 0, 0, message)
+
     # 建立預算跳過等不含資格文字的診斷。
     def _diagnostic_result(
         self,
         status: str,
-        document: object,
+        document: PreparedGeminiDocument,
         input_tokens: int,
         output_tokens: int,
         total_tokens: int,
