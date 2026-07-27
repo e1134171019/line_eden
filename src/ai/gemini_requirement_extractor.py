@@ -43,14 +43,14 @@ class GeminiRequirementExtraction(BaseModel):
 
     # 將結構化欄位轉成既有規則可判斷的中文資格句型。
     def to_rule_text(self) -> str:
-        lines = _list_rules("申請對象為", self.applicant_groups)
-        lines.extend(_list_rules("申請學位層級包含", self.degree_levels))
-        lines.extend(_list_rules("申請對象包含", self.program_types_included))
+        lines = _joined_rules("申請對象為", self.applicant_groups)
+        lines.extend(_joined_rules("申請對象限於", self.degree_levels))
+        lines.extend(_joined_rules("申請對象為", self.program_types_included, "學生"))
         lines.extend(_list_rules("不包括", self.program_types_excluded))
-        lines.extend(_list_rules("申請資格限相關科系：", self.departments_included))
+        lines.extend(_joined_rules("申請資格限於", self.departments_included, "相關科系"))
         lines.extend(_list_rules("不包括相關科系：", self.departments_excluded))
         lines.extend(self.year_requirements)
-        lines.extend(_list_rules("申請資格須具備", self.required_special_statuses))
+        lines.extend(_joined_rules("申請資格限於", self.required_special_statuses))
         lines.extend(_score_rules(self.minimum_average_grade, self.minimum_conduct_grade))
         lines.extend(_optional_rules(self.rank_requirement, self.residence_requirement))
         lines.extend(_list_rules("不包括", self.explicit_exclusions))
@@ -191,7 +191,15 @@ def _build_prompt(title: str, selected_pages: int) -> str:
 """.strip()
 
 
-# 將同類清單欄位轉成簡短資格句。
+# 將同一欄位的多個可申請對象放在同一句，避免誤判成互斥限制。
+def _joined_rules(prefix: str, values: list[str], suffix: str = "") -> list[str]:
+    cleaned = [value.strip() for value in values if value.strip()]
+    if not cleaned:
+        return []
+    return [f"{prefix}{'及'.join(cleaned)}{suffix}"]
+
+
+# 將必須逐項保留的排除條件轉成簡短資格句。
 def _list_rules(prefix: str, values: list[str]) -> list[str]:
     return [f"{prefix}{value}" for value in values if value.strip()]
 
