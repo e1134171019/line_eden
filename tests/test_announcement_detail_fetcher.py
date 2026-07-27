@@ -2,7 +2,7 @@
 
 import pytest
 
-from config import ATTACHMENT_TEXT_MARKER
+from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 
 
@@ -85,6 +85,13 @@ def test_combine_text_marks_resolved_attachments() -> None:
 
     assert ATTACHMENT_TEXT_MARKER in text
     assert "附件資格內容" in text
+
+
+# 驗證有附件但沒有解析文字時加入安全標記。
+def test_unresolved_attachment_is_marked() -> None:
+    text = _fetcher()._mark_unresolved_attachments("公告正文", 1, [])
+
+    assert UNRESOLVED_ATTACHMENT_MARKER in text
 
 
 # 驗證找不到足夠正文時採失敗關閉。

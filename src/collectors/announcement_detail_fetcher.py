@@ -5,7 +5,7 @@ import re
 
 import httpx
 
-from config import ATTACHMENT_TEXT_MARKER
+from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.extractors.announcement_content_extractor import extract_announcement_text
 from src.extractors.attachment_link_extractor import extract_attachment_inventory
@@ -93,7 +93,19 @@ class AnnouncementDetailFetcher:
         diagnostics = tuple(diagnostic for _, diagnostic in results)
         source = self._success_diagnostic("source", requested_url, resource, "html", body)
         combined = self._combine_text(body, texts)
+        combined = self._mark_unresolved_attachments(combined, inventory.discovered_count, texts)
         return DetailFetchResult(combined, source, diagnostics, inventory.discovered_count)
+
+    # 有附件但沒有任何一份成功取出文字時加入安全標記。
+    def _mark_unresolved_attachments(
+        self,
+        text: str,
+        discovered_count: int,
+        attachment_texts: list[str],
+    ) -> str:
+        if discovered_count > 0 and not attachment_texts:
+            return f"{text}\n{UNRESOLVED_ATTACHMENT_MARKER}"
+        return text
 
     # 下載並解析單一附件，完整保留成功、忽略或錯誤原因。
     def _attachment_result(
