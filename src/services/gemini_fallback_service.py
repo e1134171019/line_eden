@@ -3,11 +3,13 @@
 from dataclasses import dataclass
 from hashlib import sha256
 
+from config import GEMINI_PARTIAL_EXCLUSION_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.ai.gemini_requirement_extractor import (
     GeminiApiResult,
     GeminiRequirementExtraction,
     GeminiRequirementExtractor,
     PreparedGeminiDocument,
+    RequirementEvidence,
 )
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.repositories.gemini_cache_repository import GeminiCacheEntry, GeminiCacheRepository
@@ -323,8 +325,16 @@ def _cache_key(document_hash: str, model: str, prompt_version: str) -> str:
     return sha256(payload).hexdigest()
 
 
-# 只有完整辦法、無需更多頁且具有證據時才產生規則文字。
+# 完整文件可提供全部規則；不完整文件只提供有頁碼證據的硬性排除。
 def _usable_rule_text(extraction: GeminiRequirementExtraction) -> str:
+    complete = _complete_rule_text(extraction)
+    if complete:
+        return complete
+    return _partial_exclusion_rule_text(extraction)
+
+
+# 只有完整辦法、無需更多頁且具有證據時才產生完整規則文字。
+def _complete_rule_text(extraction: GeminiRequirementExtraction) -> str:
     if extraction.document_type != "scholarship_rules":
         return ""
     if not extraction.criteria_complete or extraction.needs_more_pages:
@@ -334,7 +344,40 @@ def _usable_rule_text(extraction: GeminiRequirementExtraction) -> str:
     return extraction.to_rule_text()
 
 
-# 依結構化內容完整度建立成功或不足診斷。
+# 不完整文件只保留身分與明確排除，不輸出成績、學位或正向領域條件。
+def _partial_exclusion_rule_text(extraction: GeminiRequirementExtraction) -> str:
+    if extraction.document_type not in ("scholarship_rules", "other"):
+        return ""
+    if not extraction.evidence:
+        return ""
+    rules: list[str] = []
+    for value in extraction.required_special_statuses:
+        if _evidence_supports(value, extraction.evidence):
+            rules.append(f"申請資格限於{value}")
+    for value in extraction.program_types_excluded:
+        if _evidence_supports(value, extraction.evidence):
+            rules.append(f"不包括{value}")
+    for value in extraction.departments_excluded:
+        if _evidence_supports(value, extraction.evidence):
+            rules.append(f"不包括相關科系：{value}")
+    for value in extraction.explicit_exclusions:
+        if _evidence_supports(value, extraction.evidence):
+            rules.append(f"不包括{value}")
+    if not rules:
+        return ""
+    body = "。".join(dict.fromkeys(rules)) + "。"
+    return f"{UNRESOLVED_ATTACHMENT_MARKER}{GEMINI_PARTIAL_EXCLUSION_MARKER}{body}"
+
+
+# 欄位值必須實際出現在至少一條頁碼證據中，否則不得用於硬性排除。
+def _evidence_supports(value: str, evidence: list[RequirementEvidence]) -> bool:
+    target = "".join(value.split()).strip("。；;，,：:")
+    if not target:
+        return False
+    return any(target in "".join(item.text.split()) for item in evidence)
+
+
+# 依完整度區分完整抽取、部分硬性排除與資訊不足。
 def _usable_diagnostic(
     extraction: GeminiRequirementExtraction,
     source_url: str,
@@ -345,9 +388,17 @@ def _usable_diagnostic(
     output_tokens: int,
     total_tokens: int,
 ) -> GeminiAnalysisDiagnostic:
-    usable = bool(_usable_rule_text(extraction))
-    status = "cache" if cache_hit and usable else "success" if usable else "incomplete"
-    message = "已抽取完整資格條件。" if usable else "提供頁面不足或文件不是完整申請辦法。"
+    complete = bool(_complete_rule_text(extraction))
+    partial = bool(_partial_exclusion_rule_text(extraction))
+    if complete:
+        status = "cache" if cache_hit else "success"
+        message = "已抽取完整資格條件。"
+    elif partial:
+        status = "cache_partial_exclusion" if cache_hit else "partial_exclusion"
+        message = "條件尚未完整，但已取得有頁碼證據的硬性排除條件。"
+    else:
+        status = "incomplete"
+        message = "提供頁面不足或文件不是完整申請辦法。"
     return GeminiAnalysisDiagnostic(
         status,
         source_url,
@@ -388,6 +439,8 @@ def _extracted_fields(extraction: GeminiRequirementExtraction) -> tuple[str, ...
         fields.append(f"排名={extraction.rank_requirement}")
     if extraction.residence_requirement:
         fields.append(f"戶籍={extraction.residence_requirement}")
+    if extraction.application_deadline:
+        fields.append(f"截止日={extraction.application_deadline}")
     return tuple(fields)
 
 
