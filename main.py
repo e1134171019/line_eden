@@ -11,6 +11,7 @@ from config import (
     LINE_API_URL,
     LINE_CHANNEL_ACCESS_TOKEN,
     LINE_USER_ID,
+    LINE_SUMMARY_BATCH_SIZE,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
     validate_settings,
@@ -61,6 +62,7 @@ def build_service() -> ScholarshipService:
         repository,
         build_notifier(),
         include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
+        summary_batch_size=LINE_SUMMARY_BATCH_SIZE,
     )
 
 
