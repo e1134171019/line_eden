@@ -50,6 +50,7 @@ class Scholarship:
     source_url: str
     category: str
     content_hash: str
+    notice_kind: str = "unknown"
     eligibility_status: str = ""
     eligibility_reason: str = ""
 
