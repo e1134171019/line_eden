@@ -23,6 +23,15 @@ def _normalize_rule_text(text: str) -> str:
     return re.sub(r"(不得低於|至少|須達|需達|達)\s+(?=\d)", r"\1", normalized)
 
 
+# 補齊一般大專在校生的常見同義句型。
+def _add_general_college_match(text: str, matches: list[str]) -> None:
+    terms = ("大專院校在校生", "大專校院在校生")
+    if any(term in text for term in terms):
+        reason = "公告適用一般大專在校生，未發現明確排除條件。"
+        if reason not in matches:
+            matches.append(reason)
+
+
 @dataclass(frozen=True)
 class EligibilityDecision:
     """單筆公告對指定學生背景的資格判斷結果。"""
@@ -54,6 +63,7 @@ class EligibilityEvaluator:
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
+        _add_general_college_match(text, matches)
         if matches:
             return EligibilityDecision(ELIGIBLE, tuple(matches))
         return EligibilityDecision(REVIEW, ("公告未提供足夠條件，暫不推播。",))
