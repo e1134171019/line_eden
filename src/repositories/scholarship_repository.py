@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -48,13 +49,13 @@ class ScholarshipRepository:
             evaluated_at TEXT
         )
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(query)
             conn.commit()
 
     # 補齊舊版資料表缺少的狀態欄位。
     def _migrate_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             existing = self._column_names(conn)
             for name, definition in SCHEMA_COLUMNS.items():
                 if name not in existing:
@@ -80,7 +81,7 @@ class ScholarshipRepository:
 
     # 取得資料庫目前是否無任何公告資料。
     def is_empty(self) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute("SELECT COUNT(1) FROM scholarships").fetchone()
         return bool(row and row[0] == 0)
 
@@ -90,7 +91,7 @@ class ScholarshipRepository:
             return set()
         placeholders = ",".join(["?"] * len(content_hashes))
         query = f"SELECT content_hash FROM scholarships WHERE content_hash IN ({placeholders})"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             rows = conn.execute(query, content_hashes).fetchall()
         return {row[0] for row in rows}
 
@@ -104,7 +105,7 @@ class ScholarshipRepository:
             source, title, published_date, source_url, category, content_hash, discovered_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.executemany(query, rows)
             conn.commit()
         return max(cursor.rowcount, 0)
@@ -165,7 +166,7 @@ class ScholarshipRepository:
         query: str,
         params: list[str],
     ) -> list[Scholarship]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._to_scholarship(row) for row in rows]
 
@@ -196,7 +197,7 @@ class ScholarshipRepository:
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
         params = [status, reason, profile_hash, self._now_iso(), content_hash]
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(query, params)
             conn.commit()
         return max(cursor.rowcount, 0)
@@ -208,7 +209,7 @@ class ScholarshipRepository:
         WHERE profile_hash = ? AND eligibility_status = ?
           AND notified_at IS NULL AND baseline_at IS NULL
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(query, [profile_hash, status]).fetchone()
         return int(row[0]) if row else 0
 
@@ -229,7 +230,7 @@ class ScholarshipRepository:
             f"UPDATE scholarships SET {column} = ? "
             f"WHERE content_hash IN ({placeholders}) AND {column} IS NULL"
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.execute(query, [self._now_iso(), *content_hashes])
             conn.commit()
         return max(cursor.rowcount, 0)
