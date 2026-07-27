@@ -18,12 +18,12 @@ def test_build_fetch_diagnostic_lines() -> None:
         "attachment", "https://example.com/b.doc", "", "",
         0, "unknown", "error", 0, "ValueError: 不支援的附件格式",
     )
-    result = DetailFetchResult("正文", source, (success, failed), 2)
+    result = DetailFetchResult("正文", source, (success, failed), 4)
 
     lines = build_fetch_diagnostic_lines(result)
     output = "\n".join(lines)
 
-    assert "附件診斷：發現 2，成功 1，失敗 1" in output
+    assert "附件診斷：發現 4，嘗試 2，成功 1，失敗 1" in output
     assert "https://cdn.example.com/a.pdf" in output
     assert "application/pdf" in output
     assert "4.0 KiB" in output
@@ -42,4 +42,4 @@ def test_build_source_error_lines() -> None:
 
     assert "來源診斷：error" in output
     assert "來源錯誤：HTTPStatusError: 404 Not Found" in output
-    assert "附件診斷：發現 0，成功 0，失敗 0" in output
+    assert "附件診斷：發現 0，嘗試 0，成功 0，失敗 0" in output
