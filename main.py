@@ -12,6 +12,9 @@ from config import (
     LINE_CHANNEL_ACCESS_TOKEN,
     LINE_SUMMARY_BATCH_SIZE,
     LINE_USER_ID,
+    MAX_ATTACHMENT_COUNT,
+    MAX_DOWNLOAD_BYTES,
+    MAX_PDF_PAGES,
     NOTIFY_REVIEW_ITEMS,
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
@@ -77,13 +80,19 @@ def build_service(profile_required: bool = True) -> ScholarshipService:
     )
 
 
-# 需要個人化判斷時建立公告內頁擷取器。
+# 需要個人化判斷時建立正文、短網址與附件擷取器。
 def _build_detail_fetcher(
     profile_required: bool,
 ) -> AnnouncementDetailFetcher | None:
     if not profile_required:
         return None
-    return AnnouncementDetailFetcher(HTTP_TIMEOUT_SECONDS, HTTP_USER_AGENT)
+    return AnnouncementDetailFetcher(
+        HTTP_TIMEOUT_SECONDS,
+        HTTP_USER_AGENT,
+        MAX_ATTACHMENT_COUNT,
+        MAX_DOWNLOAD_BYTES,
+        MAX_PDF_PAGES,
+    )
 
 
 # 依命令列模式執行服務。
