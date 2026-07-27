@@ -10,6 +10,12 @@ from src.evaluators.eligibility_rules import (
     find_unknowns,
     normalize_text,
 )
+from src.evaluators.eligibility_safety_rules import (
+    filter_general_college_matches,
+    filter_missing_score_exclusions,
+    find_graduation_exclusions,
+    find_safety_unknowns,
+)
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.special_status_aliases import find_alias_exclusions
 from src.models.scholarship import Scholarship
@@ -24,15 +30,6 @@ INELIGIBLE = "ineligible"
 def _normalize_rule_text(text: str) -> str:
     normalized = normalize_text(text)
     return re.sub(r"(不得低於|至少|須達|需達|達)\s+(?=\d)", r"\1", normalized)
-
-
-# 補齊一般大專在校生的常見同義句型。
-def _add_general_college_match(text: str, matches: list[str]) -> None:
-    terms = ("大專院校在校生", "大專校院在校生")
-    if any(term in text for term in terms):
-        reason = "公告適用一般大專在校生，未發現明確排除條件。"
-        if reason not in matches:
-            matches.append(reason)
 
 
 # 附件已成功解析時，只移除「仍需參閱附件」這一項未知原因。
@@ -66,16 +63,34 @@ class EligibilityEvaluator:
     ) -> EligibilityDecision:
         title = normalize_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
-        exclusions = find_alias_exclusions(title, text, profile)
-        exclusions.extend(find_exclusions(text, title, profile))
+        exclusions = self._find_exclusions(title, text, profile)
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
-        unknowns = _filter_resolved_attachment_unknowns(text, find_unknowns(text, profile))
+        unknowns = self._find_unknowns(text, profile)
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
         matches = filter_contextual_matches(matches, title, detail_text, profile)
-        _add_general_college_match(text, matches)
+        matches = filter_general_college_matches(matches, text)
         if matches:
             return EligibilityDecision(ELIGIBLE, tuple(matches))
         return EligibilityDecision(REVIEW, ("公告未提供足夠條件，暫不推播。",))
+
+    # 合併既有規則、身分別名與畢業年級安全排除。
+    def _find_exclusions(
+        self,
+        title: str,
+        text: str,
+        profile: StudentProfile,
+    ) -> list[str]:
+        exclusions = find_alias_exclusions(title, text, profile)
+        exclusions.extend(find_graduation_exclusions(title, text, profile))
+        exclusions.extend(find_exclusions(text, title, profile))
+        return filter_missing_score_exclusions(exclusions, profile)
+
+    # 合併附件、個人資料缺值與既有待確認原因。
+    def _find_unknowns(self, text: str, profile: StudentProfile) -> list[str]:
+        unknowns = find_unknowns(text, profile)
+        unknowns = _filter_resolved_attachment_unknowns(text, unknowns)
+        unknowns.extend(find_safety_unknowns(text, profile))
+        return list(dict.fromkeys(unknowns))
