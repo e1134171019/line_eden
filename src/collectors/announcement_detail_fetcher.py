@@ -8,11 +8,7 @@ import httpx
 from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.extractors.announcement_content_extractor import extract_announcement_text
-from src.extractors.attachment_link_extractor import (
-    RULES,
-    AttachmentLinkInventory,
-    extract_attachment_inventory,
-)
+from src.extractors.attachment_link_extractor import RULES, extract_attachment_inventory
 from src.extractors.document_text_extractor import detect_document_kind, extract_document_text
 from src.models.scholarship import Scholarship
 
@@ -307,9 +303,10 @@ class AnnouncementDetailFetcher:
 
 # 判斷正文是否明示主要資格、辦法或相關資訊位於附件。
 def _body_requires_rules(text: str) -> bool:
-    subject = (
-        r"(?:申請資格|詳細資格|資格條件|申請條件|申請對象|申請辦法|"
-        r"相關資訊|相關助學金項目及內容)"
+    direct = (
+        r"(?:相關資訊|申請辦法|相關助學金項目及內容).{0,16}"
+        r"(?:請自行下載|自行下載|請參考附件|請參閱附件|詳見附件)"
     )
-    reference = r"(?:詳見|請參閱|請參考|請自行下載|自行下載|如|依).{0,8}(?:附件|附檔|下載)"
-    return bool(re.search(rf"{subject}.{{0,30}}{reference}", text))
+    subject = r"(?:申請資格|詳細資格|資格條件|申請條件|申請對象)"
+    reference = r"(?:詳見|請參閱|請參考|如|依).{0,8}(?:附件|附檔)"
+    return bool(re.search(direct, text) or re.search(rf"{subject}.{{0,30}}{reference}", text))
