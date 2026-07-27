@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
 from src.extractors.attachment_link_extractor import (
+    APPLICATION_FORM,
+    RULES,
+    SUPPORTING_DOCUMENT,
     extract_attachment_inventory,
     extract_attachment_links,
 )
@@ -53,16 +56,18 @@ def test_extracts_lhu_attachment_outside_smallest_text_root() -> None:
     </body>
     """
 
-    links = extract_attachment_links(
+    inventory = extract_attachment_inventory(
         html,
         "https://activity.lhu.edu.tw/p/404-1051-37683.php",
         "星隆獎學金",
         max_count=3,
     )
 
-    assert links == [
+    assert list(inventory.selected_urls) == [
         "https://activity.lhu.edu.tw/app/index.php?Action=downloadfile&file=abc",
     ]
+    assert inventory.selected_roles == (RULES,)
+    assert inventory.discovered_rules_count == 1
 
 
 # 驗證相同附件網址只保留一次。
@@ -101,4 +106,23 @@ def test_inventory_reports_total_and_selected_count() -> None:
     )
 
     assert inventory.discovered_count == 4
+    assert inventory.discovered_rules_count == 2
     assert len(inventory.selected_urls) == 2
+    assert inventory.selected_roles == (RULES, RULES)
+
+
+# 驗證證明與表單不會被誤認為主要資格辦法。
+def test_supporting_and_form_roles_are_separate() -> None:
+    html = """
+    <article><h1>獎學金</h1>
+      <a href="/rules.pdf">獎學金申請辦法.pdf</a>
+      <a href="/proof.docx">未領取其他獎學金證明書.docx</a>
+      <a href="/form.docx">獎學金申請表.docx</a>
+    </article>
+    """
+
+    inventory = extract_attachment_inventory(
+        html, "https://example.com/news/1", "獎學金", max_count=3,
+    )
+
+    assert inventory.selected_roles == (RULES, APPLICATION_FORM, SUPPORTING_DOCUMENT)
