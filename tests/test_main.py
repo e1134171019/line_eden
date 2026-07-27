@@ -14,6 +14,7 @@ class FakeService:
     """記錄 CLI 呼叫模式的測試服務。"""
 
     calls: list[str] = field(default_factory=list)
+    collector: object | None = None
 
     # 模擬一般服務執行。
     def run(self, dry_run: bool) -> ServiceResult:
