@@ -31,6 +31,7 @@ INCOMPATIBLE_DEPARTMENT_TERMS = (
     "財金",
     "中文",
     "外文",
+    "機械",
 )
 
 
