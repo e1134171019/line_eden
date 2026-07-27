@@ -20,22 +20,26 @@ OFFICIAL_SOURCE_CONFIGS = (
         "moe-helpdreams-private",
         "https://www.edu.tw/helpdreams/Grants.aspx?n=2BBF7170197CE7D3&sms=0A01A72AAB9E5CD4",
         ("Grants_Content.aspx",),
+        display_name="教育部圓夢助學網－民間團體",
     ),
     OfficialSourceConfig(
         "moe-helpdreams-government",
         "https://www.edu.tw/helpdreams/Grants.aspx?n=11EFF33070D6DF4B&sms=931FF851D2FB2128",
         ("Grants_Content.aspx",),
+        display_name="教育部圓夢助學網－政府機關",
     ),
     OfficialSourceConfig(
         "indigenous-grants",
         "https://cipgrant.fju.edu.tw/news",
         ("/news/view/",),
+        display_name="原住民族委員會大專校院獎助學金",
     ),
     OfficialSourceConfig(
         "moe-overseas-scholarships",
         "https://www.scholarship.moe.gov.tw/",
         ("/scholarship", "/eu/", "/top100/", "/studyabroad/"),
         "article, li, .item, .news, .card, .list-group-item",
+        "教育部留學獎學金",
     ),
 )
 
@@ -57,6 +61,11 @@ class LhuCollector(BaseCollector):
         )
         self.multi_source = MultiSourceCollector(collectors)
         return self.multi_source.collect()
+
+    def source_summary_lines(self) -> list[str]:
+        if self.multi_source is None:
+            return []
+        return self.multi_source.summary_lines()
 
     def _collect_lhu(self) -> list[Scholarship]:
         return self._parse_html(self._fetch_html())
@@ -106,6 +115,8 @@ class LhuCollector(BaseCollector):
 
 class _LhuOnlyCollector(BaseCollector):
     """避免 MultiSourceCollector 再次呼叫五來源入口。"""
+
+    source_label = "龍華科技大學"
 
     def __init__(self, owner: LhuCollector) -> None:
         self.owner = owner
