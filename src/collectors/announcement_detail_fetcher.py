@@ -55,18 +55,24 @@ class AnnouncementDetailFetcher:
     def _fetch_result(self, scholarship: Scholarship) -> DetailFetchResult:
         headers = {"User-Agent": self.user_agent}
         with httpx.Client(headers=headers, timeout=self.timeout_seconds, follow_redirects=True) as client:
-            resource = self._download(client, scholarship.source_url)
+            requested_url = scholarship.source_url
+            resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
             if kind != "unsupported":
-                return self._direct_document_result(resource, kind)
+                return self._direct_document_result(resource, kind, requested_url)
             if not self._is_html(resource):
                 raise ValueError("來源不是支援文件或 HTML")
-            return self._html_result(client, resource, scholarship.title)
+            return self._html_result(client, resource, scholarship.title, requested_url)
 
     # 建立直接 PDF 或 DOCX 來源的成功結果。
-    def _direct_document_result(self, resource: DownloadedResource, kind: str) -> DetailFetchResult:
+    def _direct_document_result(
+        self,
+        resource: DownloadedResource,
+        kind: str,
+        requested_url: str,
+    ) -> DetailFetchResult:
         text = self._document_text(resource)
-        source = self._success_diagnostic("source", resource.url, resource, kind, text)
+        source = self._success_diagnostic("source", requested_url, resource, kind, text)
         return DetailFetchResult(text, source, tuple(), 0)
 
     # 下載 HTML 正文並收集每個附件的解析診斷。
@@ -75,6 +81,7 @@ class AnnouncementDetailFetcher:
         client: httpx.Client,
         resource: DownloadedResource,
         title: str,
+        requested_url: str,
     ) -> DetailFetchResult:
         html = self._decode_html(resource)
         body = extract_announcement_text(html, title, resource.url)
@@ -82,7 +89,7 @@ class AnnouncementDetailFetcher:
         results = [self._attachment_result(client, url) for url in links]
         texts = [text for text, diagnostic in results if diagnostic.status == "success"]
         diagnostics = tuple(diagnostic for _, diagnostic in results)
-        source = self._success_diagnostic("source", resource.url, resource, "html", body)
+        source = self._success_diagnostic("source", requested_url, resource, "html", body)
         return DetailFetchResult(self._combine_text(body, texts), source, diagnostics, len(links))
 
     # 下載並解析單一附件，完整保留成功、忽略或錯誤原因。
