@@ -23,14 +23,13 @@ SCHEMA_COLUMNS = {
 class ScholarshipRepository:
     """Scholarship 的 SQLite 存取層。"""
 
-    # 初始化資料庫路徑並建立資料表。
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._create_table()
         self._migrate_schema()
 
-    # 建立完整資料表與唯一索引。
+    # 只建立資料表；索引必須等舊資料庫完成欄位遷移後再建立。
     def _create_table(self) -> None:
         query = """
         CREATE TABLE IF NOT EXISTS scholarships (
@@ -54,13 +53,8 @@ class ScholarshipRepository:
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(query)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_scholarships_dedup_hash "
-                "ON scholarships(dedup_hash)"
-            )
             conn.commit()
 
-    # 補齊舊版資料表缺少的狀態欄位與跨來源去重鍵。
     def _migrate_schema(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             existing = self._column_names(conn)
@@ -75,19 +69,16 @@ class ScholarshipRepository:
             )
             conn.commit()
 
-    # 讀取目前資料表欄位名稱。
     def _column_names(self, conn: sqlite3.Connection) -> set[str]:
         rows = conn.execute("PRAGMA table_info(scholarships)").fetchall()
         return {row[1] for row in rows}
 
-    # 補齊舊資料的 discovered_at。
     def _fill_discovered_at(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE scholarships SET discovered_at = ? WHERE discovered_at IS NULL",
             [self._now_iso()],
         )
 
-    # 依既有標題補上跨來源去重鍵，不改動原 content_hash。
     def _fill_dedup_hashes(self, conn: sqlite3.Connection) -> None:
         rows = conn.execute(
             "SELECT id, title FROM scholarships "
@@ -98,17 +89,14 @@ class ScholarshipRepository:
             [(build_dedup_hash(title), row_id) for row_id, title in rows],
         )
 
-    # 產生 UTC ISO 時間字串。
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    # 取得資料庫目前是否無任何公告資料。
     def is_empty(self) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT COUNT(1) FROM scholarships").fetchone()
         return bool(row and row[0] == 0)
 
-    # 回傳輸入 content_hash 中已存在資料庫的集合。
     def get_existing_hashes(self, content_hashes: list[str]) -> set[str]:
         if not content_hashes:
             return set()
@@ -118,7 +106,6 @@ class ScholarshipRepository:
             rows = conn.execute(query, content_hashes).fetchall()
         return {row[0] for row in rows}
 
-    # 回傳已存在的跨來源去重鍵。
     def get_existing_dedup_hashes(self, dedup_hashes: list[str]) -> set[str]:
         values = [value for value in dedup_hashes if value]
         if not values:
@@ -129,7 +116,7 @@ class ScholarshipRepository:
             rows = conn.execute(query, values).fetchall()
         return {row[0] for row in rows if row[0]}
 
-    # 新增已蒐集公告；同來源重複及跨來源同名公告都會被忽略。
+    # 同來源 content_hash 與跨來源 dedup_hash 都會被去重。
     def discover(self, scholarships: list[Scholarship]) -> int:
         if not scholarships:
             return 0
@@ -158,7 +145,6 @@ class ScholarshipRepository:
             conn.commit()
         return max(cursor.rowcount, 0)
 
-    # 建立單筆公告寫入資料。
     def _discovery_row(self, item: Scholarship) -> tuple[str, ...]:
         return (
             item.source,
@@ -172,12 +158,10 @@ class ScholarshipRepository:
             self._now_iso(),
         )
 
-    # 取出目前所有尚未基準化或通知的公告。
     def list_pending(self) -> list[Scholarship]:
         query = self._select_query("notified_at IS NULL AND baseline_at IS NULL")
         return self._query_scholarships(query, [])
 
-    # 取出尚未用目前背景設定完成評估的公告。
     def list_for_evaluation(self, profile_hash: str) -> list[Scholarship]:
         condition = (
             "notified_at IS NULL AND baseline_at IS NULL "
@@ -185,7 +169,6 @@ class ScholarshipRepository:
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
 
-    # 取出符合推播狀態且屬於申請型的公告。
     def list_notifiable(
         self,
         profile_hash: str,
@@ -201,7 +184,6 @@ class ScholarshipRepository:
         params = [profile_hash, *statuses]
         return self._query_scholarships(self._select_query(condition), params)
 
-    # 建立讀取 Scholarship 所需的統一查詢。
     def _select_query(self, condition: str) -> str:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
@@ -213,7 +195,6 @@ class ScholarshipRepository:
         ORDER BY published_date DESC, id DESC
         """
 
-    # 執行查詢並轉換成 Scholarship 清單。
     def _query_scholarships(
         self,
         query: str,
@@ -223,7 +204,6 @@ class ScholarshipRepository:
             rows = conn.execute(query, params).fetchall()
         return [self._to_scholarship(row) for row in rows]
 
-    # 將 SQLite 資料列轉換為 Scholarship。
     def _to_scholarship(self, row: tuple[str, ...]) -> Scholarship:
         return Scholarship(
             source=row[0],
@@ -238,7 +218,6 @@ class ScholarshipRepository:
             dedup_hash=row[9],
         )
 
-    # 保存公告用途與個人資格判斷。
     def mark_eligibility(
         self,
         content_hash: str,
@@ -259,7 +238,6 @@ class ScholarshipRepository:
             conn.commit()
         return max(cursor.rowcount, 0)
 
-    # 統計指定背景設定下的資格判斷數量。
     def count_eligibility(self, profile_hash: str, status: str) -> int:
         query = """
         SELECT COUNT(1) FROM scholarships
@@ -270,15 +248,12 @@ class ScholarshipRepository:
             row = conn.execute(query, [profile_hash, status]).fetchone()
         return int(row[0]) if row else 0
 
-    # 將指定公告標記為歷史基準，不再推播。
     def mark_baseline(self, content_hashes: list[str]) -> int:
         return self._mark_time("baseline_at", content_hashes)
 
-    # 將指定公告標記為已通知。
     def mark_notified(self, content_hashes: list[str]) -> int:
         return self._mark_time("notified_at", content_hashes)
 
-    # 寫入指定時間欄位。
     def _mark_time(self, column: str, content_hashes: list[str]) -> int:
         if not content_hashes:
             return 0
