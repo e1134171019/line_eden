@@ -85,12 +85,7 @@ def _degree_exclusions(title: str, text: str, profile: StudentProfile) -> list[s
         return []
     graduate_terms = ("博士生", "博士班", "碩士生", "碩士班", "研究生", "碩博士")
     bachelor_terms = ("大學生", "大學部", "學士班", "大專學生", "大專在校生")
-    awards = ("獎學金", "助學金", "補助", "申請", "獎勵")
-    title_limited = (
-        any(term in title for term in graduate_terms)
-        and not any(term in title for term in bachelor_terms)
-        and any(award in title for award in awards)
-    )
+    title_limited = _title_is_graduate_only(title, graduate_terms, bachelor_terms)
     text_limited = any(
         _sentence_requires_group(sentence, graduate_terms)
         and not any(term in sentence for term in bachelor_terms)
@@ -99,6 +94,30 @@ def _degree_exclusions(title: str, text: str, profile: StudentProfile) -> list[s
     if title_limited or text_limited:
         return ["公告限定研究所或博士生層級。"]
     return []
+
+
+# 只有每個獎項片段都含研究生詞時，標題才代表研究所專屬。
+def _title_is_graduate_only(
+    title: str,
+    graduate_terms: tuple[str, ...],
+    bachelor_terms: tuple[str, ...],
+) -> bool:
+    if any(term in title for term in bachelor_terms):
+        return False
+    segments = [
+        segment.strip()
+        for segment in re.split(r"[、,，/]|(?:及|與)", title)
+        if segment.strip()
+    ]
+    award_segments = [
+        segment
+        for segment in segments
+        if any(marker in segment for marker in ("獎", "補助", "申請"))
+    ]
+    return bool(award_segments) and all(
+        any(term in segment for term in graduate_terms)
+        for segment in award_segments
+    )
 
 
 # 電子工程背景遇到明確限定不相容科系的資格句時直接排除。
