@@ -26,6 +26,11 @@ def _env_int(name: str, default: int) -> int:
 
 LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 LHU_SCHOLARSHIP_URL = "https://www.lhu.edu.tw/p/422-1000-4.php?Lang=zh-tw"
+MOE_OVERSEAS_SCHOLARSHIP_URL = "https://www.scholarship.moe.gov.tw/scholarship"
+MOE_EU_SCHOLARSHIP_URL = "https://www.scholarship.moe.gov.tw/eu/index/index"
+MOE_TOP100_SCHOLARSHIP_URL = "https://www.scholarship.moe.gov.tw/top100/index/index"
+CIP_SCHOLARSHIP_URL = "https://cipgrant.fju.edu.tw/news"
+OFFICIAL_SOURCE_COUNT = 5
 SCHOLARSHIP_DB_FILENAME = "scholarships.db"
 GEMINI_CACHE_DB_FILENAME = "gemini_cache.db"
 AUTOMATION_LOCK_FILENAME = "scholarship-agent.lock"
@@ -39,7 +44,7 @@ GITHUB_API_VERSION = "2026-03-10"
 LINE_SUMMARY_BATCH_SIZE = 5
 NOTIFY_REVIEW_ITEMS = False
 HTTP_TIMEOUT_SECONDS = 10.0
-HTTP_USER_AGENT = "ScholarshipAgent/3.2 (+https://www.lhu.edu.tw/)"
+HTTP_USER_AGENT = "ScholarshipAgent/4.0 (+https://github.com/e1134171019/line_eden)"
 MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
