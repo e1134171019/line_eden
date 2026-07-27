@@ -25,6 +25,15 @@ def test_installer_uses_safe_task_scheduler_settings() -> None:
     assert "ExecutionTimeLimit" in content
 
 
+# 排程必須使用目前 PowerShell host，避免只安裝 pwsh 時找不到 powershell.exe。
+def test_installer_uses_current_powershell_host() -> None:
+    content = (SCRIPTS_DIR / "install-scholarship-task.ps1").read_text(encoding="utf-8")
+
+    assert "Get-Process -Id $PID" in content
+    assert "-Execute $PowerShellPath" in content
+    assert '-Execute "powershell.exe"' not in content
+
+
 # 專案必須提供排程移除與狀態查詢腳本。
 def test_management_scripts_exist() -> None:
     assert (SCRIPTS_DIR / "remove-scholarship-task.ps1").is_file()

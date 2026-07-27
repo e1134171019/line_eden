@@ -13,8 +13,9 @@ $RunnerPath = Join-Path $ProjectRoot "scripts/run-scholarship-agent.ps1"
 $PythonPath = Join-Path $ProjectRoot ".venv/Scripts/python.exe"
 $EnvPath = Join-Path $ProjectRoot ".env"
 $ProfilePath = Join-Path $ProjectRoot "profile.json"
+$PowerShellPath = (Get-Process -Id $PID).Path
 
-foreach ($RequiredPath in @($RunnerPath, $PythonPath, $EnvPath, $ProfilePath)) {
+foreach ($RequiredPath in @($RunnerPath, $PythonPath, $EnvPath, $ProfilePath, $PowerShellPath)) {
     if (-not (Test-Path $RequiredPath)) {
         throw "缺少排程必要檔案：$RequiredPath"
     }
@@ -30,7 +31,7 @@ if ($NoGemini) {
 }
 
 $Action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
+    -Execute $PowerShellPath `
     -Argument ($PowerShellArguments -join " ")
 $TriggerTime = [datetime]::ParseExact(
     $DailyAt,
@@ -57,6 +58,7 @@ $Task = New-ScheduledTask `
 Register-ScheduledTask -TaskName $TaskName -InputObject $Task -Force | Out-Null
 Write-Host "已建立工作排程：$TaskName"
 Write-Host "每日執行時間：$DailyAt"
+Write-Host "PowerShell 執行檔：$PowerShellPath"
 Write-Host "Gemini：$(if ($NoGemini) { '停用' } else { '啟用' })"
 
 if ($RunNow) {
@@ -65,4 +67,4 @@ if ($RunNow) {
 }
 
 Write-Host "檢查狀態："
-Write-Host "  powershell -ExecutionPolicy Bypass -File scripts/show-scholarship-task-status.ps1"
+Write-Host "  & ./scripts/show-scholarship-task-status.ps1"
