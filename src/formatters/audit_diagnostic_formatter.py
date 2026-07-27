@@ -15,11 +15,15 @@ def build_fetch_diagnostic_lines(result: DetailFetchResult) -> list[str]:
     return lines
 
 
-# 建立附件發現、成功與失敗統計。
+# 建立附件發現、嘗試、成功與失敗統計。
 def _attachment_summary(result: DetailFetchResult) -> str:
+    attempted = len(result.attachments)
     success = result.successful_attachment_count()
     failed = result.failed_attachment_count()
-    return f"  附件診斷：發現 {result.discovered_attachment_count}，成功 {success}，失敗 {failed}"
+    return (
+        f"  附件診斷：發現 {result.discovered_attachment_count}，嘗試 {attempted}，"
+        f"成功 {success}，失敗 {failed}"
+    )
 
 
 # 建立單一附件的摘要、網址與錯誤行。
