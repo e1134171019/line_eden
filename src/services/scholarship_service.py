@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
@@ -12,6 +12,7 @@ from src.evaluators.eligibility_evaluator import (
     EligibilityDecision,
     EligibilityEvaluator,
 )
+from src.evaluators.notice_classifier import APPLICATION, UNKNOWN, classify_notice
 from src.formatters.scholarship_message_formatter import (
     build_summary_message,
     split_scholarships,
@@ -33,8 +34,27 @@ class ServiceResult:
     ineligible_count: int = 0
 
 
+@dataclass(frozen=True)
+class AuditRecord:
+    """單筆歷史公告的重新評估結果。"""
+
+    item: Scholarship
+    detail_excerpt: str
+
+
+@dataclass(frozen=True)
+class AuditResult:
+    """不修改資料庫與通知狀態的歷史公告稽核結果。"""
+
+    records: list[AuditRecord]
+    eligible_count: int
+    review_count: int
+    ineligible_count: int
+    message: str
+
+
 class ScholarshipService:
-    """協調蒐集、個人資格判斷與 LINE 摘要通知流程。"""
+    """協調蒐集、公告分類、資格判斷與 LINE 通知流程。"""
 
     # 注入蒐集器、資料庫、通知器與個人化評估元件。
     def __init__(
@@ -66,6 +86,16 @@ class ScholarshipService:
         if dry_run:
             return self._build_dry_run_result(collected, pending_items, counts)
         return self._run_live_mode(collected, pending_items, counts)
+
+    # 重新評估目前全部公告，不修改 baseline、notified 或資料庫內容。
+    def audit(self) -> AuditResult:
+        collected = self._filter_collected(self.collector.collect())
+        records = [self._build_audit_record(item) for item in collected]
+        eligible = self._count_audit_status(records, ELIGIBLE)
+        review = self._count_audit_status(records, REVIEW)
+        ineligible = self._count_audit_status(records, INELIGIBLE)
+        message = f"已稽核 {len(records)} 筆公告，不會傳送 LINE 或修改資料庫狀態。"
+        return AuditResult(records, eligible, review, ineligible, message)
 
     # 執行首次基準化，不推播且不需要個人背景。
     def initialize_baseline(self) -> ServiceResult:
@@ -114,24 +144,54 @@ class ScholarshipService:
     def _personalization_enabled(self) -> bool:
         return all((self.detail_fetcher, self.evaluator, self.profile))
 
-    # 逐筆讀取公告內頁並保存資格判斷。
+    # 逐筆讀取公告內頁並保存用途與資格判斷。
     def _evaluate_pending(self, profile_hash: str) -> None:
         for item in self.repository.list_for_evaluation(profile_hash):
-            decision = self._evaluate_item(item)
+            decision, notice_kind, _ = self._evaluate_item(item)
             self.repository.mark_eligibility(
                 item.content_hash,
                 decision.status,
                 decision.reason_text(),
                 profile_hash,
+                notice_kind,
             )
 
-    # 評估單筆公告，內頁讀取失敗時採保守不推播。
-    def _evaluate_item(self, item: Scholarship) -> EligibilityDecision:
+    # 評估單筆公告，非申請型與讀取失敗均不推播。
+    def _evaluate_item(
+        self,
+        item: Scholarship,
+    ) -> tuple[EligibilityDecision, str, str]:
         try:
             detail_text = self.detail_fetcher.fetch_text(item)
         except Exception:
-            return EligibilityDecision(REVIEW, ("公告內文讀取失敗，暫不推播。",))
-        return self.evaluator.evaluate(item, detail_text, self.profile)
+            decision = EligibilityDecision(REVIEW, ("公告正文讀取失敗，暫不推播。",))
+            return decision, UNKNOWN, ""
+        notice_kind = classify_notice(item.title, detail_text)
+        if notice_kind != APPLICATION:
+            reason = f"非申請型公告（{notice_kind}），不推播。"
+            return EligibilityDecision(INELIGIBLE, (reason,)), notice_kind, detail_text
+        decision = self.evaluator.evaluate(item, detail_text, self.profile)
+        return decision, notice_kind, detail_text
+
+    # 建立不修改資料庫的單筆稽核結果。
+    def _build_audit_record(self, item: Scholarship) -> AuditRecord:
+        decision, notice_kind, detail_text = self._evaluate_item(item)
+        evaluated = replace(
+            item,
+            notice_kind=notice_kind,
+            eligibility_status=decision.status,
+            eligibility_reason=decision.reason_text(),
+        )
+        return AuditRecord(evaluated, self._excerpt(detail_text))
+
+    # 統計稽核結果中的指定資格狀態。
+    def _count_audit_status(self, records: list[AuditRecord], status: str) -> int:
+        return sum(record.item.eligibility_status == status for record in records)
+
+    # 建立稽核輸出的正文摘要。
+    def _excerpt(self, detail_text: str) -> str:
+        normalized = " ".join(detail_text.split())
+        return normalized[:160]
 
     # 統計目前背景下各資格狀態的公告數量。
     def _eligibility_counts(self, profile_hash: str) -> tuple[int, int, int]:
