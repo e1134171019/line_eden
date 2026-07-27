@@ -24,10 +24,11 @@ class OfficialSourceConfig:
     source_url: str
     allowed_path_markers: tuple[str, ...]
     row_selector: str = "tr, li, article, .item, .news, .list-item"
+    display_name: str = ""
 
 
 class OfficialListingCollector(BaseCollector):
-    """解析官方公告列表中的標題、日期與連結。"""
+    """解析官方公告列表中的標題、日期與站內連結。"""
 
     def __init__(
         self,
@@ -38,6 +39,10 @@ class OfficialListingCollector(BaseCollector):
         self.config = config
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
+
+    @property
+    def source_label(self) -> str:
+        return self.config.display_name or self.config.source_name
 
     def collect(self) -> list[Scholarship]:
         html = self._fetch_html()
@@ -87,7 +92,10 @@ class OfficialListingCollector(BaseCollector):
         source_host = urlparse(self.config.source_url).netloc
         if parsed.netloc and parsed.netloc != source_host:
             return False
-        return any(marker in parsed.path or marker in parsed.query for marker in self.config.allowed_path_markers)
+        return any(
+            marker in parsed.path or marker in parsed.query
+            for marker in self.config.allowed_path_markers
+        )
 
 
 def _extract_date(text: str) -> str:
