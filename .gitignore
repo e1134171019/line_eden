@@ -9,3 +9,5 @@ profile.json
 *.log
 .pytest_cache/
 data/*.db
+data/last_run.json
+data/*.lock
