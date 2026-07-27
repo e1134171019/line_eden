@@ -31,10 +31,10 @@ def classify_notice(title: str, detail_text: str) -> str:
         return RESULT
     if _is_policy_notice(normalized_title):
         return POLICY
-    if _is_application_notice(normalized_title, normalized_text):
-        return APPLICATION
     if _contains_any(normalized_title, INFORMATION_MARKERS):
         return INFORMATION
+    if _is_application_notice(normalized_title, normalized_text):
+        return APPLICATION
     return UNKNOWN
 
 
