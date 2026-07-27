@@ -10,23 +10,28 @@ from config import (
     LHU_SCHOLARSHIP_URL,
     LINE_API_URL,
     LINE_CHANNEL_ACCESS_TOKEN,
-    LINE_USER_ID,
     LINE_SUMMARY_BATCH_SIZE,
+    LINE_USER_ID,
+    NOTIFY_REVIEW_ITEMS,
+    PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
     validate_settings,
 )
+from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
+from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.notifiers.line_notifier import send_text_message
+from src.profiles.student_profile import load_student_profile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.scholarship_service import ScholarshipService, ServiceResult
 
 
 # 解析命令列參數，並限制執行模式只能擇一。
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Scholarship Agent 第二階段")
+    parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
     modes = parser.add_mutually_exclusive_group()
-    modes.add_argument("--dry-run", action="store_true", help="只顯示資料，不傳 LINE")
+    modes.add_argument("--dry-run", action="store_true", help="評估適合度但不傳 LINE")
     modes.add_argument(
         "--initialize-baseline",
         action="store_true",
@@ -49,21 +54,35 @@ def build_notifier() -> Callable[[str], None]:
     return _notify
 
 
-# 建立公告蒐集、資料庫與通知服務。
-def build_service() -> ScholarshipService:
+# 建立公告蒐集、資料庫、資格判斷與通知服務。
+def build_service(profile_required: bool = True) -> ScholarshipService:
     collector = LhuCollector(
         LHU_SCHOLARSHIP_URL,
         HTTP_TIMEOUT_SECONDS,
         HTTP_USER_AGENT,
     )
     repository = ScholarshipRepository(DATA_DIR / SCHOLARSHIP_DB_FILENAME)
+    profile = load_student_profile(PROFILE_PATH) if profile_required else None
     return ScholarshipService(
         collector,
         repository,
         build_notifier(),
         include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
         summary_batch_size=LINE_SUMMARY_BATCH_SIZE,
+        detail_fetcher=_build_detail_fetcher(profile_required),
+        evaluator=EligibilityEvaluator() if profile_required else None,
+        profile=profile,
+        notify_review_items=NOTIFY_REVIEW_ITEMS,
     )
+
+
+# 需要個人化判斷時建立公告內頁擷取器。
+def _build_detail_fetcher(
+    profile_required: bool,
+) -> AnnouncementDetailFetcher | None:
+    if not profile_required:
+        return None
+    return AnnouncementDetailFetcher(HTTP_TIMEOUT_SECONDS, HTTP_USER_AGENT)
 
 
 # 依命令列模式執行服務，基準初始化不會傳送 LINE。
@@ -76,33 +95,37 @@ def execute_service(
     return service.run(dry_run=args.dry_run)
 
 
-# 印出本次蒐集、待通知、已通知與基準化摘要。
+# 印出蒐集、適合度、通知與基準化摘要。
 def print_summary(result: ServiceResult) -> None:
     print(f"蒐集公告數量：{len(result.collected)}")
-    print(f"待通知公告數量：{len(result.pending_items)}")
+    print(f"適合且待通知：{len(result.pending_items)}")
+    print(f"明確適合：{result.eligible_count}")
+    print(f"資格待確認：{result.review_count}")
+    print(f"明確不符合：{result.ineligible_count}")
     print(f"本次通知數量：{result.notified_count}")
     print(f"本次基準化數量：{result.baseline_count}")
 
 
-# 逐筆列出公告資料，方便 dry-run 檢查。
+# 逐筆列出通過個人化篩選的公告。
 def print_items(label: str, items: list[object]) -> None:
     print(label)
     if not items:
         print("- 無")
         return
     for item in items:
-        print(f"- {item.published_date} | {item.category} | {item.title} | {item.source_url}")
+        print(f"- {item.published_date} | {item.title} | {item.eligibility_reason}")
+        print(f"  {item.source_url}")
 
 
-# 執行命令列流程，只有正式模式會驗證 LINE 設定。
+# 執行命令列流程，正式模式才驗證 LINE 設定。
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     if not args.dry_run and not args.initialize_baseline:
         validate_settings()
-    result = execute_service(args, build_service())
+    service = build_service(profile_required=not args.initialize_baseline)
+    result = execute_service(args, service)
     print_summary(result)
-    print_items("全部公告：", result.collected)
-    print_items("待通知公告：", result.pending_items)
+    print_items("適合且待通知公告：", result.pending_items)
     print(result.message)
 
 

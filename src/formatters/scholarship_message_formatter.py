@@ -13,22 +13,25 @@ def split_scholarships(
     return [items[index:index + batch_size] for index in range(0, len(items), batch_size)]
 
 
-# 建立每筆公告都包含獨立網址的 LINE 摘要。
+# 建立每筆公告都包含獨立網址與符合原因的 LINE 摘要。
 def build_summary_message(
     items: list[Scholarship],
     batch_index: int,
     batch_count: int,
 ) -> str:
-    lines = [f"【獎學金新公告｜第 {batch_index}/{batch_count} 則】"]
+    lines = [f"【適合你的獎學金｜第 {batch_index}/{batch_count} 則】"]
     for index, item in enumerate(items, start=1):
         lines.extend(_build_item_lines(index, item))
     return "\n".join(lines)
 
 
-# 建立單筆公告在摘要中的日期、標題與連結。
+# 建立單筆公告的日期、標題、符合原因與連結。
 def _build_item_lines(index: int, item: Scholarship) -> list[str]:
-    return [
+    lines = [
         f"{index}. {item.published_date}",
         item.title,
-        item.source_url,
     ]
+    if item.eligibility_reason:
+        lines.append(f"符合原因：{item.eligibility_reason}")
+    lines.append(item.source_url)
+    return lines

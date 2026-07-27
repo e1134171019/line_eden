@@ -1,0 +1,15 @@
+{
+  "school": "你的學校",
+  "degree_level": "學士",
+  "program_type": "進修部",
+  "department": "你的科系",
+  "year": 2,
+  "employed": true,
+  "average_grade": 0,
+  "conduct_grade": 0,
+  "class_rank": 0,
+  "class_size": 0,
+  "residence": "",
+  "special_statuses": [],
+  "research_keywords": []
+}

@@ -50,6 +50,8 @@ class Scholarship:
     source_url: str
     category: str
     content_hash: str
+    eligibility_status: str = ""
+    eligibility_reason: str = ""
 
     # 將原始欄位正規化並產生 Scholarship 物件。
     @classmethod

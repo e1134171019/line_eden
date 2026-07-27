@@ -6,6 +6,17 @@ import sqlite3
 
 from src.models.scholarship import Scholarship
 
+SCHEMA_COLUMNS = {
+    "category": "TEXT NOT NULL DEFAULT 'other'",
+    "discovered_at": "TEXT",
+    "baseline_at": "TEXT",
+    "notified_at": "TEXT",
+    "eligibility_status": "TEXT",
+    "eligibility_reason": "TEXT",
+    "profile_hash": "TEXT",
+    "evaluated_at": "TEXT",
+}
+
 
 class ScholarshipRepository:
     """Scholarship 的 SQLite 存取層。"""
@@ -17,7 +28,7 @@ class ScholarshipRepository:
         self._create_table()
         self._migrate_schema()
 
-    # 建立資料表與唯一索引。
+    # 建立完整資料表與唯一索引。
     def _create_table(self) -> None:
         query = """
         CREATE TABLE IF NOT EXISTS scholarships (
@@ -30,34 +41,38 @@ class ScholarshipRepository:
             content_hash TEXT NOT NULL UNIQUE,
             discovered_at TEXT NOT NULL,
             baseline_at TEXT,
-            notified_at TEXT
+            notified_at TEXT,
+            eligibility_status TEXT,
+            eligibility_reason TEXT,
+            profile_hash TEXT,
+            evaluated_at TEXT
         )
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(query)
             conn.commit()
 
-    # 補齊舊版資料表欄位並填入預設值。
+    # 補齊舊版資料表缺少的狀態欄位。
     def _migrate_schema(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute("PRAGMA table_info(scholarships)").fetchall()
-            names = {row[1] for row in rows}
-            if "category" not in names:
-                conn.execute(
-                    "ALTER TABLE scholarships ADD COLUMN category TEXT NOT NULL DEFAULT 'other'"
-                )
-            if "discovered_at" not in names:
-                conn.execute("ALTER TABLE scholarships ADD COLUMN discovered_at TEXT")
-                conn.execute(
-                    "UPDATE scholarships SET discovered_at = COALESCE(created_at, notified_at, ?) "
-                    "WHERE discovered_at IS NULL",
-                    [self._now_iso()],
-                )
-            if "baseline_at" not in names:
-                conn.execute("ALTER TABLE scholarships ADD COLUMN baseline_at TEXT")
-            if "notified_at" not in names:
-                conn.execute("ALTER TABLE scholarships ADD COLUMN notified_at TEXT")
+            existing = self._column_names(conn)
+            for name, definition in SCHEMA_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE scholarships ADD COLUMN {name} {definition}")
+            self._fill_discovered_at(conn)
             conn.commit()
+
+    # 讀取目前資料表欄位名稱。
+    def _column_names(self, conn: sqlite3.Connection) -> set[str]:
+        rows = conn.execute("PRAGMA table_info(scholarships)").fetchall()
+        return {row[1] for row in rows}
+
+    # 補齊舊資料的 discovered_at。
+    def _fill_discovered_at(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "UPDATE scholarships SET discovered_at = ? WHERE discovered_at IS NULL",
+            [self._now_iso()],
+        )
 
     # 產生 UTC ISO 時間字串。
     def _now_iso(self) -> str:
@@ -83,19 +98,7 @@ class ScholarshipRepository:
     def discover(self, scholarships: list[Scholarship]) -> int:
         if not scholarships:
             return 0
-        now = self._now_iso()
-        rows = [
-            (
-                item.source,
-                item.title,
-                item.published_date,
-                item.source_url,
-                item.category,
-                item.content_hash,
-                now,
-            )
-            for item in scholarships
-        ]
+        rows = [self._discovery_row(item) for item in scholarships]
         query = """
         INSERT OR IGNORE INTO scholarships (
             source, title, published_date, source_url, category, content_hash, discovered_at
@@ -104,62 +107,129 @@ class ScholarshipRepository:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
             conn.commit()
-            return cursor.rowcount if cursor.rowcount >= 0 else 0
+        return max(cursor.rowcount, 0)
 
-    # 取出目前所有待通知公告。
+    # 建立單筆公告寫入資料。
+    def _discovery_row(self, item: Scholarship) -> tuple[str, ...]:
+        return (
+            item.source,
+            item.title,
+            item.published_date,
+            item.source_url,
+            item.category,
+            item.content_hash,
+            self._now_iso(),
+        )
+
+    # 取出目前所有尚未基準化或通知的公告。
     def list_pending(self) -> list[Scholarship]:
-        query = """
-        SELECT source, title, published_date, source_url, category, content_hash
+        query = self._select_query("notified_at IS NULL AND baseline_at IS NULL")
+        return self._query_scholarships(query, [])
+
+    # 取出尚未用目前背景設定完成評估的公告。
+    def list_for_evaluation(self, profile_hash: str) -> list[Scholarship]:
+        condition = (
+            "notified_at IS NULL AND baseline_at IS NULL "
+            "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ?)"
+        )
+        return self._query_scholarships(self._select_query(condition), [profile_hash])
+
+    # 取出符合推播狀態的公告。
+    def list_notifiable(
+        self,
+        profile_hash: str,
+        include_review: bool,
+    ) -> list[Scholarship]:
+        statuses = ["eligible", "review"] if include_review else ["eligible"]
+        placeholders = ",".join(["?"] * len(statuses))
+        condition = (
+            "notified_at IS NULL AND baseline_at IS NULL AND profile_hash = ? "
+            f"AND eligibility_status IN ({placeholders})"
+        )
+        params = [profile_hash, *statuses]
+        return self._query_scholarships(self._select_query(condition), params)
+
+    # 建立讀取 Scholarship 所需的統一查詢。
+    def _select_query(self, condition: str) -> str:
+        return f"""
+        SELECT source, title, published_date, source_url, category, content_hash,
+               COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, '')
         FROM scholarships
-        WHERE notified_at IS NULL AND baseline_at IS NULL
+        WHERE {condition}
         ORDER BY published_date DESC, id DESC
         """
+
+    # 執行查詢並轉換成 Scholarship 清單。
+    def _query_scholarships(
+        self,
+        query: str,
+        params: list[str],
+    ) -> list[Scholarship]:
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(query).fetchall()
-        return [
-            Scholarship(
-                source=row[0],
-                title=row[1],
-                published_date=row[2],
-                source_url=row[3],
-                category=row[4],
-                content_hash=row[5],
-            )
-            for row in rows
-        ]
+            rows = conn.execute(query, params).fetchall()
+        return [self._to_scholarship(row) for row in rows]
+
+    # 將 SQLite 資料列轉換為 Scholarship。
+    def _to_scholarship(self, row: tuple[str, ...]) -> Scholarship:
+        return Scholarship(
+            source=row[0],
+            title=row[1],
+            published_date=row[2],
+            source_url=row[3],
+            category=row[4],
+            content_hash=row[5],
+            eligibility_status=row[6],
+            eligibility_reason=row[7],
+        )
+
+    # 保存公告對指定背景的資格判斷。
+    def mark_eligibility(
+        self,
+        content_hash: str,
+        status: str,
+        reason: str,
+        profile_hash: str,
+    ) -> int:
+        query = """
+        UPDATE scholarships
+        SET eligibility_status = ?, eligibility_reason = ?, profile_hash = ?, evaluated_at = ?
+        WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
+        """
+        params = [status, reason, profile_hash, self._now_iso(), content_hash]
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(query, params)
+            conn.commit()
+        return max(cursor.rowcount, 0)
+
+    # 統計指定背景設定下的資格判斷數量。
+    def count_eligibility(self, profile_hash: str, status: str) -> int:
+        query = """
+        SELECT COUNT(1) FROM scholarships
+        WHERE profile_hash = ? AND eligibility_status = ?
+          AND notified_at IS NULL AND baseline_at IS NULL
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(query, [profile_hash, status]).fetchone()
+        return int(row[0]) if row else 0
 
     # 將指定公告標記為歷史基準，不再推播。
     def mark_baseline(self, content_hashes: list[str]) -> int:
-        if not content_hashes:
-            return 0
-        now = self._now_iso()
-        placeholders = ",".join(["?"] * len(content_hashes))
-        query = (
-            "UPDATE scholarships "
-            "SET baseline_at = ? "
-            f"WHERE content_hash IN ({placeholders}) "
-            "AND baseline_at IS NULL AND notified_at IS NULL"
-        )
-        params = [now, *content_hashes]
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(query, params)
-            conn.commit()
-            return cursor.rowcount if cursor.rowcount >= 0 else 0
+        return self._mark_time("baseline_at", content_hashes)
 
-    # 將指定公告標記為已通知，並更新通知時間。
+    # 將指定公告標記為已通知。
     def mark_notified(self, content_hashes: list[str]) -> int:
+        return self._mark_time("notified_at", content_hashes)
+
+    # 寫入指定時間欄位。
+    def _mark_time(self, column: str, content_hashes: list[str]) -> int:
         if not content_hashes:
             return 0
-        now = self._now_iso()
         placeholders = ",".join(["?"] * len(content_hashes))
         query = (
-            "UPDATE scholarships "
-            "SET notified_at = ? "
-            f"WHERE content_hash IN ({placeholders}) "
-            "AND notified_at IS NULL"
+            f"UPDATE scholarships SET {column} = ? "
+            f"WHERE content_hash IN ({placeholders}) AND {column} IS NULL"
         )
-        params = [now, *content_hashes]
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(query, params)
+            cursor = conn.execute(query, [self._now_iso(), *content_hashes])
             conn.commit()
-            return cursor.rowcount if cursor.rowcount >= 0 else 0
+        return max(cursor.rowcount, 0)

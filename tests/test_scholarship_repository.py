@@ -49,3 +49,41 @@ def test_repository_baseline_state(tmp_path: Path) -> None:
     assert row is not None
     assert row[0] is not None
     assert row[1] is None
+
+
+# 驗證只有 eligible 狀態會進入預設推播清單。
+def test_repository_filters_notifiable_status(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    eligible = _build_item("適合獎學金", "2026-07-01", "https://example.com/eligible")
+    review = _build_item("待確認獎學金", "2026-07-02", "https://example.com/review")
+    rejected = _build_item("不適合獎學金", "2026-07-03", "https://example.com/rejected")
+    profile_hash = "profile-a"
+    repo.discover([eligible, review, rejected])
+
+    repo.mark_eligibility(eligible.content_hash, "eligible", "符合", profile_hash)
+    repo.mark_eligibility(review.content_hash, "review", "待確認", profile_hash)
+    repo.mark_eligibility(rejected.content_hash, "ineligible", "不符合", profile_hash)
+
+    default_items = repo.list_notifiable(profile_hash, include_review=False)
+    review_items = repo.list_notifiable(profile_hash, include_review=True)
+
+    assert [item.content_hash for item in default_items] == [eligible.content_hash]
+    assert {item.content_hash for item in review_items} == {
+        eligible.content_hash,
+        review.content_hash,
+    }
+    assert default_items[0].eligibility_reason == "符合"
+
+
+# 驗證個人背景變更後既有公告會重新進入評估清單。
+def test_repository_re_evaluates_when_profile_changes(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    item = _build_item("背景重評獎學金", "2026-07-01", "https://example.com/profile")
+    repo.discover([item])
+    repo.mark_eligibility(item.content_hash, "eligible", "符合", "profile-a")
+
+    same_profile = repo.list_for_evaluation("profile-a")
+    changed_profile = repo.list_for_evaluation("profile-b")
+
+    assert same_profile == []
+    assert [record.content_hash for record in changed_profile] == [item.content_hash]

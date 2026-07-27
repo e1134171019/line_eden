@@ -1,56 +1,23 @@
 # Scholarship Agent
 
-目前包含兩個階段：  
-第一階段驗證 LINE Messaging API 推播。  
-第二階段加入龍華獎學金公告蒐集、SQLite 狀態管理、歷史基準與 dry-run。
+目前包含三個階段：
 
-## 專案結構
+1. LINE Messaging API 推播。
+2. 龍華獎學金公告蒐集、SQLite 去重、歷史基準與 dry-run。
+3. 讀取公告內頁，依本機私密學生背景判斷適合度，只推播明確適合的公告。
+
+## 核心流程
 
 ```text
-scholarship-agent/
-├── AGENTS.md
-├── README.md
-├── .gitignore
-├── .env.example
-├── requirements.txt
-├── config.py
-├── main.py
-├── src/
-│   ├── AGENTS.md
-│   ├── __init__.py
-│   ├── collectors/
-│   │   ├── __init__.py
-│   │   ├── base_collector.py
-│   │   └── lhu_collector.py
-│   ├── formatters/
-│   │   ├── __init__.py
-│   │   └── scholarship_message_formatter.py
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── scholarship.py
-│   ├── notifiers/
-│   │   ├── __init__.py
-│   │   └── line_notifier.py
-│   ├── repositories/
-│   │   ├── __init__.py
-│   │   └── scholarship_repository.py
-│   └── services/
-│       ├── __init__.py
-│       └── scholarship_service.py
-├── tests/
-│   ├── AGENTS.md
-│   ├── fixtures/
-│   ├── output/
-│   ├── test_lhu_collector.py
-│   ├── test_line_notifier.py
-│   ├── test_main.py
-│   ├── test_scholarship_repository.py
-│   └── test_scholarship_service.py
-├── data/
-├── docs/
-├── logs/
-└── temp/
+公告列表
+→ 公告內頁文字
+→ 個人背景資格判斷
+→ eligible：可推播
+→ review：條件不足，預設不推播
+→ ineligible：明確不符，不推播
 ```
+
+`review` 與 `ineligible` 仍會保存於 SQLite，避免每次重複分析。個人背景改變時，系統會以背景指紋重新評估尚未通知的公告。
 
 ## Windows PowerShell 安裝
 
@@ -62,21 +29,48 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 python -m pip install -r requirements.txt
 ```
 
-## 建立環境變數
+## LINE 私密設定
 
 ```powershell
 Copy-Item .env.example .env
 code .env
 ```
 
-將 `.env` 改成：
+`.env`：
 
 ```dotenv
 LINE_CHANNEL_ACCESS_TOKEN=你的完整ChannelAccessToken
 LINE_USER_ID=你的U開頭UserID
 ```
 
-不要將 `.env` 上傳到 GitHub。
+## 學生背景私密設定
+
+```powershell
+Copy-Item profile.example.json profile.json
+code profile.json
+```
+
+`profile.json` 只放在本機，已由 `.gitignore` 排除。請填入實際學校、學制、科系、年級、成績、排名、居住地與特殊身分。不要將 `profile.json` 上傳到 GitHub。
+
+範例欄位：
+
+```json
+{
+  "school": "你的學校",
+  "degree_level": "學士",
+  "program_type": "進修部",
+  "department": "你的科系",
+  "year": 2,
+  "employed": true,
+  "average_grade": 90,
+  "conduct_grade": 85,
+  "class_rank": 1,
+  "class_size": 20,
+  "residence": "",
+  "special_statuses": [],
+  "research_keywords": ["電子", "電力", "能源"]
+}
+```
 
 ## 執行測試
 
@@ -84,52 +78,35 @@ LINE_USER_ID=你的U開頭UserID
 python -m pytest tests/
 ```
 
-測試使用暫存資料庫與模擬 LINE 回應，不會傳送真實訊息，也不會修改 `data/` 正式資料庫。
+測試使用暫存資料庫與模擬 LINE 回應，不會呼叫真實 LINE API，也不會修改 `data/` 正式資料庫。
 
-## Dry-run：檢查待通知公告
+## Dry-run：先看哪些公告會被推播
 
 ```powershell
 python main.py --dry-run
 ```
 
-行為：
+Dry-run 會：
 
-- 蒐集並保存 `discovered` 公告。
-- 顯示目前 `pending` 公告。
-- 不修改 `baseline_at`。
-- 不修改 `notified_at`。
-- 不驗證 LINE Token。
-- 不傳送 LINE。
+- 蒐集公告並保存 `discovered`。
+- 下載尚未評估公告的內頁文字。
+- 使用 `profile.json` 判斷 `eligible`、`review`、`ineligible`。
+- 只列出明確適合且尚未通知的公告。
+- 不驗證 LINE Token，不傳送 LINE，不修改 `notified_at`。
 
-重複執行 dry-run 時，尚未建立基準或成功通知的公告仍會保持 pending。
+若公告內文無法讀取，或資格只存在尚未解析的附件中，狀態會是 `review`，預設不推播。
 
 ## 首次上線：建立歷史基準
 
-只在首次正式上線時執行一次：
+只執行一次：
 
 ```powershell
 python main.py --initialize-baseline
 ```
 
-行為：
+此模式不讀取 `profile.json`、不驗證 LINE Token，也不傳送 LINE。既有公告會標記為歷史基準，未來新增公告才進入個人化評估。
 
-- 蒐集目前網站已有公告。
-- 將尚未通知的現有公告寫入 `baseline_at`。
-- 不修改 `notified_at`。
-- 不驗證 LINE Token。
-- 不傳送 LINE。
-
-建立基準後再檢查：
-
-```powershell
-python main.py --dry-run
-```
-
-正常情況下，既有歷史公告不再列為 pending。未來網站新增的公告才會成為待通知資料。
-
-`--dry-run` 與 `--initialize-baseline` 為互斥模式，不能同時使用。
-
-## 正式模式：傳送待通知公告
+## 正式模式
 
 ```powershell
 python main.py
@@ -137,38 +114,39 @@ python main.py
 
 正式模式規則：
 
-- 驗證 `.env` 中的 LINE 設定。
-- 只推播 `baseline_at IS NULL` 且 `notified_at IS NULL` 的公告。
-- 同一次有多筆公告時，會整理為摘要訊息。
-- 每則摘要最多列出 `config.py` 的 `LINE_SUMMARY_BATCH_SIZE` 筆公告。
-- 摘要中的每一筆公告都包含自己的標題、日期與網址。
-- LINE 成功送出後才寫入該批公告的 `notified_at`。
-- LINE 發送失敗時，失敗批次與後續公告保留 pending，供下次重試。
+- 驗證 `.env` 與 `profile.json`。
+- 只推播 `eligibility_status = eligible` 的公告。
+- `review` 預設不推播；可由 `config.py` 的 `NOTIFY_REVIEW_ITEMS` 調整。
+- 摘要中的每筆公告都有日期、標題、符合原因與獨立網址。
+- 每則摘要最多列出 `LINE_SUMMARY_BATCH_SIZE` 筆。
+- 成功傳送後才寫入該批公告的 `notified_at`。
+- 發送失敗時保留 pending，供下次重試。
 
-正式執行前應先完成歷史基準，避免將所有舊公告當成待通知資料。
+## 目前規則能力
 
-## 上線前檢查
+可明確排除：
+
+- 日間部限定，但背景為進修部。
+- 研究所、非大專、新生或應屆畢業等明確年級限制。
+- 公告明確排除進修部或在職學生。
+- 特定家庭或法定身分與背景不符。
+- 學業平均或操行成績未達門檻。
+
+可確認正向匹配：
+
+- 就讀學校或科系明確相符。
+- 電子、電機、電力、能源等背景關鍵字相符。
+- 一般大專在校生條件且未發現排除條件。
+- 優秀學生型獎學金且成績達基本方向。
+
+目前尚未解析 PDF、Word 等附件內容；附件是唯一資格來源時會標為 `review`，不會直接推播。
+
+## 安全檢查
 
 ```powershell
 python -m pytest tests/
 python main.py --dry-run
-git status
+git status --ignored
 ```
 
-確認：
-
-- 測試全部通過。
-- `.env` 未被 Git 追蹤。
-- dry-run 的標題、日期與網址正確。
-- pending 數量符合預期。
-
-## 公告篩選
-
-目前使用 `config.py` 的 `SCHOLARSHIP_FILTER_KEYWORDS` 過濾公告，預設包含：
-
-- 獎學金
-- 助學金
-- 就學貸款
-- 補助
-
-公告分類欄位目前包含 `scholarship`、`loan`、`subsidy` 與 `other`。
+確認 `.env`、`profile.json`、`.venv/` 與 `data/*.db` 均未被 Git 追蹤。
