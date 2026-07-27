@@ -37,6 +37,7 @@ from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.formatters.audit_diagnostic_formatter import build_fetch_diagnostic_lines
+from src.models.scholarship import Scholarship
 from src.notifiers.line_notifier import send_text_message
 from src.profiles.student_profile import load_student_profile
 from src.repositories.gemini_cache_repository import GeminiCacheRepository
@@ -186,7 +187,7 @@ def print_summary(result: ServiceResult) -> None:
 
 
 # 逐筆列出通過個人化篩選的公告。
-def print_items(label: str, items: list[object]) -> None:
+def print_items(label: str, items: list[Scholarship]) -> None:
     print(label)
     if not items:
         print("- 無")
@@ -221,7 +222,7 @@ def _print_audit_record(record: AuditRecord) -> None:
     print(f"  {item.source_url}")
 
 
-# 顯示單一 Gemini 備援是否使用快取、頁數與 Token。
+# 顯示單一 Gemini 備援的用量、結構化欄位與頁碼證據。
 def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
     cache = "是" if diagnostic.cache_hit else "否"
     print(
@@ -231,6 +232,10 @@ def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
         f"output {diagnostic.output_tokens}"
     )
     print(f"  Gemini說明：{diagnostic.message}")
+    for field in diagnostic.extracted_fields:
+        print(f"  Gemini欄位：{field}")
+    for evidence in diagnostic.evidence:
+        print(f"  Gemini證據：{evidence}")
     print(f"  Gemini來源：{diagnostic.source_url}")
 
 

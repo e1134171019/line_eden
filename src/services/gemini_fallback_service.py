@@ -26,6 +26,8 @@ class GeminiAnalysisDiagnostic:
     output_tokens: int
     total_tokens: int
     message: str
+    extracted_fields: tuple[str, ...] = tuple()
+    evidence: tuple[str, ...] = tuple()
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,7 @@ class GeminiUsageLimiter:
 
 
 class GeminiFallbackService:
-    """只對掃描型 PDF 的 review 公告啟用 Gemini。"""
+    """只對掃描型主要資格 PDF 的 review 公告啟用 Gemini。"""
 
     def __init__(
         self,
@@ -105,7 +107,7 @@ class GeminiFallbackService:
         self.limiter = limiter
         self.prompt_version = prompt_version
 
-    # 從附件診斷挑選第一個掃描型 PDF，其他情況完全不呼叫 Gemini。
+    # 優先挑選主要資格辦法掃描 PDF，次要表單與證明文件不送 Gemini。
     def analyze(self, title: str, fetch_result: DetailFetchResult) -> GeminiFallbackResult | None:
         candidate = _find_scanned_pdf(fetch_result.attachments)
         if candidate is None:
@@ -299,13 +301,20 @@ class GeminiFallbackService:
         return GeminiFallbackResult("", diagnostic)
 
 
-# 只挑選已下載成功但沒有文字層的 PDF 附件。
+# 優先挑選主要辦法；申請表與證明文件不得占用 Gemini 額度。
 def _find_scanned_pdf(items: tuple[ResourceDiagnostic, ...]) -> ResourceDiagnostic | None:
-    for item in items:
-        scanned = "沒有可擷取文字" in item.error or "掃描檔" in item.error
-        if item.status == "error" and item.document_kind == "pdf" and scanned:
-            return item
+    scanned = [item for item in items if _is_scanned_pdf(item)]
+    for role in ("rules", "unknown", "unrelated"):
+        candidate = next((item for item in scanned if item.attachment_role == role), None)
+        if candidate is not None:
+            return candidate
     return None
+
+
+# 判斷附件是否為已下載但沒有文字層的 PDF。
+def _is_scanned_pdf(item: ResourceDiagnostic) -> bool:
+    scanned = "沒有可擷取文字" in item.error or "掃描檔" in item.error
+    return item.status == "error" and item.document_kind == "pdf" and scanned
 
 
 # 文件內容、模型與提示版本共同決定永久快取鍵。
@@ -349,7 +358,44 @@ def _usable_diagnostic(
         output_tokens,
         total_tokens,
         message,
+        _extracted_fields(extraction),
+        tuple(f"第{item.page}頁：{item.text}" for item in extraction.evidence),
     )
+
+
+# 將非空白結構化欄位整理成可稽核的單行內容。
+def _extracted_fields(extraction: GeminiRequirementExtraction) -> tuple[str, ...]:
+    fields = [
+        f"文件類型={extraction.document_type}",
+        f"條件完整={extraction.criteria_complete}",
+        f"需要更多頁={extraction.needs_more_pages}",
+    ]
+    _append_list(fields, "申請對象", extraction.applicant_groups)
+    _append_list(fields, "學位層級", extraction.degree_levels)
+    _append_list(fields, "包含學制", extraction.program_types_included)
+    _append_list(fields, "排除學制", extraction.program_types_excluded)
+    _append_list(fields, "包含科系", extraction.departments_included)
+    _append_list(fields, "排除科系", extraction.departments_excluded)
+    _append_list(fields, "年級", extraction.year_requirements)
+    _append_list(fields, "必要身分", extraction.required_special_statuses)
+    _append_list(fields, "明確排除", extraction.explicit_exclusions)
+    _append_list(fields, "其他必要條件", extraction.other_required_conditions)
+    if extraction.minimum_average_grade is not None:
+        fields.append(f"最低學業={extraction.minimum_average_grade:g}")
+    if extraction.minimum_conduct_grade is not None:
+        fields.append(f"最低操行={extraction.minimum_conduct_grade:g}")
+    if extraction.rank_requirement:
+        fields.append(f"排名={extraction.rank_requirement}")
+    if extraction.residence_requirement:
+        fields.append(f"戶籍={extraction.residence_requirement}")
+    return tuple(fields)
+
+
+# 將非空白列表欄位加入診斷內容。
+def _append_list(fields: list[str], label: str, values: list[str]) -> None:
+    cleaned = [value.strip() for value in values if value.strip()]
+    if cleaned:
+        fields.append(f"{label}={'、'.join(cleaned)}")
 
 
 # 將外部例外整理成有限長度的單行訊息。

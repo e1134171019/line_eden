@@ -20,15 +20,20 @@ def _attachment_summary(result: DetailFetchResult) -> str:
     attempted = len(result.attachments)
     success = result.successful_attachment_count()
     failed = result.failed_attachment_count()
+    rules = result.successful_rules_count()
     return (
         f"  附件診斷：發現 {result.discovered_attachment_count}，嘗試 {attempted}，"
-        f"成功 {success}，失敗 {failed}"
+        f"成功 {success}，失敗 {failed}，主要辦法成功 {rules}"
     )
 
 
 # 建立單一附件的摘要、網址與錯誤行。
 def _attachment_lines(index: int, item: ResourceDiagnostic) -> list[str]:
-    lines = [f"    [{index}] {_resource_summary(item)}", f"        請求：{item.requested_url}"]
+    role = item.attachment_role if item.role == "attachment" else "source"
+    lines = [
+        f"    [{index}] 角色 {role} | {_resource_summary(item)}",
+        f"        請求：{item.requested_url}",
+    ]
     lines.extend(_redirect_lines(item, "        最終"))
     if item.error:
         lines.append(f"        錯誤：{item.error}")

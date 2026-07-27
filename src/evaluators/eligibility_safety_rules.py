@@ -89,12 +89,13 @@ def _text_requires_graduation(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
-# 判斷一般大專生詞是否位於申請資格句型中。
+# 判斷一般大專生詞是否位於申請資格或門檻作用對象句型中。
 def _has_general_college_context(text: str) -> bool:
     terms = r"(?:大專院校學生|大專校院學生|大專院校在校生|大專校院在校生|大專在校生|大學生|在校學生)"
     patterns = (
         rf"(?:申請資格|申請對象|申請人|凡|限|僅限).{{0,30}}{terms}",
         rf"{terms}.{{0,20}}(?:均可申請|可申請|得申請|申請資格)",
+        rf"{terms}.{{0,6}}(?:之|的).{{0,24}}(?:學業|操行|成績|排名)",
     )
     return any(re.search(pattern, text) for pattern in patterns)
 

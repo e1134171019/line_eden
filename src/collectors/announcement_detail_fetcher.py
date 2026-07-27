@@ -8,7 +8,7 @@ import httpx
 from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.extractors.announcement_content_extractor import extract_announcement_text
-from src.extractors.attachment_link_extractor import extract_attachment_inventory
+from src.extractors.attachment_link_extractor import RULES, extract_attachment_inventory
 from src.extractors.document_text_extractor import detect_document_kind, extract_document_text
 from src.models.scholarship import Scholarship
 
@@ -86,24 +86,51 @@ class AnnouncementDetailFetcher:
         html = self._decode_html(resource)
         body = extract_announcement_text(html, title, resource.url)
         inventory = extract_attachment_inventory(
-            html, resource.url, title, self.max_attachment_count,
+            html,
+            resource.url,
+            title,
+            self.max_attachment_count,
         )
-        results = [self._attachment_result(client, url) for url in inventory.selected_urls]
-        texts = [text for text, diagnostic in results if diagnostic.status == "success"]
+        results = [
+            self._attachment_result(client, url, inventory.role_at(index))
+            for index, url in enumerate(inventory.selected_urls)
+        ]
+        rules_texts = [
+            text
+            for text, diagnostic in results
+            if diagnostic.status == "success" and diagnostic.attachment_role == RULES
+        ]
         diagnostics = tuple(diagnostic for _, diagnostic in results)
         source = self._success_diagnostic("source", requested_url, resource, "html", body)
-        combined = self._combine_text(body, texts)
-        combined = self._mark_unresolved_attachments(combined, inventory.discovered_count, texts)
+        combined = self._combine_text(body, rules_texts)
+        combined = self._mark_unresolved_attachments(
+            combined,
+            inventory.discovered_count,
+            rules_texts,
+            body,
+            diagnostics,
+            inventory.discovered_rules_count,
+        )
         return DetailFetchResult(combined, source, diagnostics, inventory.discovered_count)
 
-    # 有附件但沒有任何一份成功取出文字時加入安全標記。
+    # 主要辦法未取得，或公告明示資格在附件時加入安全標記。
     def _mark_unresolved_attachments(
         self,
         text: str,
         discovered_count: int,
         attachment_texts: list[str],
+        body_text: str = "",
+        diagnostics: tuple[ResourceDiagnostic, ...] = tuple(),
+        discovered_rules_count: int = 0,
     ) -> str:
-        if discovered_count > 0 and not attachment_texts:
+        resolved_rules = any(
+            item.status == "success" and item.attachment_role == RULES
+            for item in diagnostics
+        )
+        rules_missing = discovered_rules_count > 0 and not resolved_rules
+        declared_missing = _body_requires_rules(body_text or text) and not resolved_rules
+        all_failed = discovered_count > 0 and not attachment_texts
+        if rules_missing or declared_missing or all_failed:
             return f"{text}\n{UNRESOLVED_ATTACHMENT_MARKER}"
         return text
 
@@ -112,6 +139,7 @@ class AnnouncementDetailFetcher:
         self,
         client: httpx.Client,
         requested_url: str,
+        attachment_role: str = "unknown",
     ) -> tuple[str, ResourceDiagnostic]:
         resource: DownloadedResource | None = None
         kind = "unknown"
@@ -119,10 +147,23 @@ class AnnouncementDetailFetcher:
             resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
             text = self._resource_text(resource, kind)
-            diagnostic = self._success_diagnostic("attachment", requested_url, resource, kind, text)
+            diagnostic = self._success_diagnostic(
+                "attachment",
+                requested_url,
+                resource,
+                kind,
+                text,
+                attachment_role,
+            )
             return text, diagnostic
         except Exception as error:
-            return "", self._error_diagnostic(requested_url, resource, kind, error)
+            return "", self._error_diagnostic(
+                requested_url,
+                resource,
+                kind,
+                error,
+                attachment_role,
+            )
 
     # 依文件、HTML 或不支援格式擷取附件文字。
     def _resource_text(self, resource: DownloadedResource, kind: str) -> str:
@@ -141,10 +182,19 @@ class AnnouncementDetailFetcher:
         resource: DownloadedResource,
         kind: str,
         text: str,
+        attachment_role: str = "unknown",
     ) -> ResourceDiagnostic:
         return ResourceDiagnostic(
-            role, requested_url, resource.url, resource.content_type,
-            len(resource.content), kind, "success", len(text), "",
+            role,
+            requested_url,
+            resource.url,
+            resource.content_type,
+            len(resource.content),
+            kind,
+            "success",
+            len(text),
+            "",
+            attachment_role,
         )
 
     # 建立附件下載或解析失敗診斷。
@@ -154,20 +204,36 @@ class AnnouncementDetailFetcher:
         resource: DownloadedResource | None,
         kind: str,
         error: Exception,
+        attachment_role: str = "unknown",
     ) -> ResourceDiagnostic:
         final_url = resource.url if resource else ""
         content_type = resource.content_type if resource else ""
         size_bytes = len(resource.content) if resource else 0
         return ResourceDiagnostic(
-            "attachment", requested_url, final_url, content_type,
-            size_bytes, kind, "error", 0, self._error_text(error),
+            "attachment",
+            requested_url,
+            final_url,
+            content_type,
+            size_bytes,
+            kind,
+            "error",
+            0,
+            self._error_text(error),
+            attachment_role,
         )
 
     # 建立公告來源下載或解析失敗結果。
     def _source_failure(self, requested_url: str, error: Exception) -> DetailFetchResult:
         source = ResourceDiagnostic(
-            "source", requested_url, "", "", 0, "unknown",
-            "error", 0, self._error_text(error),
+            "source",
+            requested_url,
+            "",
+            "",
+            0,
+            "unknown",
+            "error",
+            0,
+            self._error_text(error),
         )
         return DetailFetchResult("", source, tuple(), 0)
 
@@ -223,7 +289,7 @@ class AnnouncementDetailFetcher:
         encoding = match.group(1).strip('"\'') if match else "utf-8"
         return resource.content.decode(encoding, errors="replace")
 
-    # 正文後只在至少一個附件成功解析時加入附件標記。
+    # 正文後只在主要資格辦法成功解析時加入附件內容標記。
     def _combine_text(self, body: str, attachment_texts: list[str]) -> str:
         if not attachment_texts:
             return body
@@ -233,3 +299,14 @@ class AnnouncementDetailFetcher:
     # 保留既有測試可直接驗證 HTML 解析。
     def _parse_text(self, html: str, title: str = "", source_url: str = "") -> str:
         return extract_announcement_text(html, title, source_url)
+
+
+# 判斷正文是否明示主要資格、辦法或相關資訊位於附件。
+def _body_requires_rules(text: str) -> bool:
+    direct = (
+        r"(?:相關資訊|申請辦法|相關助學金項目及內容).{0,16}"
+        r"(?:請自行下載|自行下載|請參考附件|請參閱附件|詳見附件)"
+    )
+    subject = r"(?:申請資格|詳細資格|資格條件|申請條件|申請對象)"
+    reference = r"(?:詳見|請參閱|請參考|如|依).{0,8}(?:附件|附檔)"
+    return bool(re.search(direct, text) or re.search(rf"{subject}.{{0,30}}{reference}", text))
