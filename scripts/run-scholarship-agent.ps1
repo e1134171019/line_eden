@@ -16,11 +16,14 @@ if ($NoGemini) {
     $Arguments += "--no-gemini"
 }
 
+$ExitCode = 1
 Push-Location $ProjectRoot
 try {
     & $PythonPath @Arguments
-    exit $LASTEXITCODE
+    $ExitCode = $LASTEXITCODE
 }
 finally {
     Pop-Location
 }
+
+exit $ExitCode
