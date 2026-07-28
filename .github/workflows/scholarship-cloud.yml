@@ -167,7 +167,35 @@ jobs:
                 python main.py --dry-run --use-gemini
                 ;;
               test-line)
-                python -m src.automation.line_transport_test
+                python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          token = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+          user_id = os.environ["LINE_USER_ID"]
+          message = "GitHub Actions 雲端測試：Eden 獎學金助手：LINE Messaging API 測試成功。"
+          payload = json.dumps(
+              {
+                  "to": user_id,
+                  "messages": [{"type": "text", "text": message}],
+              },
+              ensure_ascii=False,
+          ).encode("utf-8")
+          request = urllib.request.Request(
+              "https://api.line.me/v2/bot/message/push",
+              data=payload,
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(request, timeout=10) as response:
+              if response.status != 200:
+                  raise RuntimeError(f"LINE API 回傳非成功狀態：{response.status}")
+          print("LINE 雲端測試通知已送出")
+          PY
                 ;;
               *)
                 echo "不支援的 operation：$OPERATION" >&2
