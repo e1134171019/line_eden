@@ -3,14 +3,14 @@
 from dataclasses import dataclass, replace
 from typing import Callable
 
-from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
+from config import GEMINI_PARTIAL_EXCLUSION_MARKER
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.base_collector import BaseCollector
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
     ResourceDiagnostic,
+    RULES_STATUS_NOT_REQUIRED,
     RULES_STATUS_RESOLVED,
-    RULES_STATUS_UNKNOWN,
 )
 from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
@@ -136,7 +136,9 @@ class ScholarshipService:
             bool(record.structured_shadow and record.structured_shadow.changed)
             for record in records
         )
-        structured_deferred = sum(record.shadow_status == "budget_deferred" for record in records)
+        structured_deferred = sum(
+            record.shadow_status == "budget_deferred" for record in records
+        )
         structured_errors = sum(
             record.shadow_status in {"text_error", "text_cached_error"}
             for record in records
@@ -158,13 +160,14 @@ class ScholarshipService:
         )
 
     def initialize_baseline(self) -> ServiceResult:
+        """保留舊呼叫介面；正式 CLI 已改用獨立 BaselineService。"""
         collected = self._collect_and_discover()
-        hashes = [item.content_hash for item in collected]
-        baseline_count = self.repository.mark_baseline(hashes)
-        pending_items = self.repository.list_pending()
+        baseline_count = self.repository.mark_baseline(
+            [item.content_hash for item in collected]
+        )
         return ServiceResult(
             collected,
-            pending_items,
+            self.repository.list_pending(),
             0,
             baseline_count,
             f"已設定 {baseline_count} 筆歷史基準。",
@@ -190,11 +193,11 @@ class ScholarshipService:
         if not self._personalization_enabled():
             pending = self.repository.list_pending()
             return pending, (len(pending), 0, 0)
+        assert self.profile is not None
         profile_hash = self.profile.fingerprint()
         self._evaluate_pending(profile_hash)
         items = self.repository.list_notifiable(profile_hash, self.notify_review_items)
-        counts = self._eligibility_counts(profile_hash)
-        return items, counts
+        return items, self._eligibility_counts(profile_hash)
 
     def _personalization_enabled(self) -> bool:
         return all((self.detail_fetcher, self.evaluator, self.profile))
@@ -214,8 +217,7 @@ class ScholarshipService:
         self,
         item: Scholarship,
     ) -> tuple[EligibilityDecision, str, str, GeminiAnalysisDiagnostic | None]:
-        fetch_result = self._fetch_audit_result(item)
-        return self._evaluate_fetch_result(item, fetch_result)
+        return self._evaluate_fetch_result(item, self._fetch_audit_result(item))
 
     def _evaluate_fetch_result(
         self,
@@ -225,9 +227,10 @@ class ScholarshipService:
         if fetch_result.source.status == "error":
             decision = EligibilityDecision(REVIEW, ("公告正文讀取失敗，暫不推播。",))
             return decision, UNKNOWN, "", None
+        detail_text = fetch_result.eligibility_text()
         decision, notice_kind, detail_text = self._evaluate_detail(
             item,
-            fetch_result.text,
+            detail_text,
             fetch_result.rules_status,
         )
         if notice_kind != APPLICATION or decision.status != REVIEW or not self.gemini_fallback:
@@ -242,6 +245,8 @@ class ScholarshipService:
             if fallback.diagnostic.status in {"success", "cache"}
             else fetch_result.rules_status
         )
+        assert self.evaluator is not None
+        assert self.profile is not None
         decision = self.evaluator.evaluate(
             item,
             resolved_text,
@@ -254,12 +259,14 @@ class ScholarshipService:
         self,
         item: Scholarship,
         detail_text: str,
-        rules_status: str = RULES_STATUS_UNKNOWN,
+        rules_status: str = RULES_STATUS_NOT_REQUIRED,
     ) -> tuple[EligibilityDecision, str, str]:
         notice_kind = classify_notice(item.title, detail_text)
         if notice_kind != APPLICATION:
             reason = f"非申請型公告（{notice_kind}），不推播。"
             return EligibilityDecision(INELIGIBLE, (reason,)), notice_kind, detail_text
+        assert self.evaluator is not None
+        assert self.profile is not None
         decision = self.evaluator.evaluate(
             item,
             detail_text,
@@ -270,7 +277,10 @@ class ScholarshipService:
 
     def _build_audit_record(self, item: Scholarship) -> AuditRecord:
         fetch_result = self._fetch_audit_result(item)
-        decision, notice_kind, detail_text, gemini = self._evaluate_fetch_result(item, fetch_result)
+        decision, notice_kind, detail_text, gemini = self._evaluate_fetch_result(
+            item,
+            fetch_result,
+        )
         shadow, shadow_status, shadow_gemini = self._build_structured_shadow(
             item,
             decision,
@@ -326,6 +336,19 @@ class ScholarshipService:
         return comparison, "compared", analysis.diagnostic
 
     def _fetch_audit_result(self, item: Scholarship) -> DetailFetchResult:
+        if self.detail_fetcher is None:
+            source = ResourceDiagnostic(
+                "source",
+                item.source_url,
+                "",
+                "",
+                0,
+                "unknown",
+                "error",
+                0,
+                "detail_fetcher 未設定",
+            )
+            return DetailFetchResult("", source, tuple(), 0)
         fetch_method = getattr(self.detail_fetcher, "fetch_with_diagnostics", None)
         if callable(fetch_method):
             return fetch_method(item)
@@ -333,13 +356,27 @@ class ScholarshipService:
             text = self.detail_fetcher.fetch_text(item)
         except Exception as error:
             source = ResourceDiagnostic(
-                "source", item.source_url, "", "", 0,
-                "unknown", "error", 0, _error_text(error),
+                "source",
+                item.source_url,
+                "",
+                "",
+                0,
+                "unknown",
+                "error",
+                0,
+                _error_text(error),
             )
             return DetailFetchResult("", source, tuple(), 0)
         source = ResourceDiagnostic(
-            "source", item.source_url, item.source_url, "text/plain",
-            len(text.encode("utf-8")), "html", "success", len(text), "",
+            "source",
+            item.source_url,
+            item.source_url,
+            "text/plain",
+            len(text.encode("utf-8")),
+            "html",
+            "success",
+            len(text),
+            "",
         )
         return DetailFetchResult(
             text,
@@ -347,21 +384,21 @@ class ScholarshipService:
             tuple(),
             0,
             body_text=text,
-            rules_status=RULES_STATUS_UNKNOWN,
+            rules_status=RULES_STATUS_NOT_REQUIRED,
         )
 
     def _count_audit_status(self, records: list[AuditRecord], status: str) -> int:
         return sum(record.item.eligibility_status == status for record in records)
 
     def _excerpt(self, detail_text: str) -> str:
-        normalized = " ".join(detail_text.split())
-        return normalized[:160]
+        return " ".join(detail_text.split())[:160]
 
     def _eligibility_counts(self, profile_hash: str) -> tuple[int, int, int]:
-        eligible = self.repository.count_eligibility(profile_hash, ELIGIBLE)
-        review = self.repository.count_eligibility(profile_hash, REVIEW)
-        ineligible = self.repository.count_eligibility(profile_hash, INELIGIBLE)
-        return eligible, review, ineligible
+        return (
+            self.repository.count_eligibility(profile_hash, ELIGIBLE),
+            self.repository.count_eligibility(profile_hash, REVIEW),
+            self.repository.count_eligibility(profile_hash, INELIGIBLE),
+        )
 
     def _gemini_usage(self) -> tuple[int, int, int, int]:
         if self.gemini_fallback:
@@ -414,13 +451,12 @@ class ScholarshipService:
     ) -> ServiceResult:
         batches = split_scholarships(pending_items, self.summary_batch_size)
         notified_count = self._send_batches(batches)
-        message = f"已送出 {len(batches)} 則摘要，共通知 {notified_count} 筆公告。"
         return ServiceResult(
             collected,
             pending_items,
             notified_count,
             0,
-            message,
+            f"已送出 {len(batches)} 則摘要，共通知 {notified_count} 筆公告。",
             *counts,
             *self._gemini_usage(),
         )
@@ -428,16 +464,18 @@ class ScholarshipService:
     def _send_batches(self, batches: list[list[Scholarship]]) -> int:
         notified_count = 0
         for index, batch in enumerate(batches, start=1):
-            message = build_summary_message(batch, index, len(batches))
-            self.notifier(message)
-            hashes = [item.content_hash for item in batch]
-            notified_count += self.repository.mark_notified(hashes)
+            self.notifier(build_summary_message(batch, index, len(batches)))
+            notified_count += self.repository.mark_notified(
+                [item.content_hash for item in batch]
+            )
         return notified_count
 
 
 def _merge_gemini_rules(detail_text: str, rule_text: str) -> str:
-    resolved = detail_text.replace(UNRESOLVED_ATTACHMENT_MARKER, "")
-    return f"{resolved}\n{ATTACHMENT_TEXT_MARKER}\n【Gemini資格抽取】\n{rule_text}"
+    """Gemini 規則只以內容區段加入，不再用附件 marker 傳遞狀態。"""
+    if GEMINI_PARTIAL_EXCLUSION_MARKER in rule_text:
+        return f"{detail_text}\n{rule_text}"
+    return f"{detail_text}\n【Gemini資格抽取】\n{rule_text}"
 
 
 def _error_text(error: Exception) -> str:
