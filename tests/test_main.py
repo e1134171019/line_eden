@@ -137,11 +137,11 @@ def test_initialize_baseline_rejects_gemini() -> None:
         main.parse_args(["--initialize-baseline", "--use-gemini"])
 
 
-def test_resolve_run_mode_is_explicit() -> None:
-    assert main.resolve_run_mode(main.parse_args([])) is RunMode.LIVE
-    assert main.resolve_run_mode(main.parse_args(["--dry-run"])) is RunMode.DRY_RUN
-    assert main.resolve_run_mode(main.parse_args(["--audit"])) is RunMode.AUDIT
+def test_parse_args_returns_typed_options() -> None:
+    assert main.parse_args([]).mode is RunMode.LIVE
+    assert main.parse_args(["--dry-run"]).mode is RunMode.DRY_RUN
+    assert main.parse_args(["--audit", "--use-gemini"]).use_gemini is True
     assert (
-        main.resolve_run_mode(main.parse_args(["--initialize-baseline"]))
+        main.parse_args(["--initialize-baseline"]).mode
         is RunMode.INITIALIZE_BASELINE
     )
