@@ -36,6 +36,7 @@ def _fetch_result() -> DetailFetchResult:
     attachment = ExtractedAttachment(
         "https://example.com/rules.pdf",
         "https://example.com/rules.pdf",
+        "申請辦法.pdf",
         "rules",
         "scholarship_rules",
         "pdf",
