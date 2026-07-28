@@ -47,6 +47,11 @@ _SAFE_RULES_STATUSES = {
     RULES_STATUS_NOT_REQUIRED,
     RULES_STATUS_RESOLVED,
 }
+_UNRESOLVED_RULES_STATUSES = {
+    RULES_STATUS_DECLARED_MISSING,
+    RULES_STATUS_DISCOVERED_UNRESOLVED,
+    RULES_STATUS_GENERIC_UNCONFIRMED,
+}
 
 
 def _normalize_rule_text(text: str) -> str:
@@ -101,6 +106,15 @@ def _trusted_unresolved_text(title: str, detail_text: str) -> str:
     return _normalize_rule_text(f"{title}。{partial}")
 
 
+def _rules_are_unresolved(rules_status: str | None, detail_text: str) -> bool:
+    if rules_status in _UNRESOLVED_RULES_STATUSES:
+        return True
+    return (
+        rules_status in (None, RULES_STATUS_UNKNOWN)
+        and UNRESOLVED_ATTACHMENT_MARKER in detail_text
+    )
+
+
 @dataclass(frozen=True)
 class EligibilityDecision:
     """單筆公告對指定學生背景的資格判斷結果。"""
@@ -126,7 +140,15 @@ class EligibilityEvaluator:
         title = _normalize_rule_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
         exclusions = find_deadline_exclusions(scholarship, text)
-        exclusions.extend(self._find_exclusions(title, text, detail_text, profile))
+        exclusions.extend(
+            self._find_exclusions(
+                title,
+                text,
+                detail_text,
+                profile,
+                rules_status,
+            )
+        )
         exclusions = _deduplicate_reasons(exclusions)
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
@@ -149,10 +171,11 @@ class EligibilityEvaluator:
         text: str,
         detail_text: str,
         profile: StudentProfile,
+        rules_status: str | None,
     ) -> list[str]:
         trusted_text = (
             _trusted_unresolved_text(title, detail_text)
-            if UNRESOLVED_ATTACHMENT_MARKER in detail_text
+            if _rules_are_unresolved(rules_status, detail_text)
             else text
         )
         exclusions = find_hard_exclusions(title, trusted_text, profile)
