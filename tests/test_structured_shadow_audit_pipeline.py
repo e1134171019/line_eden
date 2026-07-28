@@ -2,7 +2,6 @@
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 from src.ai.gemini_requirement_extractor import (
     GeminiRequirementExtraction,
