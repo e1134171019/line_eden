@@ -5,7 +5,6 @@ import re
 
 import httpx
 
-from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
     ExtractedAttachment,
@@ -24,7 +23,6 @@ from src.extractors.attachment_content_classifier import (
     classify_attachment_content,
 )
 from src.extractors.attachment_link_extractor import (
-    RULES,
     AttachmentLinkInventory,
     extract_attachment_inventory,
 )
@@ -142,7 +140,6 @@ class AnnouncementDetailFetcher:
         )
         source = self._success_diagnostic("source", requested_url, resource, "html", body)
         combined = self._combine_text(body, rules_texts)
-        combined = self._apply_rules_status_marker(combined, rules_status)
         return DetailFetchResult(
             combined,
             source,
@@ -207,32 +204,6 @@ class AnnouncementDetailFetcher:
             return RULES_STATUS_DISCOVERED_UNRESOLVED
 
         return RULES_STATUS_NOT_REQUIRED
-
-    def _apply_rules_status_marker(self, text: str, rules_status: str) -> str:
-        safe = {RULES_STATUS_NOT_REQUIRED, RULES_STATUS_RESOLVED}
-        if rules_status in safe or UNRESOLVED_ATTACHMENT_MARKER in text:
-            return text
-        return f"{text}\n{UNRESOLVED_ATTACHMENT_MARKER}"
-
-    def _mark_unresolved_attachments(
-        self,
-        text: str,
-        discovered_count: int,
-        attachment_texts: list[str],
-        body_text: str = "",
-        diagnostics: tuple[ResourceDiagnostic, ...] = tuple(),
-        discovered_rules_count: int = 0,
-    ) -> str:
-        resolved_rules = any(
-            item.status == "success" and item.attachment_role == RULES
-            for item in diagnostics
-        )
-        rules_missing = discovered_rules_count > 0 and not resolved_rules
-        declared_missing = _body_requires_rules(body_text or text) and not resolved_rules
-        all_failed = discovered_count > 0 and not attachment_texts
-        if rules_missing or declared_missing or all_failed:
-            return f"{text}\n{UNRESOLVED_ATTACHMENT_MARKER}"
-        return text
 
     def _attachment_result(
         self,
@@ -393,14 +364,7 @@ class AnnouncementDetailFetcher:
         return resource.content.decode(encoding, errors="replace")
 
     def _combine_text(self, body: str, attachment_texts: list[str]) -> str:
-        if not attachment_texts:
-            return body
-        attachments = "\n".join(attachment_texts)
-        return f"{body}\n{ATTACHMENT_TEXT_MARKER}\n{attachments}"
+        return "\n".join([body, *(text for text in attachment_texts if text.strip())])
 
     def _parse_text(self, html: str, title: str = "", source_url: str = "") -> str:
         return extract_announcement_text(html, title, source_url)
-
-
-def _body_requires_rules(text: str) -> bool:
-    return detect_attachment_requirement(text).required
