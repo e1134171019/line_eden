@@ -10,18 +10,16 @@ from src.ai.gemini_requirement_extractor import (
     GeminiRequirementExtractor,
     PreparedGeminiDocument,
     RequirementEvidence,
-    _build_prompt,
+    _build_pdf_prompt,
 )
 
 
 class FakeModels:
     """模擬 google-genai models 介面。"""
 
-    # 回傳固定多模態輸入 Token。
     def count_tokens(self, **kwargs: object) -> object:
         return SimpleNamespace(total_tokens=321)
 
-    # 回傳符合 Pydantic schema 的 JSON 與用量。
     def generate_content(self, **kwargs: object) -> object:
         extraction = GeminiRequirementExtraction(
             document_type="scholarship_rules",
@@ -39,7 +37,6 @@ class FakeModels:
         return SimpleNamespace(text=extraction.model_dump_json(), usage_metadata=usage)
 
 
-# 建立不連線且可替換 SDK client 的抽取器。
 def _extractor(max_pages: int = 2, max_input_tokens: int = 1000) -> GeminiRequirementExtractor:
     extractor = GeminiRequirementExtractor(
         api_key="test-key",
@@ -55,7 +52,6 @@ def _extractor(max_pages: int = 2, max_input_tokens: int = 1000) -> GeminiRequir
     return extractor
 
 
-# 建立指定頁數的最小 PDF。
 def _pdf_bytes(page_count: int) -> bytes:
     writer = PdfWriter()
     for _ in range(page_count):
@@ -65,7 +61,6 @@ def _pdf_bytes(page_count: int) -> bytes:
     return output.getvalue()
 
 
-# 驗證只保留設定的前兩頁，不會把整份 PDF 送給模型。
 def test_select_pages_limits_pdf_input() -> None:
     selected, page_count = _extractor(max_pages=2)._select_pages(_pdf_bytes(5))
 
@@ -73,7 +68,6 @@ def test_select_pages_limits_pdf_input() -> None:
     assert len(selected) < len(_pdf_bytes(5))
 
 
-# 驗證 count_tokens 與結構化 JSON 解析會記錄實際用量。
 def test_count_and_extract_structured_requirements() -> None:
     extractor = _extractor()
     document = PreparedGeminiDocument(
@@ -93,16 +87,14 @@ def test_count_and_extract_structured_requirements() -> None:
     assert result.output_tokens == 70
 
 
-# 驗證提示只包含文件任務，不含任何學生 profile 欄位。
 def test_prompt_does_not_request_student_profile() -> None:
-    prompt = _build_prompt("能源獎學金", 2)
+    prompt = _build_pdf_prompt("能源獎學金", 2)
 
     assert "只抽取文件" in prompt
     assert "profile.json" not in prompt
     assert "學生是否符合" in prompt
 
 
-# 驗證結構化欄位只轉成既有規則可解析的資格句型。
 def test_extraction_builds_deterministic_rule_text() -> None:
     extraction = GeminiRequirementExtraction(
         document_type="scholarship_rules",
@@ -123,7 +115,6 @@ def test_extraction_builds_deterministic_rule_text() -> None:
     assert "學業平均80分以上" in text
 
 
-# 驗證多個學制放在同一句，避免日間部被誤認為唯一對象。
 def test_multiple_program_types_are_joined_in_one_rule() -> None:
     extraction = GeminiRequirementExtraction(
         document_type="scholarship_rules",
