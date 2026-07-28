@@ -41,6 +41,10 @@ def print_audit(result: AuditResult) -> None:
     print(f"明確適合：{result.eligible_count}")
     print(f"資格待確認：{result.review_count}")
     print(f"不推播：{result.ineligible_count}")
+    print(f"Structured 已比較：{result.structured_evaluated_count}")
+    print(f"Structured 分歧：{result.structured_changed_count}")
+    print(f"Structured 預算延後：{result.structured_deferred_count}")
+    print(f"Structured 錯誤：{result.structured_error_count}")
     print_gemini_usage(result)
     for record in result.records:
         print_audit_record(record)
@@ -56,6 +60,23 @@ def print_audit_record(record: AuditRecord) -> None:
         print(line)
     if record.gemini_diagnostic:
         print_gemini_diagnostic(record.gemini_diagnostic)
+    print(f"  Shadow狀態：{record.shadow_status}")
+    if record.structured_gemini_diagnostic:
+        print_gemini_diagnostic(record.structured_gemini_diagnostic)
+    if record.structured_shadow:
+        shadow = record.structured_shadow
+        print(
+            "  Shadow比較："
+            f"legacy={shadow.legacy_status} | structured={shadow.structured_status} | "
+            f"changed={shadow.changed}"
+        )
+        print(f"  Structured理由：{shadow.structured_reason}")
+        for condition in shadow.conditions:
+            print(
+                "  Structured條件："
+                f"{condition.status} | {condition.field} | "
+                f"{condition.requirement} | {condition.reason}"
+            )
     print(f"  {item.source_url}")
 
 
