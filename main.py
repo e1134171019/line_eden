@@ -212,12 +212,6 @@ def _build_gemini_services(
     return fallback, text_service
 
 
-def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
-    """保留既有測試與呼叫介面。"""
-    fallback, _ = _build_gemini_services(use_gemini)
-    return fallback
-
-
 def execute_service(
     mode: RunMode,
     service: ScholarshipService,
