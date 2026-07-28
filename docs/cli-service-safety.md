@@ -25,7 +25,7 @@
 - `NoticeContent.attachments`
 - `NoticeContent.rules_status`
 
-附件狀態不再依靠在正文中插入 `【附件內容】` 或 `【附件未解析】`。舊 marker 僅保留給歷史測試與快取相容。
+附件狀態不再依靠在正文中插入 `【附件內容】` 或 `【附件未解析】`。舊 marker 僅可用於歷史測試、舊快取或序列化相容；collector、evaluator 與正式通知決策不得讀取 marker 來推定附件是否完整。
 
 ## 品質門檻
 
