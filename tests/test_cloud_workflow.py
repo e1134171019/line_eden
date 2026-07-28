@@ -94,6 +94,7 @@ def test_cloud_workflow_has_concurrency_and_modes() -> None:
     assert "python -m src.automation.daily_line_digest" in content
     assert "python main.py --use-gemini" in content
     assert "python main.py --dry-run --use-gemini" in content
+    assert "python -m src.automation.line_transport_test" in content
+    assert "TEST_MESSAGE" not in content
     assert "- daily" in content
     assert "- report" in content
-    assert "GitHub Actions 雲端測試" in content
