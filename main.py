@@ -49,6 +49,7 @@ from src.profiles.student_profile import load_student_profile
 from src.repositories.gemini_cache_repository import GeminiCacheRepository
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.runtime.run_mode import RunMode
+from src.services.baseline_service import BaselineService
 from src.services.gemini_fallback_service import (
     GeminiFallbackService,
     GeminiUsageLimiter,
@@ -149,14 +150,12 @@ def build_service(
     )
 
 
-def build_baseline_service() -> ScholarshipService:
-    """建立只負責蒐集、去重與基準化的服務，不載入個人資料或 notifier。"""
-    return ScholarshipService(
+def build_baseline_service() -> BaselineService:
+    """建立不含 profile、evaluator、Gemini 與 notifier 的基準服務。"""
+    return BaselineService(
         _build_collector(),
         _build_repository(),
-        _discard_notification,
-        include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
-        summary_batch_size=LINE_SUMMARY_BATCH_SIZE,
+        SCHOLARSHIP_FILTER_KEYWORDS,
     )
 
 
@@ -216,13 +215,14 @@ def execute_service(
     mode: RunMode,
     service: ScholarshipService,
 ) -> ServiceResult | AuditResult:
-    if mode is RunMode.INITIALIZE_BASELINE:
-        return service.initialize_baseline()
+    """執行需要完整學生背景的模式；baseline 不得進入此函式。"""
     if mode is RunMode.AUDIT:
         return service.audit()
     if mode is RunMode.DRY_RUN:
         return service.run(dry_run=True)
-    return service.run(dry_run=False)
+    if mode in {RunMode.LIVE, RunMode.DAILY}:
+        return service.run(dry_run=False)
+    raise ValueError("基準模式必須由 BaselineService 執行")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -235,12 +235,14 @@ def main(argv: list[str] | None = None) -> None:
     if args.use_gemini:
         validate_gemini_settings()
 
-    service = (
-        build_baseline_service()
-        if mode is RunMode.INITIALIZE_BASELINE
-        else build_service(mode=mode, use_gemini=args.use_gemini)
-    )
-    result = execute_service(mode, service)
+    if mode is RunMode.INITIALIZE_BASELINE:
+        result: ServiceResult | AuditResult = build_baseline_service().initialize_baseline()
+    else:
+        result = execute_service(
+            mode,
+            build_service(mode=mode, use_gemini=args.use_gemini),
+        )
+
     if isinstance(result, AuditResult):
         print_audit(result)
         csv_path, json_path = write_structured_shadow_artifacts(result)
