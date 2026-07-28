@@ -2,9 +2,12 @@
 
 from pathlib import Path
 
-from config import UNRESOLVED_ATTACHMENT_MARKER
 from src.collectors.base_collector import BaseCollector
-from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
+from src.diagnostics.detail_fetch_diagnostics import (
+    DetailFetchResult,
+    ResourceDiagnostic,
+    RULES_STATUS_DISCOVERED_UNRESOLVED,
+)
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
@@ -23,15 +26,13 @@ class FakeCollector(BaseCollector):
     def __init__(self, item: Scholarship) -> None:
         self.item = item
 
-    # 回傳固定公告。
     def collect(self) -> list[Scholarship]:
         return [self.item]
 
 
 class FakeDiagnosticFetcher:
-    """回傳含掃描型 PDF 診斷的正文。"""
+    """回傳含掃描型主要辦法診斷的正文。"""
 
-    # 建立本機無法完整判斷的擷取結果。
     def fetch_with_diagnostics(self, item: Scholarship) -> DetailFetchResult:
         source = ResourceDiagnostic(
             "source", item.source_url, item.source_url, "text/html",
@@ -41,9 +42,17 @@ class FakeDiagnosticFetcher:
             "attachment", "https://example.com/rules.pdf",
             "https://example.com/rules.pdf", "application/pdf",
             1000, "pdf", "error", 0, "PDF 沒有可擷取文字，可能是掃描檔",
+            "rules", "申請辦法",
         )
-        text = f"申請資格請參閱附件。{UNRESOLVED_ATTACHMENT_MARKER}"
-        return DetailFetchResult(text, source, (attachment,), 1)
+        body = "申請資格請參閱附件。"
+        return DetailFetchResult(
+            body,
+            source,
+            (attachment,),
+            1,
+            body_text=body,
+            rules_status=RULES_STATUS_DISCOVERED_UNRESOLVED,
+        )
 
 
 class FakeGeminiFallback:
@@ -52,7 +61,6 @@ class FakeGeminiFallback:
     def __init__(self) -> None:
         self.calls = 0
 
-    # 模擬 Gemini 已抽取完整資格。
     def analyze(self, title: str, fetch_result: DetailFetchResult) -> GeminiFallbackResult:
         self.calls += 1
         diagnostic = GeminiAnalysisDiagnostic(
@@ -62,7 +70,6 @@ class FakeGeminiFallback:
         rules = "申請對象為大專院校在校生。學業平均80分以上。"
         return GeminiFallbackResult(rules, diagnostic)
 
-    # 回傳本次固定用量。
     def usage_summary(self) -> GeminiUsageSummary:
         return GeminiUsageSummary(self.calls, 0, 300 if self.calls else 0, 50 if self.calls else 0)
 
