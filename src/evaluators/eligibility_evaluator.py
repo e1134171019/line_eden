@@ -8,6 +8,14 @@ from config import (
     GEMINI_PARTIAL_EXCLUSION_MARKER,
     UNRESOLVED_ATTACHMENT_MARKER,
 )
+from src.diagnostics.detail_fetch_diagnostics import (
+    RULES_STATUS_DECLARED_MISSING,
+    RULES_STATUS_DISCOVERED_UNRESOLVED,
+    RULES_STATUS_GENERIC_UNCONFIRMED,
+    RULES_STATUS_NOT_REQUIRED,
+    RULES_STATUS_RESOLVED,
+    RULES_STATUS_UNKNOWN,
+)
 from src.evaluators.eligibility_completeness import (
     find_completeness_unknowns,
     find_hard_exclusions,
@@ -35,21 +43,44 @@ ELIGIBLE = "eligible"
 REVIEW = "review"
 INELIGIBLE = "ineligible"
 
+_SAFE_RULES_STATUSES = {
+    RULES_STATUS_NOT_REQUIRED,
+    RULES_STATUS_RESOLVED,
+}
 
-# 正規化比較詞、括號身分與數字間空白，統一資格句型。
+
 def _normalize_rule_text(text: str) -> str:
     normalized = normalize_eligibility_text(normalize_text(text))
     return re.sub(r"(不得低於|至少|須達|需達|達)\s+(?=\d)", r"\1", normalized)
 
 
-# 附件已成功解析時，只移除「仍需參閱附件」這一項未知原因。
-def _filter_resolved_attachment_unknowns(text: str, unknowns: list[str]) -> list[str]:
-    if ATTACHMENT_TEXT_MARKER not in text:
+def _filter_resolved_attachment_unknowns(
+    text: str,
+    unknowns: list[str],
+    rules_status: str | None = None,
+) -> list[str]:
+    explicit_resolved = rules_status == RULES_STATUS_RESOLVED
+    legacy_resolved = (
+        rules_status in (None, RULES_STATUS_UNKNOWN)
+        and ATTACHMENT_TEXT_MARKER in text
+    )
+    if not explicit_resolved and not legacy_resolved:
         return unknowns
     return [reason for reason in unknowns if "參閱附件" not in reason]
 
 
-# 合併語意相同的排除原因，保留資訊較完整的一句。
+def _rules_status_unknown_reason(rules_status: str | None) -> str | None:
+    if rules_status in (None, RULES_STATUS_UNKNOWN) or rules_status in _SAFE_RULES_STATUSES:
+        return None
+    if rules_status == RULES_STATUS_DECLARED_MISSING:
+        return "公告明示資格位於附件，但未找到附件連結，暫不推播。"
+    if rules_status == RULES_STATUS_GENERIC_UNCONFIRMED:
+        return "已找到通用附件，但尚未確認其為主要資格辦法，暫不推播。"
+    if rules_status == RULES_STATUS_DISCOVERED_UNRESOLVED:
+        return "主要資格辦法尚未成功解析，資格無法完整確認。"
+    return "主要資格證據狀態不完整，暫不推播。"
+
+
 def _deduplicate_reasons(reasons: list[str]) -> list[str]:
     unique = list(dict.fromkeys(reasons))
     graduate_detailed = "公告限定研究所或博士生層級。"
@@ -63,7 +94,6 @@ def _deduplicate_reasons(reasons: list[str]) -> list[str]:
     return unique
 
 
-# 主要附件未解析時，只加入 Gemini 有證據的部分硬性排除文字。
 def _trusted_unresolved_text(title: str, detail_text: str) -> str:
     if GEMINI_PARTIAL_EXCLUSION_MARKER not in detail_text:
         return title
@@ -78,7 +108,6 @@ class EligibilityDecision:
     status: str
     reasons: tuple[str, ...]
 
-    # 將多個原因整理成可保存與顯示的文字。
     def reason_text(self) -> str:
         return "；".join(self.reasons)
 
@@ -86,12 +115,13 @@ class EligibilityDecision:
 class EligibilityEvaluator:
     """協調資格規則並產生保守的適合度判斷。"""
 
-    # 評估公告，先排除過期與硬性不符，再確認未知與適用對象完整性。
     def evaluate(
         self,
         scholarship: Scholarship,
         detail_text: str,
         profile: StudentProfile,
+        *,
+        rules_status: str | None = None,
     ) -> EligibilityDecision:
         title = _normalize_rule_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
@@ -100,7 +130,7 @@ class EligibilityEvaluator:
         exclusions = _deduplicate_reasons(exclusions)
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
-        unknowns = self._find_unknowns(text, profile)
+        unknowns = self._find_unknowns(text, profile, rules_status)
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
@@ -113,7 +143,6 @@ class EligibilityEvaluator:
             return EligibilityDecision(ELIGIBLE, tuple(dict.fromkeys(matches)))
         return EligibilityDecision(REVIEW, ("公告未提供足夠條件，暫不推播。",))
 
-    # 主要辦法未解析時，正文雜訊不得產生硬性排除；只信任標題及 Gemini 證據。
     def _find_exclusions(
         self,
         title: str,
@@ -133,10 +162,17 @@ class EligibilityEvaluator:
         filtered = filter_missing_score_exclusions(exclusions, profile)
         return _deduplicate_reasons(filtered)
 
-    # 合併附件、全職學生、個人資料缺值與既有待確認原因。
-    def _find_unknowns(self, text: str, profile: StudentProfile) -> list[str]:
+    def _find_unknowns(
+        self,
+        text: str,
+        profile: StudentProfile,
+        rules_status: str | None,
+    ) -> list[str]:
         unknowns = find_unknowns(text, profile)
-        unknowns = _filter_resolved_attachment_unknowns(text, unknowns)
+        unknowns = _filter_resolved_attachment_unknowns(text, unknowns, rules_status)
+        status_reason = _rules_status_unknown_reason(rules_status)
+        if status_reason:
+            unknowns.append(status_reason)
         unknowns.extend(find_runtime_unknowns(text, profile))
         unknowns.extend(find_safety_unknowns(text, profile))
         return list(dict.fromkeys(unknowns))
