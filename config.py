@@ -75,11 +75,6 @@ SCHOLARSHIP_FILTER_KEYWORDS = (
     "就學貸款",
     "補助",
 )
-NOTIFIABLE_OPPORTUNITY_CATEGORIES = (
-    "scholarship",
-    "student_aid",
-    "subsidy",
-)
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
     "LINE_CHANNEL_ACCESS_TOKEN",
