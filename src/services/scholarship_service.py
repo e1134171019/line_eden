@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass, replace
-from typing import Callable
+from typing import Callable, cast
 
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.base_collector import BaseCollector
@@ -347,7 +347,11 @@ class ScholarshipService:
         assert self.detail_fetcher is not None
         fetch_method = getattr(self.detail_fetcher, "fetch_with_diagnostics", None)
         if callable(fetch_method):
-            return fetch_method(item)
+            typed_fetch = cast(
+                Callable[[Scholarship], DetailFetchResult],
+                fetch_method,
+            )
+            return typed_fetch(item)
         try:
             text = self.detail_fetcher.fetch_text(item)
         except Exception as error:
