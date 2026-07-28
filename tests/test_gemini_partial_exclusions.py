@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from config import GEMINI_PARTIAL_EXCLUSION_MARKER, UNRESOLVED_ATTACHMENT_MARKER
+from config import GEMINI_PARTIAL_EXCLUSION_MARKER
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtraction
+from src.diagnostics.detail_fetch_diagnostics import RULES_STATUS_DISCOVERED_UNRESOLVED
 from src.evaluators.eligibility_evaluator import INELIGIBLE, REVIEW, EligibilityEvaluator
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
@@ -51,7 +52,6 @@ def test_incomplete_gemini_only_returns_evidenced_hard_exclusion() -> None:
 
     rule_text = _usable_rule_text(extraction)
 
-    assert UNRESOLVED_ATTACHMENT_MARKER in rule_text
     assert GEMINI_PARTIAL_EXCLUSION_MARKER in rule_text
     assert "顱顏患者" in rule_text
     assert "大學生" not in rule_text
@@ -72,6 +72,7 @@ def test_partial_gemini_status_excludes_non_matching_profile() -> None:
         _item(),
         f"基金會網站含其他研究合作內容。{_usable_rule_text(extraction)}",
         _profile(),
+        rules_status=RULES_STATUS_DISCOVERED_UNRESOLVED,
     )
 
     assert decision.status == INELIGIBLE
@@ -92,6 +93,7 @@ def test_partial_gemini_never_creates_eligible() -> None:
         _item(),
         _usable_rule_text(extraction),
         _profile(("顱顏患者",)),
+        rules_status=RULES_STATUS_DISCOVERED_UNRESOLVED,
     )
 
     assert decision.status == REVIEW
