@@ -43,9 +43,19 @@ class ExtractedAttachment:
 
 
 @dataclass(frozen=True)
+class NoticeContent:
+    """不依賴字串 marker 的公告正文與附件證據。"""
+
+    main_text: str
+    attachments: tuple[ExtractedAttachment, ...]
+    rules_status: str
+
+
+@dataclass(frozen=True)
 class DetailFetchResult:
     """公告正文、結構化附件證據與完整擷取診斷結果。"""
 
+    # text 暫時保留給 legacy evaluator；新程式必須優先使用 content。
     text: str
     source: ResourceDiagnostic
     attachments: tuple[ResourceDiagnostic, ...]
@@ -53,6 +63,14 @@ class DetailFetchResult:
     body_text: str = ""
     extracted_attachments: tuple[ExtractedAttachment, ...] = tuple()
     rules_status: str = RULES_STATUS_UNKNOWN
+
+    @property
+    def content(self) -> NoticeContent:
+        return NoticeContent(
+            main_text=self.body_text or self.text,
+            attachments=self.extracted_attachments,
+            rules_status=self.rules_status,
+        )
 
     def successful_attachment_count(self) -> int:
         return sum(item.status == "success" for item in self.attachments)
