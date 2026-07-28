@@ -5,7 +5,15 @@ from datetime import date
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtraction
 from src.diagnostics.detail_fetch_diagnostics import RULES_STATUS_DISCOVERED_UNRESOLVED
 from src.evaluators.eligibility_evaluator import INELIGIBLE, REVIEW, EligibilityEvaluator
-from src.evaluators.runtime_safety import extract_application_deadline, find_deadline_exclusions
+from src.evaluators.runtime_safety import (
+    DEADLINE_UNKNOWN,
+    EXPIRED,
+    OPEN,
+    UPCOMING,
+    classify_application_period,
+    extract_application_deadline,
+    find_deadline_exclusions,
+)
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 
@@ -60,6 +68,52 @@ def test_applicant_deadline_precedes_school_review_date() -> None:
     text = "線上申請自115年4月1日至4月20日止。校方覆核至5月22日止。"
 
     assert extract_application_deadline(text, "2026-03-19") == date(2026, 4, 20)
+
+
+# 尚未開始的申請期間應標記 upcoming。
+def test_application_period_is_upcoming() -> None:
+    period = classify_application_period(
+        "申請期間：115/08/03至115/09/11止。",
+        "2026-06-09",
+        today=date(2026, 7, 28),
+    )
+
+    assert period.status == UPCOMING
+    assert period.start_date == date(2026, 8, 3)
+    assert period.deadline == date(2026, 9, 11)
+
+
+# 已開始且未截止的公告應標記 open。
+def test_application_period_is_open() -> None:
+    period = classify_application_period(
+        "申請期間：115/07/01至115/09/11止。",
+        "2026-06-09",
+        today=date(2026, 7, 28),
+    )
+
+    assert period.status == OPEN
+
+
+# 截止日已過的公告應標記 expired。
+def test_application_period_is_expired() -> None:
+    period = classify_application_period(
+        "請於7/24前交至課指組，逾期不受理。",
+        "2026-06-30",
+        today=date(2026, 7, 28),
+    )
+
+    assert period.status == EXPIRED
+
+
+# 未取得明確期限時不得假設仍可申請。
+def test_application_period_keeps_unknown_deadline() -> None:
+    period = classify_application_period(
+        "相關資訊請自行下載，並於申請截止日前完成申請。",
+        "2026-07-06",
+        today=date(2026, 7, 28),
+    )
+
+    assert period.status == DEADLINE_UNKNOWN
 
 
 # 截止日已過時不得再成為推播候選。
