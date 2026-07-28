@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from hashlib import sha256
 
-from config import GEMINI_PARTIAL_EXCLUSION_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.ai.gemini_requirement_extractor import (
     GeminiApiResult,
     GeminiRequirementExtraction,
@@ -17,8 +16,6 @@ from src.repositories.gemini_cache_repository import GeminiCacheEntry, GeminiCac
 
 @dataclass(frozen=True)
 class GeminiAnalysisDiagnostic:
-    """單筆公告的 Gemini 備援處理結果。"""
-
     status: str
     source_url: str
     model: str
@@ -34,16 +31,12 @@ class GeminiAnalysisDiagnostic:
 
 @dataclass(frozen=True)
 class GeminiFallbackResult:
-    """可交給既有資格規則的文字與診斷。"""
-
     rule_text: str
     diagnostic: GeminiAnalysisDiagnostic
 
 
 @dataclass(frozen=True)
 class GeminiUsageSummary:
-    """本次執行實際使用的 Gemini 次數與 Token。"""
-
     calls: int
     cache_hits: int
     input_tokens: int
@@ -51,8 +44,6 @@ class GeminiUsageSummary:
 
 
 class GeminiUsageLimiter:
-    """限制單次程式執行的 Gemini 呼叫數與輸入 Token。"""
-
     def __init__(self, max_calls: int, max_input_tokens: int) -> None:
         self.max_calls = max_calls
         self.max_input_tokens = max_input_tokens
@@ -61,11 +52,9 @@ class GeminiUsageLimiter:
         self.input_tokens = 0
         self.output_tokens = 0
 
-    # 在 count_tokens 前先判斷是否仍有任何生成額度。
     def has_capacity(self) -> bool:
         return self.calls < self.max_calls and self.input_tokens < self.max_input_tokens
 
-    # 在生成前預留一次呼叫與估算輸入 Token。
     def reserve(self, estimated_tokens: int) -> bool:
         if not self.has_capacity():
             return False
@@ -75,16 +64,13 @@ class GeminiUsageLimiter:
         self.input_tokens += estimated_tokens
         return True
 
-    # 以 API 回傳的實際 Token 修正預估值並記錄輸出。
     def record_actual(self, estimated_tokens: int, input_tokens: int, output_tokens: int) -> None:
         self.input_tokens += input_tokens - estimated_tokens
         self.output_tokens += output_tokens
 
-    # 記錄本次直接使用既有文件快取。
     def record_cache_hit(self) -> None:
         self.cache_hits += 1
 
-    # 建立可顯示於 dry-run 與 audit 的使用摘要。
     def summary(self) -> GeminiUsageSummary:
         return GeminiUsageSummary(
             self.calls,
@@ -109,7 +95,6 @@ class GeminiFallbackService:
         self.limiter = limiter
         self.prompt_version = prompt_version
 
-    # 優先挑選主要資格辦法掃描 PDF，次要表單與證明文件不送 Gemini。
     def analyze(self, title: str, fetch_result: DetailFetchResult) -> GeminiFallbackResult | None:
         candidate = _find_scanned_pdf(fetch_result.attachments)
         if candidate is None:
@@ -130,11 +115,9 @@ class GeminiFallbackService:
             return self._budget_skipped(document)
         return self._call_gemini(title, cache_key, document)
 
-    # 回傳本次執行的呼叫、快取與 Token 統計。
     def usage_summary(self) -> GeminiUsageSummary:
         return self.limiter.summary()
 
-    # Token 計數通過預算後才真正呼叫生成 API。
     def _call_gemini(
         self,
         title: str,
@@ -162,7 +145,6 @@ class GeminiFallbackService:
         self._save_success(cache_key, document, api_result)
         return self._extraction_result(api_result.extraction, document, api_result)
 
-    # 將成功快取還原成結構化結果，不產生本次 Token。
     def _cached_result(
         self,
         entry: GeminiCacheEntry,
@@ -195,7 +177,6 @@ class GeminiFallbackService:
         )
         return GeminiFallbackResult(_usable_rule_text(extraction), diagnostic)
 
-    # 建立本次 API 成功但可能仍不足的結果。
     def _extraction_result(
         self,
         extraction: GeminiRequirementExtraction,
@@ -214,29 +195,28 @@ class GeminiFallbackService:
         )
         return GeminiFallbackResult(_usable_rule_text(extraction), diagnostic)
 
-    # 保存模型回傳 JSON 與實際 Token，快取內容不含 profile.json。
     def _save_success(
         self,
         cache_key: str,
         document: PreparedGeminiDocument,
         api_result: GeminiApiResult,
     ) -> None:
-        entry = GeminiCacheEntry(
-            cache_key,
-            document.document_hash,
-            document.final_url,
-            self.extractor.model,
-            self.prompt_version,
-            "success",
-            api_result.extraction.model_dump_json(),
-            api_result.input_tokens,
-            api_result.output_tokens,
-            api_result.total_tokens,
-            "",
+        self.cache.save(
+            GeminiCacheEntry(
+                cache_key,
+                document.document_hash,
+                document.final_url,
+                self.extractor.model,
+                self.prompt_version,
+                "success",
+                api_result.extraction.model_dump_json(),
+                api_result.input_tokens,
+                api_result.output_tokens,
+                api_result.total_tokens,
+                "",
+            )
         )
-        self.cache.save(entry)
 
-    # 保存已消耗呼叫但失敗的結果，避免每次執行重複花費。
     def _save_error(
         self,
         cache_key: str,
@@ -244,42 +224,48 @@ class GeminiFallbackService:
         tokens: int,
         error: Exception,
     ) -> None:
-        entry = GeminiCacheEntry(
-            cache_key,
-            document.document_hash,
-            document.final_url,
-            self.extractor.model,
-            self.prompt_version,
-            "error",
-            "",
-            tokens,
-            0,
-            tokens,
-            _error_text(error),
+        self.cache.save(
+            GeminiCacheEntry(
+                cache_key,
+                document.document_hash,
+                document.final_url,
+                self.extractor.model,
+                self.prompt_version,
+                "error",
+                "",
+                tokens,
+                0,
+                tokens,
+                _error_text(error),
+            )
         )
-        self.cache.save(entry)
 
-    # 建立下載、計數或 API 失敗診斷，不改變原本 review 決策。
     def _failure(self, url: str, pages: int, error: Exception) -> GeminiFallbackResult:
-        diagnostic = GeminiAnalysisDiagnostic(
-            "error",
-            url,
-            self.extractor.model,
-            False,
-            pages,
-            0,
-            0,
-            0,
-            _error_text(error),
+        return GeminiFallbackResult(
+            "",
+            GeminiAnalysisDiagnostic(
+                "error",
+                url,
+                self.extractor.model,
+                False,
+                pages,
+                0,
+                0,
+                0,
+                _error_text(error),
+            ),
         )
-        return GeminiFallbackResult("", diagnostic)
 
-    # 建立預算已用完的診斷，且不再呼叫 count_tokens。
     def _budget_skipped(self, document: PreparedGeminiDocument) -> GeminiFallbackResult:
-        message = "已達本次 Gemini 呼叫或輸入 Token 上限，維持 review。"
-        return self._diagnostic_result("budget_skipped", document, 0, 0, 0, message)
+        return self._diagnostic_result(
+            "budget_skipped",
+            document,
+            0,
+            0,
+            0,
+            "已達本次 Gemini 呼叫或輸入 Token 上限，維持 review。",
+        )
 
-    # 建立預算跳過等不含資格文字的診斷。
     def _diagnostic_result(
         self,
         status: str,
@@ -289,21 +275,22 @@ class GeminiFallbackService:
         total_tokens: int,
         message: str,
     ) -> GeminiFallbackResult:
-        diagnostic = GeminiAnalysisDiagnostic(
-            status,
-            document.final_url,
-            self.extractor.model,
-            False,
-            document.selected_pages,
-            input_tokens,
-            output_tokens,
-            total_tokens,
-            message,
+        return GeminiFallbackResult(
+            "",
+            GeminiAnalysisDiagnostic(
+                status,
+                document.final_url,
+                self.extractor.model,
+                False,
+                document.selected_pages,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                message,
+            ),
         )
-        return GeminiFallbackResult("", diagnostic)
 
 
-# 優先挑選主要辦法；申請表與證明文件不得占用 Gemini 額度。
 def _find_scanned_pdf(items: tuple[ResourceDiagnostic, ...]) -> ResourceDiagnostic | None:
     scanned = [item for item in items if _is_scanned_pdf(item)]
     for role in ("rules", "unknown", "unrelated"):
@@ -313,27 +300,20 @@ def _find_scanned_pdf(items: tuple[ResourceDiagnostic, ...]) -> ResourceDiagnost
     return None
 
 
-# 判斷附件是否為已下載但沒有文字層的 PDF。
 def _is_scanned_pdf(item: ResourceDiagnostic) -> bool:
     scanned = "沒有可擷取文字" in item.error or "掃描檔" in item.error
     return item.status == "error" and item.document_kind == "pdf" and scanned
 
 
-# 文件內容、模型與提示版本共同決定永久快取鍵。
 def _cache_key(document_hash: str, model: str, prompt_version: str) -> str:
-    payload = f"{document_hash}:{model}:{prompt_version}".encode("utf-8")
-    return sha256(payload).hexdigest()
+    return sha256(f"{document_hash}:{model}:{prompt_version}".encode("utf-8")).hexdigest()
 
 
-# 完整文件可提供全部規則；不完整文件只提供有頁碼證據的硬性排除。
 def _usable_rule_text(extraction: GeminiRequirementExtraction) -> str:
     complete = _complete_rule_text(extraction)
-    if complete:
-        return complete
-    return _partial_exclusion_rule_text(extraction)
+    return complete or _partial_exclusion_rule_text(extraction)
 
 
-# 只有完整辦法、無需更多頁且具有證據時才產生完整規則文字。
 def _complete_rule_text(extraction: GeminiRequirementExtraction) -> str:
     if extraction.document_type != "scholarship_rules":
         return ""
@@ -344,7 +324,6 @@ def _complete_rule_text(extraction: GeminiRequirementExtraction) -> str:
     return extraction.to_rule_text()
 
 
-# 不完整文件只保留身分與明確排除，不輸出成績、學位或正向領域條件。
 def _partial_exclusion_rule_text(extraction: GeminiRequirementExtraction) -> str:
     if extraction.document_type not in ("scholarship_rules", "other"):
         return ""
@@ -363,21 +342,17 @@ def _partial_exclusion_rule_text(extraction: GeminiRequirementExtraction) -> str
     for value in extraction.explicit_exclusions:
         if _evidence_supports(value, extraction.evidence):
             rules.append(f"不包括{value}")
-    if not rules:
-        return ""
-    body = "。".join(dict.fromkeys(rules)) + "。"
-    return f"{UNRESOLVED_ATTACHMENT_MARKER}{GEMINI_PARTIAL_EXCLUSION_MARKER}{body}"
+    return "。".join(dict.fromkeys(rules)) + "。" if rules else ""
 
 
-# 欄位值必須實際出現在至少一條頁碼證據中，否則不得用於硬性排除。
 def _evidence_supports(value: str, evidence: list[RequirementEvidence]) -> bool:
     target = "".join(value.split()).strip("。；;，,：:")
-    if not target:
-        return False
-    return any(target in "".join(item.text.split()) for item in evidence)
+    return bool(target) and any(
+        target in "".join(item.text.split())
+        for item in evidence
+    )
 
 
-# 依完整度區分完整抽取、部分硬性排除與資訊不足。
 def _usable_diagnostic(
     extraction: GeminiRequirementExtraction,
     source_url: str,
@@ -414,7 +389,6 @@ def _usable_diagnostic(
     )
 
 
-# 將非空白結構化欄位整理成可稽核的單行內容。
 def _extracted_fields(extraction: GeminiRequirementExtraction) -> tuple[str, ...]:
     fields = [
         f"文件類型={extraction.document_type}",
@@ -444,13 +418,11 @@ def _extracted_fields(extraction: GeminiRequirementExtraction) -> tuple[str, ...
     return tuple(fields)
 
 
-# 將非空白列表欄位加入診斷內容。
 def _append_list(fields: list[str], label: str, values: list[str]) -> None:
     cleaned = [value.strip() for value in values if value.strip()]
     if cleaned:
         fields.append(f"{label}={'、'.join(cleaned)}")
 
 
-# 將外部例外整理成有限長度的單行訊息。
 def _error_text(error: Exception) -> str:
     return f"{type(error).__name__}: {' '.join(str(error).split())}"[:240]
