@@ -68,7 +68,7 @@ jobs:
 
           operation = os.environ["OPERATION"]
           required = []
-          if operation in {"initialize", "daily", "run", "dry-run"}:
+          if operation in {"initialize", "daily", "run", "report", "dry-run"}:
               required.append("STATE_PASSPHRASE")
           if operation in {"daily", "run", "report"}:
               required += ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_USER_ID"]
@@ -84,7 +84,7 @@ jobs:
 
       - name: Find latest cloud state
         id: latest_state
-        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
         shell: bash
         run: |
           set -euo pipefail
@@ -103,7 +103,7 @@ jobs:
           echo "將從 workflow run $run_id 還原狀態。"
 
       - name: Download encrypted cloud state
-        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
         uses: actions/download-artifact@v5
         with:
           name: scholarship-agent-state
@@ -113,7 +113,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Decrypt cloud state
-        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run'
+        if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
         shell: bash
         run: |
           set -euo pipefail
@@ -182,7 +182,7 @@ jobs:
 
       - name: Encrypt updated cloud state
         id: state
-        if: always() && (env.OPERATION == 'initialize' || env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'dry-run')
+        if: always() && (env.OPERATION == 'initialize' || env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run')
         shell: bash
         run: |
           set -euo pipefail
@@ -214,6 +214,17 @@ jobs:
           path: cloud-state/scholarship-state.tar.gz.gpg
           if-no-files-found: error
           retention-days: 90
+
+      - name: Upload structured shadow audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: structured-shadow-audit-${{ github.run_id }}
+          path: |
+            artifacts/structured-shadow-audit.csv
+            artifacts/structured-shadow-audit.json
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Upload execution log
         if: always()

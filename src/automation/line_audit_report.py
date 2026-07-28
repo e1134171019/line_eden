@@ -11,6 +11,7 @@ from config import (
     validate_settings,
 )
 from main import build_service
+from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.evaluators.eligibility_evaluator import ELIGIBLE
 from src.notifiers.line_notifier import send_text_message
 from src.services.scholarship_service import AuditResult
@@ -23,7 +24,7 @@ def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
 ) -> str:
-    """將五個官方來源的真實稽核結果整理成單則 LINE 報告。"""
+    """將五個官方來源的真實稽核與 shadow 統計整理成 LINE 報告。"""
     lines = [
         "獎學金真實檢查報告",
         "官方來源：5 個",
@@ -33,6 +34,12 @@ def build_report_message(
         f"明確不符合：{result.ineligible_count}",
         f"Gemini 生成呼叫：{result.gemini_calls}",
         f"Gemini 快取命中：{result.gemini_cache_hits}",
+        "",
+        "Structured shadow：",
+        f"- 已比較：{getattr(result, 'structured_evaluated_count', 0)}",
+        f"- 與 legacy 分歧：{getattr(result, 'structured_changed_count', 0)}",
+        f"- 預算延後：{getattr(result, 'structured_deferred_count', 0)}",
+        f"- 抽取錯誤：{getattr(result, 'structured_error_count', 0)}",
     ]
     if source_lines:
         lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
@@ -65,6 +72,7 @@ def main() -> None:
     validate_gemini_settings()
     service = build_service(profile_required=True, use_gemini=True)
     result = service.audit()
+    csv_path, json_path = write_structured_shadow_artifacts(result)
     source_summary = getattr(service.collector, "source_summary_lines", lambda: [])()
     message = build_report_message(result, source_summary)
     send_text_message(
@@ -75,6 +83,8 @@ def main() -> None:
         timeout_seconds=HTTP_TIMEOUT_SECONDS,
     )
     print(message)
+    print(f"Structured CSV：{csv_path}")
+    print(f"Structured JSON：{json_path}")
     print("真實檢查報告已傳送至 LINE。")
 
 
