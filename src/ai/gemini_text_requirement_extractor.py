@@ -33,7 +33,8 @@ class GeminiTextRequirementExtractor:
         return PreparedGeminiText(digest, prompt)
 
     def count_tokens(self, prepared: PreparedGeminiText) -> int:
-        response = self.extractor.client.models.count_tokens(
+        # Google SDK 的 contents 聯集型別內含 Unknown；呼叫參數由本模組固定為 list[str]。
+        response = self.extractor.client.models.count_tokens(  # pyright: ignore[reportUnknownMemberType]
             model=self.extractor.model,
             contents=[prepared.prompt],
         )
@@ -45,7 +46,8 @@ class GeminiTextRequirementExtractor:
         return tokens
 
     def extract(self, prepared: PreparedGeminiText) -> GeminiApiResult:
-        response = self.extractor.client.models.generate_content(
+        # Google SDK 的 contents 聯集型別內含 Unknown；回應再由 Pydantic Schema 驗證。
+        response = self.extractor.client.models.generate_content(  # pyright: ignore[reportUnknownMemberType]
             model=self.extractor.model,
             contents=[prepared.prompt],
             config=types.GenerateContentConfig(
