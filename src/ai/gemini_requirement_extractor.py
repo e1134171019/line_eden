@@ -17,9 +17,16 @@ DEPARTMENT_MARKERS = ("科系", "學系", "系所", "學院", "學門", "專業"
 
 
 class RequirementEvidence(BaseModel):
-    """Gemini 回傳的單項資格證據。"""
+    """Gemini 回傳的單項資格證據與實際來源位置。"""
 
-    page: int = Field(ge=1, description="證據所在的 PDF 頁碼，第一頁為 1。")
+    source_kind: Literal[
+        "title",
+        "body",
+        "attachment_text",
+        "attachment_pdf",
+    ] = "attachment_pdf"
+    source_index: int | None = Field(default=None, ge=1)
+    page: int | None = Field(default=None, ge=1)
     text: str = Field(description="文件中的短句證據，不得自行補充。")
 
 
@@ -46,7 +53,6 @@ class GeminiRequirementExtraction(BaseModel):
     other_required_conditions: list[str] = Field(default_factory=list)
     evidence: list[RequirementEvidence] = Field(default_factory=list)
 
-    # 校正模型偶爾將科系名稱放入學制欄位，並統一大專與研究所層級用語。
     @model_validator(mode="after")
     def normalize_semantic_fields(self) -> "GeminiRequirementExtraction":
         included_programs, misplaced_included = _split_department_values(
@@ -62,7 +68,6 @@ class GeminiRequirementExtraction(BaseModel):
         self.degree_levels = _canonical_degree_levels(self.degree_levels)
         return self
 
-    # 將結構化欄位轉成既有規則可判斷的中文資格句型。
     def to_rule_text(self) -> str:
         lines = _joined_rules("申請對象為", self.applicant_groups)
         lines.extend(_joined_rules("申請對象限於", self.degree_levels))
@@ -103,7 +108,7 @@ class GeminiApiResult:
 
 
 class GeminiRequirementExtractor:
-    """下載掃描 PDF，只傳少量頁面給 Gemini 抽取資格條件。"""
+    """將掃描 PDF 或已擷取文字轉成結構化資格條件。"""
 
     def __init__(
         self,
@@ -125,7 +130,6 @@ class GeminiRequirementExtractor:
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
 
-    # 下載 PDF 並僅保留前 N 頁，完整文件雜湊仍用於永久快取。
     def prepare_document(self, url: str) -> PreparedGeminiDocument:
         final_url, content = self._download_pdf(url)
         selected, page_count = self._select_pages(content)
@@ -137,20 +141,44 @@ class GeminiRequirementExtractor:
             page_count,
         )
 
-    # 在生成前先取得 Gemini 對文字與 PDF 的輸入 Token 計數。
     def count_tokens(self, title: str, document: PreparedGeminiDocument) -> int:
-        contents = self._contents(title, document)
+        return self._count_contents(self._contents(title, document))
+
+    def count_text_tokens(
+        self,
+        title: str,
+        body_text: str,
+        attachment_texts: list[str],
+    ) -> int:
+        return self._count_contents(
+            self._text_contents(title, body_text, attachment_texts),
+        )
+
+    def extract(self, title: str, document: PreparedGeminiDocument) -> GeminiApiResult:
+        return self._generate(self._contents(title, document))
+
+    def extract_from_text(
+        self,
+        title: str,
+        body_text: str,
+        attachment_texts: list[str],
+    ) -> GeminiApiResult:
+        """由公告正文與成功解析附件抽取資格，不傳送 profile.json。"""
+        return self._generate(
+            self._text_contents(title, body_text, attachment_texts),
+        )
+
+    def _count_contents(self, contents: list[object]) -> int:
         response = self.client.models.count_tokens(model=self.model, contents=contents)
         tokens = int(response.total_tokens or 0)
         if tokens > self.max_input_tokens:
             raise ValueError(f"Gemini 單份文件輸入超過 {self.max_input_tokens} tokens")
         return tokens
 
-    # 以 JSON Schema 要求 Gemini 只回傳資格欄位。
-    def extract(self, title: str, document: PreparedGeminiDocument) -> GeminiApiResult:
+    def _generate(self, contents: list[object]) -> GeminiApiResult:
         response = self.client.models.generate_content(
             model=self.model,
-            contents=self._contents(title, document),
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=GeminiRequirementExtraction,
@@ -166,26 +194,35 @@ class GeminiRequirementExtractor:
             int(getattr(usage, "total_token_count", 0) or 0),
         )
 
-    # 建立不含 profile.json 的文件抽取提示與 PDF 輸入。
     def _contents(self, title: str, document: PreparedGeminiDocument) -> list[object]:
-        prompt = _build_prompt(title, document.selected_pages)
+        prompt = _build_pdf_prompt(title, document.selected_pages)
         pdf = types.Part.from_bytes(data=document.pdf_bytes, mime_type="application/pdf")
         return [prompt, pdf]
 
-    # 以大小限制下載公開 PDF，避免外部資源無限制進入記憶體。
+    def _text_contents(
+        self,
+        title: str,
+        body_text: str,
+        attachment_texts: list[str],
+    ) -> list[object]:
+        return [_build_text_prompt(title, body_text, attachment_texts)]
+
     def _download_pdf(self, url: str) -> tuple[str, bytes]:
         headers = {"User-Agent": self.user_agent}
-        with httpx.Client(headers=headers, timeout=self.timeout_seconds, follow_redirects=True) as client:
+        with httpx.Client(
+            headers=headers,
+            timeout=self.timeout_seconds,
+            follow_redirects=True,
+        ) as client:
             response = client.get(url)
             response.raise_for_status()
         content = response.content
         if len(content) > self.max_download_bytes:
             raise ValueError("Gemini 文件超過下載安全上限")
         if not content.lstrip().startswith(b"%PDF"):
-            raise ValueError("Gemini 備援目前只接受 PDF")
+            raise ValueError("Gemini PDF 路徑只接受 PDF")
         return str(response.url), content
 
-    # 使用 pypdf 重組前 N 頁，不把整份附件送往 Gemini。
     def _select_pages(self, content: bytes) -> tuple[bytes, int]:
         reader = PdfReader(BytesIO(content), strict=False)
         page_count = min(len(reader.pages), self.max_pages)
@@ -199,8 +236,7 @@ class GeminiRequirementExtractor:
         return output.getvalue(), page_count
 
 
-# 建立限制模型只能依據所提供頁面的結構化抽取提示。
-def _build_prompt(title: str, selected_pages: int) -> str:
+def _build_pdf_prompt(title: str, selected_pages: int) -> str:
     return f"""
 你是獎學金申請資格文件抽取器。公告標題：{title}
 目前只提供 PDF 前 {selected_pages} 頁。
@@ -210,12 +246,34 @@ def _build_prompt(title: str, selected_pages: int) -> str:
 2. 保留文件中的中文身分、學制、科系、年級、成績、排名、戶籍與截止日期用語。
 3. program_types 只能放日間部、進修部、在職專班等學制；科系、學系、學院必須放 departments。
 4. 若所提供頁面不足以涵蓋主要申請資格，criteria_complete=false 且 needs_more_pages=true。
-5. evidence 只放支持資格欄位的短句與實際頁碼，不要抄寫整份文件。
+5. evidence 必須使用 source_kind=attachment_pdf、實際頁碼與文件短句。
 6. 申請表、封面或無關文件須正確標示 document_type，不得假裝是完整辦法。
 """.strip()
 
 
-# 將同一欄位的多個可申請對象放在同一句，避免誤判成互斥限制。
+def _build_text_prompt(
+    title: str,
+    body_text: str,
+    attachment_texts: list[str],
+) -> str:
+    parts = [f"公告標題：{title}", f"公告正文：\n{body_text or '（無可靠正文）'}"]
+    for index, text in enumerate(attachment_texts, start=1):
+        parts.append(f"附件文字 {index}：\n{text}")
+    parts.append(
+        """
+抽取規則：
+1. 只抽取輸入明確寫出的申請資格，不得推測、補齊或評估任何學生是否符合。
+2. 保留身分、學制、科系、年級、成績、排名、戶籍、截止日期及其他必要條件。
+3. program_types 只能放日間部、進修部、在職專班等學制；科系資訊必須放 departments。
+4. 正文或附件不足以涵蓋全部必要資格時，criteria_complete=false。
+5. 純文字輸入沒有未提供的 PDF 頁面，因此 needs_more_pages=false；若文字顯示另有未取得附件，criteria_complete=false。
+6. evidence 的 source_kind 只能是 title、body 或 attachment_text；附件使用一開始的 source_index，page=null。
+7. 申請表、證明書或無關文件不得標示為完整 scholarship_rules。
+""".strip()
+    )
+    return "\n\n".join(parts)
+
+
 def _joined_rules(prefix: str, values: list[str], suffix: str = "") -> list[str]:
     cleaned = [value.strip() for value in values if value.strip()]
     if not cleaned:
@@ -223,12 +281,10 @@ def _joined_rules(prefix: str, values: list[str], suffix: str = "") -> list[str]
     return [f"{prefix}{'及'.join(cleaned)}{suffix}"]
 
 
-# 將必須逐項保留的排除條件轉成簡短資格句。
 def _list_rules(prefix: str, values: list[str]) -> list[str]:
     return [f"{prefix}{value}" for value in values if value.strip()]
 
 
-# 將最低學業與操行分數轉成既有規則可解析句型。
 def _score_rules(average: float | None, conduct: float | None) -> list[str]:
     rules: list[str] = []
     if average is not None:
@@ -238,12 +294,10 @@ def _score_rules(average: float | None, conduct: float | None) -> list[str]:
     return rules
 
 
-# 加入排名與戶籍等非空白限制文字。
 def _optional_rules(rank: str | None, residence: str | None) -> list[str]:
     return [item for item in (rank, residence) if item and item.strip()]
 
 
-# 將誤放在學制欄位的科系名稱分離。
 def _split_department_values(values: list[str]) -> tuple[list[str], list[str]]:
     programs: list[str] = []
     departments: list[str] = []
@@ -253,7 +307,6 @@ def _split_department_values(values: list[str]) -> tuple[list[str], list[str]]:
     return _unique(programs), _unique(departments)
 
 
-# 將多種大專與研究所文字統一成既有規則可理解的對象。
 def _canonical_degree_levels(values: list[str]) -> list[str]:
     canonical: list[str] = []
     for value in values:
@@ -266,6 +319,5 @@ def _canonical_degree_levels(values: list[str]) -> list[str]:
     return _unique(canonical)
 
 
-# 保留原始順序並移除空白與重複值。
 def _unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value.strip() for value in values if value.strip()))
