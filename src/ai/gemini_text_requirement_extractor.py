@@ -65,12 +65,13 @@ class GeminiTextRequirementExtractor:
 
 
 def _build_text_prompt(title: str, fetch_result: DetailFetchResult) -> str:
+    content = fetch_result.content
     parts = [
         "你是獎學金申請資格文件抽取器。",
         f"公告標題：{title}",
-        f"公告正文：\n{fetch_result.body_text or fetch_result.text}",
+        f"公告正文：\n{content.main_text}",
     ]
-    for index, attachment in enumerate(fetch_result.extracted_attachments, start=1):
+    for index, attachment in enumerate(content.attachments, start=1):
         if not attachment.text.strip():
             continue
         parts.append(
