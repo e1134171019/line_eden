@@ -55,7 +55,6 @@ from src.services.scholarship_service import (
 )
 
 
-# 讓 Windows CP950 終端遇到特殊符號時替換字元而不中斷。
 def configure_console_output() -> None:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -63,7 +62,6 @@ def configure_console_output() -> None:
             reconfigure(errors="replace")
 
 
-# 解析命令列參數，Gemini 必須由使用者明確啟用。
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
     modes = parser.add_mutually_exclusive_group()
@@ -77,7 +75,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--use-gemini",
         action="store_true",
-        help="只對本機無法解析的掃描 PDF 使用受限 Gemini 備援",
+        help="啟用掃描 PDF 備援；audit 另執行文字 structured shadow",
     )
     args = parser.parse_args(argv)
     if args.initialize_baseline and args.use_gemini:
@@ -85,7 +83,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-# 建立正式模式通知函式，封裝既有 LINE 推播核心呼叫。
 def build_notifier() -> Callable[[str], None]:
     def _notify(text: str) -> None:
         send_text_message(
@@ -99,7 +96,6 @@ def build_notifier() -> Callable[[str], None]:
     return _notify
 
 
-# 建立公告蒐集、資料庫、資格判斷與通知服務。
 def build_service(
     profile_required: bool = True,
     use_gemini: bool = False,
@@ -125,7 +121,6 @@ def build_service(
     )
 
 
-# 需要個人化判斷時建立正文、短網址與附件擷取器。
 def _build_detail_fetcher(
     profile_required: bool,
 ) -> AnnouncementDetailFetcher | None:
@@ -140,7 +135,6 @@ def _build_detail_fetcher(
     )
 
 
-# 建立只處理掃描型 PDF 的 Gemini 抽取、快取與單次用量限制。
 def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
     if not use_gemini:
         return None
@@ -162,7 +156,6 @@ def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
     return GeminiFallbackService(extractor, cache, limiter, GEMINI_PROMPT_VERSION)
 
 
-# 依命令列模式執行服務。
 def execute_service(
     args: argparse.Namespace,
     service: ScholarshipService,
@@ -174,7 +167,6 @@ def execute_service(
     return service.run(dry_run=args.dry_run)
 
 
-# 印出蒐集、適合度、通知、基準化與 Gemini 用量摘要。
 def print_summary(result: ServiceResult) -> None:
     print(f"蒐集公告數量：{len(result.collected)}")
     print(f"適合且待通知：{len(result.pending_items)}")
@@ -186,7 +178,6 @@ def print_summary(result: ServiceResult) -> None:
     _print_gemini_usage(result)
 
 
-# 逐筆列出通過個人化篩選的公告。
 def print_items(label: str, items: list[Scholarship]) -> None:
     print(label)
     if not items:
@@ -197,36 +188,50 @@ def print_items(label: str, items: list[Scholarship]) -> None:
         print(f"  {item.source_url}")
 
 
-# 印出不修改獎學金狀態的全部公告稽核結果。
 def print_audit(result: AuditResult) -> None:
     print(f"稽核公告數量：{len(result.records)}")
-    print(f"明確適合：{result.eligible_count}")
-    print(f"資格待確認：{result.review_count}")
-    print(f"不推播：{result.ineligible_count}")
+    print(f"legacy 明確適合：{result.eligible_count}")
+    print(f"legacy 資格待確認：{result.review_count}")
+    print(f"legacy 不推播：{result.ineligible_count}")
+    print(f"structured 明確適合：{result.structured_eligible_count}")
+    print(f"structured 資格待確認：{result.structured_review_count}")
+    print(f"structured 明確不符合：{result.structured_ineligible_count}")
+    print(f"legacy / structured 差異：{result.structured_difference_count}")
     _print_gemini_usage(result)
     for record in result.records:
         _print_audit_record(record)
     print(result.message)
 
 
-# 印出單筆公告判斷、正文摘要與來源附件診斷。
 def _print_audit_record(record: AuditRecord) -> None:
     item = record.item
-    print(f"- {item.published_date} | {item.notice_kind} | {item.eligibility_status}")
+    print(f"- {item.published_date} | {item.notice_kind} | legacy={item.eligibility_status}")
     print(f"  {item.title} | {item.eligibility_reason}")
+    if record.structured_decision:
+        print(
+            "  structured="
+            f"{record.structured_decision.status} | "
+            f"{record.structured_decision.reason_text()}"
+        )
+        for check in record.structured_checks:
+            print(f"  structured條件：{check.status} | {check.field} | {check.reason}")
     print(f"  正文摘要：{record.detail_excerpt or '無法擷取'}")
     for line in build_fetch_diagnostic_lines(record.fetch_result):
         print(line)
     if record.gemini_diagnostic:
-        _print_gemini_diagnostic(record.gemini_diagnostic)
+        _print_gemini_diagnostic(record.gemini_diagnostic, "Gemini備援")
+    if record.structured_diagnostic:
+        _print_gemini_diagnostic(record.structured_diagnostic, "Gemini shadow")
     print(f"  {item.source_url}")
 
 
-# 顯示單一 Gemini 備援的用量、結構化欄位與頁碼證據。
-def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
+def _print_gemini_diagnostic(
+    diagnostic: GeminiAnalysisDiagnostic,
+    label: str = "Gemini診斷",
+) -> None:
     cache = "是" if diagnostic.cache_hit else "否"
     print(
-        "  Gemini診斷："
+        f"  {label}："
         f"{diagnostic.status} | {diagnostic.model} | 快取 {cache} | "
         f"頁數 {diagnostic.selected_pages} | input {diagnostic.input_tokens} | "
         f"output {diagnostic.output_tokens}"
@@ -239,7 +244,6 @@ def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
     print(f"  Gemini來源：{diagnostic.source_url}")
 
 
-# 顯示本次執行的 Gemini 生成次數與實際 Token。
 def _print_gemini_usage(result: object) -> None:
     print(f"Gemini 生成呼叫：{result.gemini_calls}")
     print(f"Gemini 快取命中：{result.gemini_cache_hits}")
@@ -247,12 +251,10 @@ def _print_gemini_usage(result: object) -> None:
     print(f"Gemini output tokens：{result.gemini_output_tokens}")
 
 
-# 判斷目前是否為會傳送 LINE 的正式模式。
 def _is_live_mode(args: argparse.Namespace) -> bool:
     return not args.dry_run and not args.audit and not args.initialize_baseline
 
 
-# 執行命令列流程；Gemini 與 LINE 都必須在需要時明確驗證。
 def main(argv: list[str] | None = None) -> None:
     configure_console_output()
     args = parse_args(argv)
