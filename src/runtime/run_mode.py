@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from dataclasses import dataclass
 from enum import StrEnum
 
 
@@ -23,3 +24,11 @@ class RunMode(StrEnum):
     @property
     def validates_line_settings(self) -> bool:
         return self in {RunMode.LIVE, RunMode.DAILY}
+
+
+@dataclass(frozen=True)
+class CliOptions:
+    """型別化 CLI 結果，避免在主流程存取未宣告的 Namespace 屬性。"""
+
+    mode: RunMode
+    use_gemini: bool
