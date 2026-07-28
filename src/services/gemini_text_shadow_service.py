@@ -31,14 +31,26 @@ class GeminiTextShadowService:
 
     def __init__(self, fallback: GeminiFallbackService) -> None:
         self.fallback = fallback
-        self.extractor = GeminiTextRequirementExtractor(fallback.extractor)
-        self.prompt_version = f"{fallback.prompt_version}:{TEXT_SHADOW_VERSION}"
+        required = ("extractor", "prompt_version", "cache", "limiter")
+        self.available = all(hasattr(fallback, name) for name in required)
+        self.extractor = (
+            GeminiTextRequirementExtractor(fallback.extractor)
+            if self.available
+            else None
+        )
+        self.prompt_version = (
+            f"{fallback.prompt_version}:{TEXT_SHADOW_VERSION}"
+            if self.available
+            else TEXT_SHADOW_VERSION
+        )
 
     def analyze(
         self,
         title: str,
         fetch_result: DetailFetchResult,
     ) -> GeminiTextShadowResult | None:
+        if not self.available or self.extractor is None:
+            return None
         prepared = self.extractor.prepare(title, fetch_result)
         if not prepared.prompt.strip():
             return None
