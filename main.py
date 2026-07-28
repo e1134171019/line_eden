@@ -36,8 +36,10 @@ from src.ai.gemini_requirement_extractor import GeminiRequirementExtractor
 from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtractor
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.cli.run_mode import CliOptions, RunMode
-from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
+from src.collectors.structured_announcement_detail_fetcher import (
+    StructuredAnnouncementDetailFetcher,
+)
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
 from src.formatters.cli_output_formatter import print_audit_result, print_service_result
@@ -164,8 +166,8 @@ def build_baseline_service() -> BaselineService:
     )
 
 
-def _build_detail_fetcher() -> AnnouncementDetailFetcher:
-    return AnnouncementDetailFetcher(
+def _build_detail_fetcher() -> StructuredAnnouncementDetailFetcher:
+    return StructuredAnnouncementDetailFetcher(
         HTTP_TIMEOUT_SECONDS,
         HTTP_USER_AGENT,
         MAX_ATTACHMENT_COUNT,
