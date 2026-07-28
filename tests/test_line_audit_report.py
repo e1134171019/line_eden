@@ -5,17 +5,29 @@ from types import SimpleNamespace
 from src.automation.line_audit_report import build_report_message
 
 
-def _record(status: str, title: str) -> SimpleNamespace:
+# 建立可供報表統計的簡化稽核紀錄。
+def _record(
+    status: str,
+    title: str,
+    *,
+    notice_kind: str = "application",
+    category: str = "scholarship",
+    text: str = "請於2026/09/30前完成申請。",
+) -> SimpleNamespace:
     item = SimpleNamespace(
         eligibility_status=status,
         published_date="2026-07-28",
         title=title,
         eligibility_reason="符合目前學生背景。",
         source_url="https://example.test/notice",
+        notice_kind=notice_kind,
+        category=category,
     )
-    return SimpleNamespace(item=item)
+    fetch_result = SimpleNamespace(eligibility_text=lambda: text)
+    return SimpleNamespace(item=item, fetch_result=fetch_result)
 
 
+# 建立簡化稽核結果。
 def _result(**overrides: object) -> SimpleNamespace:
     values: dict[str, object] = {
         "records": [],
@@ -37,8 +49,8 @@ def test_report_lists_only_eligible_items() -> None:
     result = _result(
         records=[
             _record("eligible", "符合資格的獎學金"),
-            _record("review", "待確認公告"),
-            _record("ineligible", "不符合公告"),
+            _record("review", "待確認公告", category="student_aid"),
+            _record("ineligible", "不符合公告", notice_kind="result"),
         ],
         eligible_count=1,
         review_count=1,
@@ -48,14 +60,17 @@ def test_report_lists_only_eligible_items() -> None:
     message = build_report_message(
         result,
         [
+            "來源健康：降級；設定 5，有資料 2，空結果 2，失敗 1",
             "龍華科技大學：讀取 80 筆，保留 80 筆",
-            "教育部圓夢助學網－民間團體：讀取 10 筆，保留 8 筆，跨站重複 2 筆",
         ],
     )
 
-    assert "官方來源：5 個" in message
+    assert "原始公告：3" in message
+    assert "申請型公告：2" in message
+    assert "公告類別：獎學金 2／助學金 1" in message
+    assert "申請狀態：開放 2" in message
+    assert "來源健康：降級" in message
     assert "龍華科技大學：讀取 80 筆" in message
-    assert "跨站重複 2 筆" in message
     assert "明確適合：1" in message
     assert "資格待確認：1（不推播）" in message
     assert "符合資格的獎學金" in message
@@ -72,6 +87,6 @@ def test_report_explains_when_no_eligible_items() -> None:
 
     message = build_report_message(result)
 
-    assert "稽核公告：1" in message
-    assert "目前沒有明確符合你背景的公告。" in message
+    assert "原始公告：1" in message
+    assert "目前沒有明確符合你背景且仍可申請的公告。" in message
     assert "LINE Messaging API 測試成功" not in message
