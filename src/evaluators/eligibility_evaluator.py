@@ -3,11 +3,7 @@
 from dataclasses import dataclass
 import re
 
-from config import (
-    ATTACHMENT_TEXT_MARKER,
-    GEMINI_PARTIAL_EXCLUSION_MARKER,
-    UNRESOLVED_ATTACHMENT_MARKER,
-)
+from config import GEMINI_PARTIAL_EXCLUSION_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_DECLARED_MISSING,
     RULES_STATUS_DISCOVERED_UNRESOLVED,
@@ -55,16 +51,12 @@ def _normalize_rule_text(text: str) -> str:
 
 
 def _filter_resolved_attachment_unknowns(
-    text: str,
+    _text: str,
     unknowns: list[str],
     rules_status: str | None = None,
 ) -> list[str]:
-    explicit_resolved = rules_status == RULES_STATUS_RESOLVED
-    legacy_resolved = (
-        rules_status in (None, RULES_STATUS_UNKNOWN)
-        and ATTACHMENT_TEXT_MARKER in text
-    )
-    if not explicit_resolved and not legacy_resolved:
+    """只有結構化狀態確認主要辦法已解析時，才能解除附件 unknown。"""
+    if rules_status != RULES_STATUS_RESOLVED:
         return unknowns
     return [reason for reason in unknowns if "參閱附件" not in reason]
 
