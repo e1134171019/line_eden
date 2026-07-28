@@ -71,3 +71,17 @@ class DetailFetchResult:
             item.status == "success" and item.attachment_role == "rules"
             for item in self.attachments
         )
+
+    def eligibility_text(self) -> str:
+        """只組合正文與經內容確認的主要辦法，不使用字串 marker 傳遞狀態。"""
+        if not self.body_text and not self.extracted_attachments:
+            return self.text
+        parts = [self.body_text.strip()]
+        parts.extend(
+            item.text.strip()
+            for item in self.extracted_attachments
+            if item.status == "success"
+            and item.content_role == "scholarship_rules"
+            and item.text.strip()
+        )
+        return "\n\n".join(part for part in parts if part)
