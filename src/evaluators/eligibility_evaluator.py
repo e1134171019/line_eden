@@ -3,11 +3,7 @@
 from dataclasses import dataclass
 import re
 
-from config import (
-    ATTACHMENT_TEXT_MARKER,
-    GEMINI_PARTIAL_EXCLUSION_MARKER,
-    UNRESOLVED_ATTACHMENT_MARKER,
-)
+from config import GEMINI_PARTIAL_EXCLUSION_MARKER
 from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_DECLARED_MISSING,
     RULES_STATUS_DISCOVERED_UNRESOLVED,
@@ -55,16 +51,11 @@ def _normalize_rule_text(text: str) -> str:
 
 
 def _filter_resolved_attachment_unknowns(
-    text: str,
     unknowns: list[str],
-    rules_status: str | None = None,
+    rules_status: str | None,
 ) -> list[str]:
-    explicit_resolved = rules_status == RULES_STATUS_RESOLVED
-    legacy_resolved = (
-        rules_status in (None, RULES_STATUS_UNKNOWN)
-        and ATTACHMENT_TEXT_MARKER in text
-    )
-    if not explicit_resolved and not legacy_resolved:
+    """只有結構化狀態確認主要辦法已解析時才解除附件 unknown。"""
+    if rules_status != RULES_STATUS_RESOLVED:
         return unknowns
     return [reason for reason in unknowns if "參閱附件" not in reason]
 
@@ -79,6 +70,10 @@ def _rules_status_unknown_reason(rules_status: str | None) -> str | None:
     if rules_status == RULES_STATUS_DISCOVERED_UNRESOLVED:
         return "主要資格辦法尚未成功解析，資格無法完整確認。"
     return "主要資格證據狀態不完整，暫不推播。"
+
+
+def _rules_status_is_unresolved(rules_status: str | None) -> bool:
+    return rules_status not in (None, RULES_STATUS_UNKNOWN, *_SAFE_RULES_STATUSES)
 
 
 def _deduplicate_reasons(reasons: list[str]) -> list[str]:
@@ -126,7 +121,15 @@ class EligibilityEvaluator:
         title = _normalize_rule_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
         exclusions = find_deadline_exclusions(scholarship, text)
-        exclusions.extend(self._find_exclusions(title, text, detail_text, profile))
+        exclusions.extend(
+            self._find_exclusions(
+                title,
+                text,
+                detail_text,
+                profile,
+                rules_status,
+            )
+        )
         exclusions = _deduplicate_reasons(exclusions)
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
@@ -149,10 +152,11 @@ class EligibilityEvaluator:
         text: str,
         detail_text: str,
         profile: StudentProfile,
+        rules_status: str | None,
     ) -> list[str]:
         trusted_text = (
             _trusted_unresolved_text(title, detail_text)
-            if UNRESOLVED_ATTACHMENT_MARKER in detail_text
+            if _rules_status_is_unresolved(rules_status)
             else text
         )
         exclusions = find_hard_exclusions(title, trusted_text, profile)
@@ -169,7 +173,7 @@ class EligibilityEvaluator:
         rules_status: str | None,
     ) -> list[str]:
         unknowns = find_unknowns(text, profile)
-        unknowns = _filter_resolved_attachment_unknowns(text, unknowns, rules_status)
+        unknowns = _filter_resolved_attachment_unknowns(unknowns, rules_status)
         status_reason = _rules_status_unknown_reason(rules_status)
         if status_reason:
             unknowns.append(status_reason)

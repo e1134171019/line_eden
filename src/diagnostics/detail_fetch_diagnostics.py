@@ -54,6 +54,20 @@ class DetailFetchResult:
     extracted_attachments: tuple[ExtractedAttachment, ...] = tuple()
     rules_status: str = RULES_STATUS_UNKNOWN
 
+    def eligibility_text(self) -> str:
+        """從結構化正文與已確認的主要辦法建立 legacy 判斷文字。"""
+        body = self.body_text or self.text
+        rules = [
+            item.text
+            for item in self.extracted_attachments
+            if item.status == "success"
+            and item.content_role == "scholarship_rules"
+            and item.text.strip()
+        ]
+        if not rules:
+            return body
+        return "\n".join([body, *rules])
+
     def successful_attachment_count(self) -> int:
         return sum(item.status == "success" for item in self.attachments)
 
