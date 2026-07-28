@@ -1,0 +1,21 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "reportMissingTypeStubs": false,
+  "include": [
+    "main.py",
+    "src/cli",
+    "src/services/baseline_service.py",
+    "src/formatters/cli_output_formatter.py",
+    "src/notifiers/noop_notifier.py",
+    "src/automation/daily_line_digest.py",
+    "src/automation/line_audit_report.py",
+    "src/automation/line_transport_test.py"
+  ],
+  "exclude": [
+    "tests",
+    ".venv",
+    "data",
+    "temp"
+  ]
+}
