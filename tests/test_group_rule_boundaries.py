@@ -60,7 +60,7 @@ def test_day_and_evening_groups_are_not_exclusive() -> None:
 
 
 def test_preference_does_not_become_exclusive_requirement() -> None:
-    detail = "本校學生均可申請，日間部學生於其他條件相同時優先考量。"
+    detail = "大專院校在校生均可申請，日間部學生於其他條件相同時優先考量。"
 
     decision = _evaluate(detail)
 
