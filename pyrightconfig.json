@@ -10,7 +10,8 @@
     "src/diagnostics/detail_fetch_diagnostics.py",
     "src/collectors/evidence_detail_fetcher.py",
     "src/ai/gemini_text_requirement_extractor.py",
-    "src/automation/line_transport_test.py"
+    "src/automation/line_transport_test.py",
+    "src/services/baseline_service.py"
   ],
   "exclude": [
     "tests",
