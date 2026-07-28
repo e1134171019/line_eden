@@ -11,7 +11,7 @@ from config import (
     validate_gemini_settings,
     validate_settings,
 )
-from main import build_full_service
+from main import build_service
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
 from src.services.scholarship_service import ScholarshipService, ServiceResult
@@ -75,7 +75,11 @@ def _send(text: str) -> None:
 def main() -> None:
     validate_settings()
     validate_gemini_settings()
-    service = build_full_service(RunMode.LIVE, use_gemini=True)
+    service = build_service(
+        profile_required=True,
+        use_gemini=True,
+        mode=RunMode.LIVE,
+    )
     try:
         result = service.run(dry_run=False)
     except Exception as error:
