@@ -2,15 +2,14 @@
 
 from datetime import date
 
-from config import UNRESOLVED_ATTACHMENT_MARKER
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtraction
+from src.diagnostics.detail_fetch_diagnostics import RULES_STATUS_DISCOVERED_UNRESOLVED
 from src.evaluators.eligibility_evaluator import INELIGIBLE, REVIEW, EligibilityEvaluator
 from src.evaluators.runtime_safety import extract_application_deadline, find_deadline_exclusions
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 
 
-# 建立進修部電子工程二年級背景。
 def _profile() -> StudentProfile:
     return StudentProfile(
         school="測試科技大學",
@@ -29,40 +28,34 @@ def _profile() -> StudentProfile:
     )
 
 
-# 建立測試公告。
 def _item(title: str = "測試獎學金", published: str = "2026-06-30") -> Scholarship:
     return Scholarship.from_raw("fixture", title, published, "https://example.com/item")
 
 
-# 未標年份的 7/24 應依公告發布年份推定。
 def test_extract_deadline_uses_published_year() -> None:
     deadline = extract_application_deadline("請於7/24前交至課指組，逾期不受理。", "2026-06-30")
 
     assert deadline == date(2026, 7, 24)
 
 
-# 民國斜線日期範圍應取申請期間的結束日。
 def test_extract_deadline_supports_roc_slash_range() -> None:
     text = "申請期間：115/03/10~115/04/20，請至協會網站登錄提出申請。"
 
     assert extract_application_deadline(text, "2026-03-19") == date(2026, 4, 20)
 
 
-# 活動或輔導結束日不得冒充申請截止日。
 def test_non_application_activity_date_is_ignored() -> None:
     text = "申請時間：即日起至額滿為止。職涯輔導時間：115年3月至6月12日止。"
 
     assert extract_application_deadline(text, "2026-03-05") is None
 
 
-# 多個時程應優先選擇申請人必須完成動作的最早截止日。
 def test_applicant_deadline_precedes_school_review_date() -> None:
     text = "線上申請自115年4月1日至4月20日止。校方覆核至5月22日止。"
 
     assert extract_application_deadline(text, "2026-03-19") == date(2026, 4, 20)
 
 
-# 截止日已過時不得再成為推播候選。
 def test_expired_application_is_ineligible() -> None:
     reasons = find_deadline_exclusions(
         _item(),
@@ -73,7 +66,6 @@ def test_expired_application_is_ineligible() -> None:
     assert reasons == ["申請截止日 2026-07-24 已過，不推播。"]
 
 
-# 全職學生條件與進修在職背景有歧義時維持 review。
 def test_full_time_student_requirement_stays_review() -> None:
     decision = EligibilityEvaluator().evaluate(
         _item("電力工程獎學金", "2026-07-27"),
@@ -85,18 +77,17 @@ def test_full_time_student_requirement_stays_review() -> None:
     assert "全職學生" in decision.reason_text()
 
 
-# 主要辦法未解析時，外部頁面中的研究所雜訊不得直接排除。
 def test_unresolved_rules_ignore_body_graduate_noise() -> None:
     decision = EligibilityEvaluator().evaluate(
         _item("儒鴻教育獎助學金", "2026-07-27"),
-        f"基金會業務包含研究生獎學金與博士班合作。{UNRESOLVED_ATTACHMENT_MARKER}",
+        "基金會業務包含研究生獎學金與博士班合作。",
         _profile(),
+        rules_status=RULES_STATUS_DISCOVERED_UNRESOLVED,
     )
 
     assert decision.status == REVIEW
 
 
-# Gemini 將機械科系誤放學制欄位時須自動移回科系欄位。
 def test_gemini_moves_department_out_of_program_type() -> None:
     extraction = GeminiRequirementExtraction(
         document_type="scholarship_rules",
@@ -113,7 +104,6 @@ def test_gemini_moves_department_out_of_program_type() -> None:
     assert "研究生" in extraction.degree_levels
 
 
-# 校正後的機械科系規則必須排除電子工程背景。
 def test_normalized_gemini_mechanical_scope_is_ineligible() -> None:
     extraction = GeminiRequirementExtraction(
         document_type="scholarship_rules",
