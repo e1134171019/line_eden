@@ -29,6 +29,7 @@ from src.models.evaluator_input import (
     GEMINI_RULE_COMPLETE,
     GEMINI_RULE_NONE,
     GEMINI_RULE_PARTIAL_EXCLUSIONS,
+    EvaluatorInput,
     GeminiRuleScope,
 )
 from src.models.scholarship import Scholarship
@@ -271,7 +272,7 @@ class ScholarshipService:
         self,
         item: Scholarship,
         detail_text: str,
-        evaluator_input: object,
+        evaluator_input: EvaluatorInput,
     ) -> tuple[EligibilityDecision, str]:
         notice_kind = classify_notice(item.title, detail_text)
         if notice_kind != APPLICATION:
