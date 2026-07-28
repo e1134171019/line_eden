@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from typing import Callable
+from typing import Callable, cast
 
 from config import (
     DATA_DIR,
@@ -48,7 +48,7 @@ from src.notifiers.line_notifier import send_text_message
 from src.profiles.student_profile import load_student_profile
 from src.repositories.gemini_cache_repository import GeminiCacheRepository
 from src.repositories.scholarship_repository import ScholarshipRepository
-from src.runtime.run_mode import RunMode
+from src.runtime.run_mode import CliOptions, RunMode
 from src.services.gemini_fallback_service import (
     GeminiFallbackService,
     GeminiUsageLimiter,
@@ -59,7 +59,17 @@ from src.services.scholarship_service import AuditResult, ScholarshipService, Se
 Notifier = Callable[[str], None]
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+class _ParsedArgs(argparse.Namespace):
+    """argparse 寫入的已知欄位，供 strict type checking 使用。"""
+
+    dry_run: bool
+    audit: bool
+    initialize_baseline: bool
+    use_gemini: bool
+
+
+def parse_args(argv: list[str] | None = None) -> CliOptions:
+    """將 argparse 結果立即轉成型別化的執行選項。"""
     parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="評估適合度但不傳 LINE")
@@ -74,14 +84,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="啟用掃描 PDF 備援；audit 另執行文字 structured shadow",
     )
-    args = parser.parse_args(argv)
-    if args.initialize_baseline and args.use_gemini:
+    parsed = cast(
+        _ParsedArgs,
+        parser.parse_args(argv, namespace=_ParsedArgs()),
+    )
+    if parsed.initialize_baseline and parsed.use_gemini:
         parser.error("建立歷史基準時不需要 Gemini")
-    return args
+    return CliOptions(
+        mode=resolve_run_mode(parsed),
+        use_gemini=parsed.use_gemini,
+    )
 
 
-def resolve_run_mode(args: argparse.Namespace) -> RunMode:
-    """將命令列旗標解析成單一明確模式。"""
+def resolve_run_mode(args: _ParsedArgs) -> RunMode:
+    """將互斥命令列旗標解析成單一明確模式。"""
     if args.initialize_baseline:
         return RunMode.INITIALIZE_BASELINE
     if args.audit:
@@ -223,20 +239,19 @@ def execute_service(
 
 def main(argv: list[str] | None = None) -> None:
     configure_console_output()
-    args = parse_args(argv)
-    mode = resolve_run_mode(args)
+    options = parse_args(argv)
 
-    if mode.validates_line_settings:
+    if options.mode.validates_line_settings:
         validate_settings()
-    if args.use_gemini:
+    if options.use_gemini:
         validate_gemini_settings()
 
     service = (
         build_baseline_service()
-        if mode is RunMode.INITIALIZE_BASELINE
-        else build_service(mode=mode, use_gemini=args.use_gemini)
+        if options.mode is RunMode.INITIALIZE_BASELINE
+        else build_service(mode=options.mode, use_gemini=options.use_gemini)
     )
-    result = execute_service(mode, service)
+    result = execute_service(options.mode, service)
     if isinstance(result, AuditResult):
         print_audit(result)
         csv_path, json_path = write_structured_shadow_artifacts(result)
