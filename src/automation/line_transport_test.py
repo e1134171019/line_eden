@@ -1,27 +1,51 @@
 # -*- coding: utf-8 -*-
 
-from config import (
-    HTTP_TIMEOUT_SECONDS,
-    LINE_API_URL,
-    LINE_CHANNEL_ACCESS_TOKEN,
-    LINE_USER_ID,
-    validate_settings,
-)
-from src.notifiers.line_notifier import send_text_message
+import json
+import os
+import urllib.request
 
-LINE_TRANSPORT_TEST_MESSAGE = "GitHub Actions 雲端測試：Eden 獎學金助手：LINE Messaging API 測試成功。"
+LINE_API_URL = "https://api.line.me/v2/bot/message/push"
+LINE_TRANSPORT_TEST_MESSAGE = (
+    "GitHub Actions 雲端測試：Eden 獎學金助手：LINE Messaging API 測試成功。"
+)
+HTTP_TIMEOUT_SECONDS = 10.0
+
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"缺少環境變數：{name}")
+    return value
+
+
+def build_request(token: str, user_id: str) -> urllib.request.Request:
+    """只使用標準函式庫建立 LINE push request，不載入專案 config。"""
+    payload = json.dumps(
+        {
+            "to": user_id,
+            "messages": [{"type": "text", "text": LINE_TRANSPORT_TEST_MESSAGE}],
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return urllib.request.Request(
+        LINE_API_URL,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
 
 
 def main() -> None:
-    """明確執行一次 LINE 傳輸測試，不參與正式獎學金通知流程。"""
-    validate_settings()
-    send_text_message(
-        api_url=LINE_API_URL,
-        channel_access_token=LINE_CHANNEL_ACCESS_TOKEN,
-        user_id=LINE_USER_ID,
-        text=LINE_TRANSPORT_TEST_MESSAGE,
-        timeout_seconds=HTTP_TIMEOUT_SECONDS,
-    )
+    """明確執行一次 LINE 傳輸測試，不匯入任何專案模組。"""
+    token = _required_env("LINE_CHANNEL_ACCESS_TOKEN")
+    user_id = _required_env("LINE_USER_ID")
+    request = build_request(token, user_id)
+    with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+        if response.status != 200:
+            raise RuntimeError(f"LINE API 回傳非成功狀態：{response.status}")
     print("LINE 雲端測試通知已送出")
 
 
