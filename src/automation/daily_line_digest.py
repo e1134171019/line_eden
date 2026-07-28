@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime
+from typing import Protocol, runtime_checkable
 from zoneinfo import ZoneInfo
 
 from config import (
@@ -11,12 +12,18 @@ from config import (
     validate_gemini_settings,
     validate_settings,
 )
-from main import build_service
+from main import build_full_service
+from src.cli.run_mode import RunMode
 from src.notifiers.line_notifier import send_text_message
-from src.services.scholarship_service import ServiceResult
+from src.services.scholarship_service import ScholarshipService, ServiceResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
+
+
+@runtime_checkable
+class SourceSummaryProvider(Protocol):
+    def source_summary_lines(self) -> list[str]: ...
 
 
 def build_daily_message(
@@ -56,12 +63,11 @@ def build_failure_message(error: Exception, checked_at: datetime | None = None) 
     )[:MAX_LINE_TEXT_LENGTH]
 
 
-def _source_summary_lines(service: object) -> list[str]:
-    collector = getattr(service, "collector", None)
-    summary = getattr(collector, "source_summary_lines", None)
-    if not callable(summary):
-        return []
-    return list(summary())
+def _source_summary_lines(service: ScholarshipService) -> list[str]:
+    collector = service.collector
+    if isinstance(collector, SourceSummaryProvider):
+        return list(collector.source_summary_lines())
+    return []
 
 
 def _send(text: str) -> None:
@@ -78,7 +84,7 @@ def main() -> None:
     """執行正式檢查並固定傳送每日完成或失敗通知。"""
     validate_settings()
     validate_gemini_settings()
-    service = build_service(profile_required=True, use_gemini=True)
+    service = build_full_service(RunMode.LIVE, use_gemini=True)
     try:
         result = service.run(dry_run=False)
     except Exception as error:
