@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 APPLICATION = "application"
+LOAN = "loan"
 POLICY = "policy"
 RESULT = "result"
 INFORMATION = "information"
@@ -23,7 +24,7 @@ INFORMATION_MARKERS = ("說明會", "注意事項", "相關事宜", "宣導", "�
 AWARD_MARKERS = ("獎學金", "助學金", "獎助學金", "補助")
 
 
-# 依標題與正文判斷公告是否為可申請機會。
+# 依標題與正文判斷公告是否為可申請獎助機會。
 def classify_notice(title: str, detail_text: str) -> str:
     normalized_title = " ".join(title.split())
     normalized_text = " ".join(detail_text.split())
@@ -33,6 +34,8 @@ def classify_notice(title: str, detail_text: str) -> str:
         return POLICY
     if _contains_any(normalized_title, INFORMATION_MARKERS):
         return INFORMATION
+    if _is_loan_notice(normalized_title):
+        return LOAN
     if _is_application_notice(normalized_title, normalized_text):
         return APPLICATION
     return UNKNOWN
@@ -45,13 +48,16 @@ def _is_policy_notice(title: str) -> bool:
     return title.endswith("辦法") and not _contains_any(title, APPLICATION_MARKERS)
 
 
-# 判斷標題或正文是否具有當期申請行動訊號。
+# 就學貸款申辦雖可操作，但不屬於獎助金通知範圍。
+def _is_loan_notice(title: str) -> bool:
+    return "就學貸款" in title and any(marker in title for marker in ("申辦", "申請"))
+
+
+# 判斷標題或正文是否具有當期獎助申請行動訊號。
 def _is_application_notice(title: str, detail_text: str) -> bool:
     if _contains_any(title, APPLICATION_MARKERS):
         return True
     if _contains_any(title, AWARD_MARKERS):
-        return True
-    if "就學貸款" in title and any(marker in title for marker in ("申辦", "申請")):
         return True
     return _contains_any(detail_text, APPLICATION_MARKERS)
 

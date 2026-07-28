@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from dataclasses import dataclass
 from datetime import date, datetime
 import re
 
@@ -72,6 +73,21 @@ DATE_PATTERN = re.compile(
     r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
 )
 
+UPCOMING = "upcoming"
+OPEN = "open"
+EXPIRED = "expired"
+DEADLINE_UNKNOWN = "deadline_unknown"
+NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True)
+class ApplicationPeriod:
+    """公告申請期間與相對於檢查日的狀態。"""
+
+    start_date: date | None
+    deadline: date | None
+    status: str
+
 
 # 只從學生申請行為語境擷取日期；同一期間取結束日，多個必要步驟取最早期限。
 def extract_application_deadline(text: str, published_date: str) -> date | None:
@@ -80,14 +96,7 @@ def extract_application_deadline(text: str, published_date: str) -> date | None:
     for segment in _deadline_segments(text):
         if not _is_application_deadline_segment(segment):
             continue
-        candidates = [
-            parsed
-            for parsed in (
-                _parse_date_match(match, published)
-                for match in DATE_PATTERN.finditer(segment)
-            )
-            if parsed is not None
-        ]
+        candidates = _parse_segment_dates(segment, published)
         if not candidates:
             continue
         priority = 0 if any(marker in segment for marker in DIRECT_APPLICANT_MARKERS) else 1
@@ -98,16 +107,46 @@ def extract_application_deadline(text: str, published_date: str) -> date | None:
     return min(deadline for priority, deadline in ranked if priority == best_priority)
 
 
+# 只有明確日期區間才擷取開始日，避免把單一截止日誤當開放日。
+def extract_application_start(text: str, published_date: str) -> date | None:
+    published = _parse_iso_date(published_date)
+    starts: list[date] = []
+    for segment in _deadline_segments(text):
+        if not _is_application_deadline_segment(segment):
+            continue
+        candidates = _parse_segment_dates(segment, published)
+        if len(candidates) >= 2:
+            starts.append(min(candidates))
+    return min(starts) if starts else None
+
+
+# 將申請起訖日轉為 upcoming、open、expired 或 deadline_unknown。
+def classify_application_period(
+    text: str,
+    published_date: str,
+    today: date | None = None,
+) -> ApplicationPeriod:
+    current = today or date.today()
+    start = extract_application_start(text, published_date)
+    deadline = extract_application_deadline(text, published_date)
+    if deadline is not None and deadline < current:
+        return ApplicationPeriod(start, deadline, EXPIRED)
+    if start is not None and start > current:
+        return ApplicationPeriod(start, deadline, UPCOMING)
+    if deadline is not None:
+        return ApplicationPeriod(start, deadline, OPEN)
+    return ApplicationPeriod(start, deadline, DEADLINE_UNKNOWN)
+
+
 # 申請期限已過時直接排除，避免歷史公告再次進入推播候選。
 def find_deadline_exclusions(
     scholarship: Scholarship,
     text: str,
     today: date | None = None,
 ) -> list[str]:
-    deadline = extract_application_deadline(text, scholarship.published_date)
-    current = today or date.today()
-    if deadline is not None and deadline < current:
-        return [f"申請截止日 {deadline.isoformat()} 已過，不推播。"]
+    period = classify_application_period(text, scholarship.published_date, today)
+    if period.status == EXPIRED and period.deadline is not None:
+        return [f"申請截止日 {period.deadline.isoformat()} 已過，不推播。"]
     return []
 
 
@@ -144,6 +183,18 @@ def _is_application_deadline_segment(segment: str) -> bool:
     if any(marker in segment for marker in ADMINISTRATIVE_MARKERS):
         return any(marker in segment for marker in DIRECT_APPLICANT_MARKERS)
     return True
+
+
+# 擷取同一申請語意片段中的所有有效日期。
+def _parse_segment_dates(segment: str, published: date | None) -> list[date]:
+    return [
+        parsed
+        for parsed in (
+            _parse_date_match(match, published)
+            for match in DATE_PATTERN.finditer(segment)
+        )
+        if parsed is not None
+    ]
 
 
 # 將單一日期候選轉成西元日期；民國斜線日期同樣支援。

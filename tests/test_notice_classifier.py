@@ -3,6 +3,7 @@
 from src.evaluators.notice_classifier import (
     APPLICATION,
     INFORMATION,
+    LOAN,
     POLICY,
     RESULT,
     UNKNOWN,
@@ -20,11 +21,11 @@ def test_classifies_scholarship_application() -> None:
     assert kind == APPLICATION
 
 
-# 驗證就學貸款申辦公告仍屬於申請型公告。
+# 驗證就學貸款申辦公告會獨立分類，不混入獎助金通知。
 def test_classifies_loan_application() -> None:
     kind = classify_notice("日間部學生就學貸款申辦公告", "請於期限內完成申辦。")
 
-    assert kind == APPLICATION
+    assert kind == LOAN
 
 
 # 驗證條文修正不會被當成可申請機會。

@@ -30,15 +30,17 @@ def build_content_hash(source: str, title: str, published_date: str, source_url:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-# 依標題關鍵字判斷公告類型。
+# 依標題區分獎學金、助學金、貸款與其他補助。
 def _classify_title(title: str) -> str:
     normalized = _normalize_text(title)
     if "就學貸款" in normalized:
         return "loan"
-    if "補助" in normalized or "減免" in normalized or "扶助" in normalized:
-        return "subsidy"
-    if "獎學金" in normalized or "助學金" in normalized:
+    if "獎助學金" in normalized or "獎學金" in normalized:
         return "scholarship"
+    if "助學金" in normalized or "扶助學生" in normalized:
+        return "student_aid"
+    if any(marker in normalized for marker in ("補助", "減免", "津貼", "扶助")):
+        return "subsidy"
     return "other"
 
 

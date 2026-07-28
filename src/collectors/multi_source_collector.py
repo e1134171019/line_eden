@@ -56,34 +56,65 @@ class MultiSourceCollector(BaseCollector):
             try:
                 collected = collector.collect()
             except Exception as error:  # 單站故障不得拖垮其他來源。
-                message = _safe_error(error)
-                self.failures.append(CollectorFailure(source, message))
-                self.diagnostics.append(
-                    SourceDiagnostic(source, "error", 0, 0, 0, message)
-                )
+                self._record_failure(source, error)
                 continue
 
             successful_sources += 1
-            accepted = 0
-            duplicates = 0
-            for item in collected:
-                key = build_cross_source_key(item)
-                if key in seen:
-                    duplicates += 1
-                    continue
-                seen.add(key)
-                records.append(item)
-                accepted += 1
+            accepted, duplicates = self._append_unique(records, seen, collected)
+            status = "success" if collected else "empty"
             self.diagnostics.append(
-                SourceDiagnostic(
-                    source,
-                    "success",
-                    len(collected),
-                    accepted,
-                    duplicates,
-                )
+                SourceDiagnostic(source, status, len(collected), accepted, duplicates)
             )
 
+        self._validate_collection(successful_sources, records)
+        return records
+
+    def summary_lines(self) -> list[str]:
+        lines = [self._health_line()]
+        for item in self.diagnostics:
+            if item.status == "error":
+                lines.append(f"{item.source}：失敗（{item.error}）")
+                continue
+            if item.status == "empty":
+                lines.append(f"{item.source}：可連線，但解析 0 筆")
+                continue
+            suffix = f"，跨站重複 {item.duplicate_count} 筆" if item.duplicate_count else ""
+            lines.append(
+                f"{item.source}：讀取 {item.collected_count} 筆，保留 {item.accepted_count} 筆{suffix}"
+            )
+        return lines
+
+    # 記錄單一來源錯誤，不讓例外中斷其餘來源。
+    def _record_failure(self, source: str, error: Exception) -> None:
+        message = _safe_error(error)
+        self.failures.append(CollectorFailure(source, message))
+        self.diagnostics.append(SourceDiagnostic(source, "error", 0, 0, 0, message))
+
+    # 將單一來源結果跨站去重後加入總清單。
+    def _append_unique(
+        self,
+        records: list[Scholarship],
+        seen: set[str],
+        collected: list[Scholarship],
+    ) -> tuple[int, int]:
+        accepted = 0
+        duplicates = 0
+        for item in collected:
+            key = build_cross_source_key(item)
+            if key in seen:
+                duplicates += 1
+                continue
+            seen.add(key)
+            records.append(item)
+            accepted += 1
+        return accepted, duplicates
+
+    # 來源全部失敗或全部空結果時採 fail closed。
+    def _validate_collection(
+        self,
+        successful_sources: int,
+        records: list[Scholarship],
+    ) -> None:
         if successful_sources == 0:
             details = "; ".join(
                 f"{failure.source}: {failure.error}" for failure in self.failures
@@ -91,19 +122,18 @@ class MultiSourceCollector(BaseCollector):
             raise RuntimeError(f"五個官方來源全部失敗：{details}")
         if not records:
             raise RuntimeError("官方來源可連線，但沒有解析到任何獎助學金公告。")
-        return records
 
-    def summary_lines(self) -> list[str]:
-        lines: list[str] = []
-        for item in self.diagnostics:
-            if item.status == "error":
-                lines.append(f"{item.source}：失敗（{item.error}）")
-                continue
-            suffix = f"，跨站重複 {item.duplicate_count} 筆" if item.duplicate_count else ""
-            lines.append(
-                f"{item.source}：讀取 {item.collected_count} 筆，保留 {item.accepted_count} 筆{suffix}"
-            )
-        return lines
+    # 彙整設定來源、產出資料來源、空結果與失敗來源數量。
+    def _health_line(self) -> str:
+        configured = len(self.collectors)
+        producing = sum(item.status == "success" for item in self.diagnostics)
+        empty = sum(item.status == "empty" for item in self.diagnostics)
+        failed = sum(item.status == "error" for item in self.diagnostics)
+        health = "正常" if producing == configured else "降級"
+        return (
+            f"來源健康：{health}；設定 {configured}，有資料 {producing}，"
+            f"空結果 {empty}，失敗 {failed}"
+        )
 
 
 def build_cross_source_key(item: Scholarship) -> str:
