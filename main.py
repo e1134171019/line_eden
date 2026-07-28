@@ -33,9 +33,12 @@ from config import (
     validate_settings,
 )
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtractor
+from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtractor
+from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
+from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
 from src.formatters.audit_diagnostic_formatter import build_fetch_diagnostic_lines
 from src.models.scholarship import Scholarship
 from src.notifiers.line_notifier import send_text_message
@@ -47,6 +50,7 @@ from src.services.gemini_fallback_service import (
     GeminiFallbackService,
     GeminiUsageLimiter,
 )
+from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
 from src.services.scholarship_service import (
     AuditRecord,
     AuditResult,
@@ -55,7 +59,6 @@ from src.services.scholarship_service import (
 )
 
 
-# 讓 Windows CP950 終端遇到特殊符號時替換字元而不中斷。
 def configure_console_output() -> None:
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
@@ -63,7 +66,6 @@ def configure_console_output() -> None:
             reconfigure(errors="replace")
 
 
-# 解析命令列參數，Gemini 必須由使用者明確啟用。
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
     modes = parser.add_mutually_exclusive_group()
@@ -77,7 +79,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--use-gemini",
         action="store_true",
-        help="只對本機無法解析的掃描 PDF 使用受限 Gemini 備援",
+        help="啟用掃描 PDF 備援；audit 另執行文字 structured shadow",
     )
     args = parser.parse_args(argv)
     if args.initialize_baseline and args.use_gemini:
@@ -85,7 +87,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-# 建立正式模式通知函式，封裝既有 LINE 推播核心呼叫。
 def build_notifier() -> Callable[[str], None]:
     def _notify(text: str) -> None:
         send_text_message(
@@ -99,7 +100,6 @@ def build_notifier() -> Callable[[str], None]:
     return _notify
 
 
-# 建立公告蒐集、資料庫、資格判斷與通知服務。
 def build_service(
     profile_required: bool = True,
     use_gemini: bool = False,
@@ -111,6 +111,7 @@ def build_service(
     )
     repository = ScholarshipRepository(DATA_DIR / SCHOLARSHIP_DB_FILENAME)
     profile = load_student_profile(PROFILE_PATH) if profile_required else None
+    gemini_fallback, gemini_text_analysis = _build_gemini_services(use_gemini)
     return ScholarshipService(
         collector,
         repository,
@@ -121,11 +122,16 @@ def build_service(
         evaluator=EligibilityEvaluator() if profile_required else None,
         profile=profile,
         notify_review_items=NOTIFY_REVIEW_ITEMS,
-        gemini_fallback=_build_gemini_fallback(use_gemini),
+        gemini_fallback=gemini_fallback,
+        gemini_text_analysis=gemini_text_analysis,
+        structured_evaluator=(
+            StructuredEligibilityEvaluator()
+            if profile_required and use_gemini
+            else None
+        ),
     )
 
 
-# 需要個人化判斷時建立正文、短網址與附件擷取器。
 def _build_detail_fetcher(
     profile_required: bool,
 ) -> AnnouncementDetailFetcher | None:
@@ -140,10 +146,11 @@ def _build_detail_fetcher(
     )
 
 
-# 建立只處理掃描型 PDF 的 Gemini 抽取、快取與單次用量限制。
-def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
+def _build_gemini_services(
+    use_gemini: bool,
+) -> tuple[GeminiFallbackService | None, GeminiTextAnalysisService | None]:
     if not use_gemini:
-        return None
+        return None, None
     extractor = GeminiRequirementExtractor(
         GEMINI_API_KEY,
         GEMINI_MODEL,
@@ -159,10 +166,22 @@ def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
         GEMINI_MAX_CALLS_PER_RUN,
         GEMINI_MAX_INPUT_TOKENS_PER_RUN,
     )
-    return GeminiFallbackService(extractor, cache, limiter, GEMINI_PROMPT_VERSION)
+    fallback = GeminiFallbackService(extractor, cache, limiter, GEMINI_PROMPT_VERSION)
+    text_service = GeminiTextAnalysisService(
+        GeminiTextRequirementExtractor(extractor),
+        cache,
+        limiter,
+        f"{GEMINI_PROMPT_VERSION}-text-v1",
+    )
+    return fallback, text_service
 
 
-# 依命令列模式執行服務。
+def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
+    """保留既有測試與呼叫介面。"""
+    fallback, _ = _build_gemini_services(use_gemini)
+    return fallback
+
+
 def execute_service(
     args: argparse.Namespace,
     service: ScholarshipService,
@@ -174,7 +193,6 @@ def execute_service(
     return service.run(dry_run=args.dry_run)
 
 
-# 印出蒐集、適合度、通知、基準化與 Gemini 用量摘要。
 def print_summary(result: ServiceResult) -> None:
     print(f"蒐集公告數量：{len(result.collected)}")
     print(f"適合且待通知：{len(result.pending_items)}")
@@ -186,7 +204,6 @@ def print_summary(result: ServiceResult) -> None:
     _print_gemini_usage(result)
 
 
-# 逐筆列出通過個人化篩選的公告。
 def print_items(label: str, items: list[Scholarship]) -> None:
     print(label)
     if not items:
@@ -197,19 +214,21 @@ def print_items(label: str, items: list[Scholarship]) -> None:
         print(f"  {item.source_url}")
 
 
-# 印出不修改獎學金狀態的全部公告稽核結果。
 def print_audit(result: AuditResult) -> None:
     print(f"稽核公告數量：{len(result.records)}")
     print(f"明確適合：{result.eligible_count}")
     print(f"資格待確認：{result.review_count}")
     print(f"不推播：{result.ineligible_count}")
+    print(f"Structured 已比較：{result.structured_evaluated_count}")
+    print(f"Structured 分歧：{result.structured_changed_count}")
+    print(f"Structured 預算延後：{result.structured_deferred_count}")
+    print(f"Structured 錯誤：{result.structured_error_count}")
     _print_gemini_usage(result)
     for record in result.records:
         _print_audit_record(record)
     print(result.message)
 
 
-# 印出單筆公告判斷、正文摘要與來源附件診斷。
 def _print_audit_record(record: AuditRecord) -> None:
     item = record.item
     print(f"- {item.published_date} | {item.notice_kind} | {item.eligibility_status}")
@@ -219,10 +238,26 @@ def _print_audit_record(record: AuditRecord) -> None:
         print(line)
     if record.gemini_diagnostic:
         _print_gemini_diagnostic(record.gemini_diagnostic)
+    print(f"  Shadow狀態：{record.shadow_status}")
+    if record.structured_gemini_diagnostic:
+        _print_gemini_diagnostic(record.structured_gemini_diagnostic)
+    if record.structured_shadow:
+        shadow = record.structured_shadow
+        print(
+            "  Shadow比較："
+            f"legacy={shadow.legacy_status} | structured={shadow.structured_status} | "
+            f"changed={shadow.changed}"
+        )
+        print(f"  Structured理由：{shadow.structured_reason}")
+        for condition in shadow.conditions:
+            print(
+                "  Structured條件："
+                f"{condition.status} | {condition.field} | "
+                f"{condition.requirement} | {condition.reason}"
+            )
     print(f"  {item.source_url}")
 
 
-# 顯示單一 Gemini 備援的用量、結構化欄位與頁碼證據。
 def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
     cache = "是" if diagnostic.cache_hit else "否"
     print(
@@ -239,7 +274,6 @@ def _print_gemini_diagnostic(diagnostic: GeminiAnalysisDiagnostic) -> None:
     print(f"  Gemini來源：{diagnostic.source_url}")
 
 
-# 顯示本次執行的 Gemini 生成次數與實際 Token。
 def _print_gemini_usage(result: object) -> None:
     print(f"Gemini 生成呼叫：{result.gemini_calls}")
     print(f"Gemini 快取命中：{result.gemini_cache_hits}")
@@ -247,12 +281,10 @@ def _print_gemini_usage(result: object) -> None:
     print(f"Gemini output tokens：{result.gemini_output_tokens}")
 
 
-# 判斷目前是否為會傳送 LINE 的正式模式。
 def _is_live_mode(args: argparse.Namespace) -> bool:
     return not args.dry_run and not args.audit and not args.initialize_baseline
 
 
-# 執行命令列流程；Gemini 與 LINE 都必須在需要時明確驗證。
 def main(argv: list[str] | None = None) -> None:
     configure_console_output()
     args = parse_args(argv)
@@ -267,6 +299,9 @@ def main(argv: list[str] | None = None) -> None:
     result = execute_service(args, service)
     if isinstance(result, AuditResult):
         print_audit(result)
+        csv_path, json_path = write_structured_shadow_artifacts(result)
+        print(f"Structured CSV：{csv_path}")
+        print(f"Structured JSON：{json_path}")
         return
     print_summary(result)
     print_items("適合且待通知公告：", result.pending_items)
