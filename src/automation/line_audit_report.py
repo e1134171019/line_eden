@@ -14,6 +14,7 @@ from main import build_service
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.evaluators.eligibility_evaluator import ELIGIBLE
 from src.notifiers.line_notifier import send_text_message
+from src.runtime.run_mode import RunMode
 from src.services.scholarship_service import AuditResult
 
 MAX_LINE_TEXT_LENGTH = 4800
@@ -36,10 +37,10 @@ def build_report_message(
         f"Gemini 快取命中：{result.gemini_cache_hits}",
         "",
         "Structured shadow：",
-        f"- 已比較：{getattr(result, 'structured_evaluated_count', 0)}",
-        f"- 與 legacy 分歧：{getattr(result, 'structured_changed_count', 0)}",
-        f"- 預算延後：{getattr(result, 'structured_deferred_count', 0)}",
-        f"- 抽取錯誤：{getattr(result, 'structured_error_count', 0)}",
+        f"- 已比較：{result.structured_evaluated_count}",
+        f"- 與 legacy 分歧：{result.structured_changed_count}",
+        f"- 預算延後：{result.structured_deferred_count}",
+        f"- 抽取錯誤：{result.structured_error_count}",
     ]
     if source_lines:
         lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
@@ -70,7 +71,7 @@ def main() -> None:
     """重新稽核五個官方來源並傳送 LINE，不修改 baseline 或 notified_at。"""
     validate_settings()
     validate_gemini_settings()
-    service = build_service(profile_required=True, use_gemini=True)
+    service = build_service(mode=RunMode.AUDIT, use_gemini=True)
     result = service.audit()
     csv_path, json_path = write_structured_shadow_artifacts(result)
     source_summary = getattr(service.collector, "source_summary_lines", lambda: [])()
