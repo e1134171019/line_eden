@@ -1,0 +1,19 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "reportMissingTypeStubs": false,
+  "include": [
+    "main.py",
+    "src/runtime/run_mode.py",
+    "src/diagnostics/detail_fetch_diagnostics.py",
+    "src/collectors/evidence_detail_fetcher.py",
+    "src/formatters/cli_output_formatter.py",
+    "src/automation/line_transport_test.py"
+  ],
+  "exclude": [
+    "tests",
+    ".venv",
+    "data",
+    "temp"
+  ]
+}
