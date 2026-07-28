@@ -2,6 +2,7 @@
 
 import re
 
+from src.evaluators.attachment_requirement import detect_attachment_requirement
 from src.profiles.student_profile import StudentProfile
 
 EXCLUSIVE_WORDS = r"(?:限|僅限|只限|申請對象(?:為|限於)?|申請資格(?:為|限於)?|資格限於)"
@@ -23,12 +24,10 @@ TAIWAN_REGIONS = (
 )
 
 
-# 壓縮公告空白，避免換行影響規則比對。
 def normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
-# 收集明確不符合的資格原因。
 def find_exclusions(text: str, title: str, profile: StudentProfile) -> list[str]:
     reasons = _check_program(text, title, profile)
     reasons.extend(_check_degree(text, title, profile))
@@ -40,7 +39,6 @@ def find_exclusions(text: str, title: str, profile: StudentProfile) -> list[str]
     return reasons
 
 
-# 收集無法可靠確認的資格原因。
 def find_unknowns(text: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if _requires_attachment(text):
@@ -52,7 +50,6 @@ def find_unknowns(text: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 收集可確認符合的條件。
 def find_matches(text: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if profile.school and profile.school in text:
@@ -66,7 +63,6 @@ def find_matches(text: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 判斷學制與在職身分限制。
 def _check_program(text: str, title: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if "進修" in profile.program_type:
@@ -79,7 +75,6 @@ def _check_program(text: str, title: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 判斷學位層級限制。
 def _check_degree(text: str, title: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     bachelor = ("大學生", "大學部", "學士班", "大專學生", "大專在校生")
@@ -92,7 +87,6 @@ def _check_degree(text: str, title: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 判斷新生與應屆畢業生限制。
 def _check_year(text: str, title: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if profile.year > 1 and _term_is_required(text, title, ("新生", "大一")):
@@ -102,7 +96,6 @@ def _check_year(text: str, title: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 判斷特殊家庭或法定身分限制。
 def _check_special_status(text: str, title: str, profile: StudentProfile) -> list[str]:
     owned = set(profile.special_statuses)
     for keyword in SPECIAL_STATUSES:
@@ -111,7 +104,6 @@ def _check_special_status(text: str, title: str, profile: StudentProfile) -> lis
     return []
 
 
-# 判斷特殊身分是必要條件或僅為優先條件。
 def _special_status_is_required(text: str, title: str, keyword: str) -> bool:
     if keyword in title and not _contains_preference(title):
         return True
@@ -123,7 +115,6 @@ def _special_status_is_required(text: str, title: str, keyword: str) -> bool:
     return False
 
 
-# 判斷學業與操行成績門檻。
 def _check_grades(text: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     average = _extract_score(text, ("學業平均", "平均成績", "學業成績"))
@@ -135,7 +126,6 @@ def _check_grades(text: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 判斷班級排名門檻。
 def _check_rank(text: str, profile: StudentProfile) -> list[str]:
     requirement = _extract_rank(text)
     if not requirement or not _has_rank(profile):
@@ -149,7 +139,6 @@ def _check_rank(text: str, profile: StudentProfile) -> list[str]:
     return []
 
 
-# 判斷戶籍地限制。
 def _check_residence(text: str, profile: StudentProfile) -> list[str]:
     required = _extract_region(text)
     if not required or not profile.residence or _same_region(required, profile.residence):
@@ -157,7 +146,6 @@ def _check_residence(text: str, profile: StudentProfile) -> list[str]:
     return [f"公告限設籍於 {required}，與目前居住地不符。"]
 
 
-# 判斷電子、電機、電力與能源領域是否相符。
 def _field_matches(text: str, profile: StudentProfile) -> list[str]:
     keywords = set(profile.research_keywords) | {"電子", "電機", "電力", "能源"}
     if any(keyword and keyword in text for keyword in keywords):
@@ -165,7 +153,6 @@ def _field_matches(text: str, profile: StudentProfile) -> list[str]:
     return []
 
 
-# 判斷成績、排名、戶籍與學制條件是否符合。
 def _requirement_matches(text: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if _meets_scores(text, profile):
@@ -179,7 +166,6 @@ def _requirement_matches(text: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 判斷已知成績門檻是否全部符合。
 def _meets_scores(text: str, profile: StudentProfile) -> bool:
     average = _extract_score(text, ("學業平均", "平均成績", "學業成績"))
     conduct = _extract_score(text, ("操行成績", "操行"))
@@ -191,7 +177,6 @@ def _meets_scores(text: str, profile: StudentProfile) -> bool:
     return bool(checks) and all(checks)
 
 
-# 判斷排名門檻是否符合。
 def _meets_rank(text: str, profile: StudentProfile) -> bool:
     requirement = _extract_rank(text)
     if not requirement or not _has_rank(profile):
@@ -202,13 +187,11 @@ def _meets_rank(text: str, profile: StudentProfile) -> bool:
     return profile.class_rank / profile.class_size * 100 <= threshold
 
 
-# 判斷戶籍門檻是否符合。
 def _meets_residence(text: str, profile: StudentProfile) -> bool:
     region = _extract_region(text)
     return bool(region and profile.residence and _same_region(region, profile.residence))
 
 
-# 判斷公告是否明確限定某組對象。
 def _group_is_exclusive(
     text: str,
     title: str,
@@ -227,7 +210,6 @@ def _group_is_exclusive(
     return False
 
 
-# 判斷標題是否代表特定對象專屬公告。
 def _title_requires_group(
     title: str,
     targets: tuple[str, ...],
@@ -239,14 +221,12 @@ def _title_requires_group(
     return any(target in title for target in targets) and any(word in title for word in awards)
 
 
-# 判斷句子是否同時列出其他可申請對象。
 def _sentence_includes_groups(sentence: str, groups: tuple[str, ...]) -> bool:
     if not any(group in sentence for group in groups):
         return False
     return not _explicitly_excludes(sentence, groups)
 
 
-# 判斷句子是否以限制語氣指定目標族群。
 def _sentence_requires_group(sentence: str, targets: tuple[str, ...]) -> bool:
     pattern = "|".join(re.escape(target) for target in targets)
     prefix = rf"{EXCLUSIVE_WORDS}.{{0,18}}(?:{pattern})"
@@ -254,7 +234,6 @@ def _sentence_requires_group(sentence: str, targets: tuple[str, ...]) -> bool:
     return bool(re.search(prefix, sentence) or re.search(suffix, sentence))
 
 
-# 判斷指定對象是否被公告明確排除。
 def _explicitly_excludes(text: str, terms: tuple[str, ...]) -> bool:
     pattern = "|".join(re.escape(term) for term in terms)
     prefix = rf"(?:不含|不包括|不受理|不接受|排除|不得為).{{0,10}}(?:{pattern})"
@@ -262,7 +241,6 @@ def _explicitly_excludes(text: str, terms: tuple[str, ...]) -> bool:
     return bool(re.search(prefix, text) or re.search(suffix, text))
 
 
-# 判斷年級或身分詞是否為必要資格。
 def _term_is_required(text: str, title: str, terms: tuple[str, ...]) -> bool:
     if any(term in title for term in terms) and not _contains_preference(title):
         return True
@@ -273,7 +251,6 @@ def _term_is_required(text: str, title: str, terms: tuple[str, ...]) -> bool:
     )
 
 
-# 從公告文字擷取最低分數。
 def _extract_score(text: str, labels: tuple[str, ...]) -> float | None:
     label = "|".join(re.escape(item) for item in labels)
     score = r"(\d{1,3}(?:\.\d+)?)"
@@ -288,7 +265,6 @@ def _extract_score(text: str, labels: tuple[str, ...]) -> float | None:
     return None
 
 
-# 從公告文字擷取班級排名門檻。
 def _extract_rank(text: str) -> tuple[str, float] | None:
     label = r"(?:班級排名|班排名|成績排名|學業排名)"
     percent = re.search(rf"{label}.{{0,10}}前\s*(\d+(?:\.\d+)?)\s*%", text)
@@ -300,7 +276,6 @@ def _extract_rank(text: str) -> tuple[str, float] | None:
     return None
 
 
-# 從公告文字擷取明確戶籍限制。
 def _extract_region(text: str) -> str | None:
     for region in TAIWAN_REGIONS:
         escaped = re.escape(region)
@@ -313,34 +288,26 @@ def _extract_region(text: str) -> str | None:
     return None
 
 
-# 判斷公告是否將資格條件交由附件說明。
 def _requires_attachment(text: str) -> bool:
-    subject = r"(?:申請資格|詳細資格|資格條件|申請條件|申請對象)"
-    reference = r"(?:詳見|請參閱|如|依).{0,6}(?:附件|附檔)"
-    return bool(re.search(rf"{subject}.{{0,20}}{reference}", text))
+    return detect_attachment_requirement(text).required
 
 
-# 判斷公告是否適用一般大專在校生。
 def _is_general_college_notice(text: str) -> bool:
     terms = ("大專院校學生", "大專校院學生", "大專在校生", "大學生", "在校學生")
     return any(term in text for term in terms)
 
 
-# 判斷文字是否表達優先而非必要資格。
 def _contains_preference(text: str) -> bool:
     return any(marker in text for marker in PREFERENCE_WORDS)
 
 
-# 判斷排名資料是否完整。
 def _has_rank(profile: StudentProfile) -> bool:
     return profile.class_rank > 0 and profile.class_size > 0
 
 
-# 比較臺／台異體字後的戶籍地。
 def _same_region(required: str, residence: str) -> bool:
     return required.replace("臺", "台") in residence.replace("臺", "台")
 
 
-# 依標點切分句子，降低跨句關鍵字誤判。
 def _sentences(text: str) -> list[str]:
     return [item.strip() for item in re.split(r"[。；;\n]", text) if item.strip()]
