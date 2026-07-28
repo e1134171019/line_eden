@@ -14,7 +14,6 @@ load_dotenv(ENV_PATH)
 
 
 def _env_int(name: str, default: int) -> int:
-    """將可省略的整數環境變數轉成整數。"""
     raw_value = os.getenv(name, "").strip()
     if not raw_value:
         return default
@@ -25,7 +24,6 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _env_bool(name: str, default: bool) -> bool:
-    """解析明確的布林環境變數，拒絕模糊值。"""
     raw_value = os.getenv(name, "").strip().lower()
     if not raw_value:
         return default
@@ -58,9 +56,6 @@ MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 40
-ATTACHMENT_TEXT_MARKER = "【附件內容】"
-UNRESOLVED_ATTACHMENT_MARKER = "【附件未解析】"
-GEMINI_PARTIAL_EXCLUSION_MARKER = "【Gemini部分硬性排除】"
 ELIGIBILITY_RULE_VERSION = "eligibility-v4"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
 GEMINI_MAX_CALLS_PER_RUN = _env_int("GEMINI_MAX_CALLS_PER_RUN", 3)
@@ -88,7 +83,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
 
 def validate_settings() -> None:
-    """驗證 LINE 推播必要的環境變數是否完整。"""
     missing_names = [
         name
         for name, value in (
@@ -103,7 +97,6 @@ def validate_settings() -> None:
 
 
 def validate_gemini_settings() -> None:
-    """驗證明確啟用 Gemini 時所需的 API、模型與預算設定。"""
     if not GEMINI_API_KEY:
         raise RuntimeError("缺少環境變數：GEMINI_API_KEY")
     if not GEMINI_MODEL:
