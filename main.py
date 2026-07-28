@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from typing import Callable
+from typing import Callable, cast
 
 from config import (
     DATA_DIR,
@@ -49,6 +49,7 @@ from src.profiles.student_profile import load_student_profile
 from src.repositories.gemini_cache_repository import GeminiCacheRepository
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.runtime.run_mode import RunMode
+from src.services.baseline_service import BaselineService
 from src.services.gemini_fallback_service import (
     GeminiFallbackService,
     GeminiUsageLimiter,
@@ -57,6 +58,7 @@ from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
 from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
 
 Notifier = Callable[[str], None]
+ExecutableService = ScholarshipService | BaselineService
 
 
 class ParsedArgs(argparse.Namespace):
@@ -149,14 +151,12 @@ def build_service(
     )
 
 
-def build_baseline_service() -> ScholarshipService:
-    """建立只負責蒐集、去重與基準化的服務，不載入個人資料或 notifier。"""
-    return ScholarshipService(
+def build_baseline_service() -> BaselineService:
+    """建立不具通知或資格判斷能力的專用基準服務。"""
+    return BaselineService(
         _build_collector(),
         _build_repository(),
-        _discard_notification,
-        include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
-        summary_batch_size=LINE_SUMMARY_BATCH_SIZE,
+        SCHOLARSHIP_FILTER_KEYWORDS,
     )
 
 
@@ -214,15 +214,17 @@ def _build_gemini_services(
 
 def execute_service(
     mode: RunMode,
-    service: ScholarshipService,
+    service: ExecutableService,
 ) -> ServiceResult | AuditResult:
     if mode is RunMode.INITIALIZE_BASELINE:
-        return service.initialize_baseline()
+        return cast(BaselineService, service).initialize_baseline()
+
+    runtime_service = cast(ScholarshipService, service)
     if mode is RunMode.AUDIT:
-        return service.audit()
+        return runtime_service.audit()
     if mode is RunMode.DRY_RUN:
-        return service.run(dry_run=True)
-    return service.run(dry_run=False)
+        return runtime_service.run(dry_run=True)
+    return runtime_service.run(dry_run=False)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -235,7 +237,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.use_gemini:
         validate_gemini_settings()
 
-    service = (
+    service: ExecutableService = (
         build_baseline_service()
         if mode is RunMode.INITIALIZE_BASELINE
         else build_service(mode=mode, use_gemini=args.use_gemini)
