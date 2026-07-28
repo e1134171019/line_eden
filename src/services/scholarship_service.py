@@ -31,6 +31,11 @@ from src.services.gemini_fallback_service import (
     GeminiAnalysisDiagnostic,
     GeminiFallbackService,
 )
+from src.services.gemini_text_shadow_service import GeminiTextShadowService
+from src.services.structured_shadow_comparison import (
+    StructuredShadowComparison,
+    compare_legacy_and_structured,
+)
 
 
 @dataclass(frozen=True)
@@ -51,12 +56,14 @@ class ServiceResult:
 
 @dataclass(frozen=True)
 class AuditRecord:
-    """單筆歷史公告的評估結果與擷取診斷。"""
+    """單筆公告的 legacy 與 structured shadow 稽核結果。"""
 
     item: Scholarship
     detail_excerpt: str
     fetch_result: DetailFetchResult
     gemini_diagnostic: GeminiAnalysisDiagnostic | None = None
+    structured_comparison: StructuredShadowComparison | None = None
+    structured_diagnostic: GeminiAnalysisDiagnostic | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,10 @@ class AuditResult:
     gemini_cache_hits: int = 0
     gemini_input_tokens: int = 0
     gemini_output_tokens: int = 0
+    structured_eligible_count: int = 0
+    structured_review_count: int = 0
+    structured_ineligible_count: int = 0
+    structured_difference_count: int = 0
 
 
 class ScholarshipService:
@@ -100,6 +111,9 @@ class ScholarshipService:
         self.profile = profile
         self.notify_review_items = notify_review_items
         self.gemini_fallback = gemini_fallback
+        self.gemini_text_shadow = (
+            GeminiTextShadowService(gemini_fallback) if gemini_fallback else None
+        )
 
     def run(self, dry_run: bool) -> ServiceResult:
         collected = self._collect_and_discover()
@@ -114,10 +128,32 @@ class ScholarshipService:
         eligible = self._count_audit_status(records, ELIGIBLE)
         review = self._count_audit_status(records, REVIEW)
         ineligible = self._count_audit_status(records, INELIGIBLE)
+        structured_eligible = self._count_structured_status(records, ELIGIBLE)
+        structured_review = self._count_structured_status(records, REVIEW)
+        structured_ineligible = self._count_structured_status(records, INELIGIBLE)
+        structured_difference = sum(
+            bool(record.structured_comparison and record.structured_comparison.changed)
+            for record in records
+        )
         message = f"已稽核 {len(records)} 筆公告，不會傳送 LINE 或修改獎學金狀態。"
         if self.gemini_fallback:
-            message += " Gemini 結果只會寫入獨立文件快取。"
-        return AuditResult(records, eligible, review, ineligible, message, *self._gemini_usage())
+            message += " structured shadow 只會寫入獨立 Gemini 快取。"
+        usage = self._gemini_usage()
+        return AuditResult(
+            records=records,
+            eligible_count=eligible,
+            review_count=review,
+            ineligible_count=ineligible,
+            message=message,
+            gemini_calls=usage[0],
+            gemini_cache_hits=usage[1],
+            gemini_input_tokens=usage[2],
+            gemini_output_tokens=usage[3],
+            structured_eligible_count=structured_eligible,
+            structured_review_count=structured_review,
+            structured_ineligible_count=structured_ineligible,
+            structured_difference_count=structured_difference,
+        )
 
     def initialize_baseline(self) -> ServiceResult:
         collected = self._collect_and_discover()
@@ -233,13 +269,36 @@ class ScholarshipService:
     def _build_audit_record(self, item: Scholarship) -> AuditRecord:
         fetch_result = self._fetch_audit_result(item)
         decision, notice_kind, detail_text, gemini = self._evaluate_fetch_result(item, fetch_result)
+        comparison: StructuredShadowComparison | None = None
+        structured_diagnostic: GeminiAnalysisDiagnostic | None = None
+        if (
+            notice_kind == APPLICATION
+            and self.gemini_text_shadow
+            and gemini is None
+        ):
+            shadow = self.gemini_text_shadow.analyze(item.title, fetch_result)
+            if shadow is not None:
+                structured_diagnostic = shadow.diagnostic
+                if shadow.extraction is not None:
+                    comparison = compare_legacy_and_structured(
+                        decision,
+                        shadow.extraction,
+                        self.profile,
+                    )
         evaluated = replace(
             item,
             notice_kind=notice_kind,
             eligibility_status=decision.status,
             eligibility_reason=decision.reason_text(),
         )
-        return AuditRecord(evaluated, self._excerpt(detail_text), fetch_result, gemini)
+        return AuditRecord(
+            evaluated,
+            self._excerpt(detail_text),
+            fetch_result,
+            gemini,
+            comparison,
+            structured_diagnostic,
+        )
 
     def _fetch_audit_result(self, item: Scholarship) -> DetailFetchResult:
         fetch_method = getattr(self.detail_fetcher, "fetch_with_diagnostics", None)
@@ -268,6 +327,13 @@ class ScholarshipService:
 
     def _count_audit_status(self, records: list[AuditRecord], status: str) -> int:
         return sum(record.item.eligibility_status == status for record in records)
+
+    def _count_structured_status(self, records: list[AuditRecord], status: str) -> int:
+        return sum(
+            record.structured_comparison is not None
+            and record.structured_comparison.structured_status == status
+            for record in records
+        )
 
     def _excerpt(self, detail_text: str) -> str:
         normalized = " ".join(detail_text.split())
