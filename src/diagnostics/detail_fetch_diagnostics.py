@@ -43,6 +43,15 @@ class ExtractedAttachment:
 
 
 @dataclass(frozen=True)
+class NoticeContent:
+    """不依賴字串 marker 的公告正文與附件證據。"""
+
+    main_text: str
+    attachments: tuple[ExtractedAttachment, ...]
+    rules_status: str
+
+
+@dataclass(frozen=True)
 class DetailFetchResult:
     """公告正文、結構化附件證據與完整擷取診斷結果。"""
 
@@ -54,12 +63,21 @@ class DetailFetchResult:
     extracted_attachments: tuple[ExtractedAttachment, ...] = tuple()
     rules_status: str = RULES_STATUS_UNKNOWN
 
+    @property
+    def content(self) -> NoticeContent:
+        """提供不含 legacy marker 語意的結構化內容。"""
+        return NoticeContent(
+            main_text=self.body_text or self.text,
+            attachments=self.extracted_attachments,
+            rules_status=self.rules_status,
+        )
+
     def eligibility_text(self) -> str:
         """從結構化正文與已確認的主要辦法建立 legacy 判斷文字。"""
-        body = self.body_text or self.text
+        body = self.content.main_text
         rules = [
             item.text
-            for item in self.extracted_attachments
+            for item in self.content.attachments
             if item.status == "success"
             and item.content_role == "scholarship_rules"
             and item.text.strip()
