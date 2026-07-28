@@ -10,7 +10,7 @@ from config import (
     validate_gemini_settings,
     validate_settings,
 )
-from main import build_full_service
+from main import build_service
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.evaluators.eligibility_evaluator import ELIGIBLE
 from src.notifiers.line_notifier import send_text_message
@@ -69,7 +69,11 @@ def build_report_message(
 def main() -> None:
     validate_settings()
     validate_gemini_settings()
-    service = build_full_service(RunMode.AUDIT, use_gemini=True)
+    service = build_service(
+        profile_required=True,
+        use_gemini=True,
+        mode=RunMode.AUDIT,
+    )
     result = service.audit()
     csv_path, json_path = write_structured_shadow_artifacts(result)
     source_summary = getattr(service.collector, "source_summary_lines", lambda: [])()
