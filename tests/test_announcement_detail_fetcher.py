@@ -16,10 +16,19 @@ def _fetcher() -> AnnouncementDetailFetcher:
 
 
 def test_parse_detail_html_to_plain_text() -> None:
-    html = "<main>申請對象為大專院校電子工程系在校生。</main><script>ignore()</script>"
+    html = """
+    <html>
+      <head><style>.hidden { display: none; }</style></head>
+      <body>
+        <script>ignore_me()</script>
+        <main>申請對象為大專院校電子工程系在校生，學業平均八十分以上。</main>
+      </body>
+    </html>
+    """
     text = _fetcher()._parse_text(html)
     assert "電子工程系" in text
-    assert "ignore" not in text
+    assert "ignore_me" not in text
+    assert "display" not in text
 
 
 def test_parse_detail_excludes_navigation_and_footer_noise() -> None:
