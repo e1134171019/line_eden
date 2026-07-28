@@ -36,10 +36,10 @@ def build_report_message(
         f"Gemini 快取命中：{result.gemini_cache_hits}",
         "",
         "Structured shadow：",
-        f"- 已比較：{result.structured_evaluated_count}",
-        f"- 與 legacy 分歧：{result.structured_changed_count}",
-        f"- 預算延後：{result.structured_deferred_count}",
-        f"- 抽取錯誤：{result.structured_error_count}",
+        f"- 已比較：{getattr(result, 'structured_evaluated_count', 0)}",
+        f"- 與 legacy 分歧：{getattr(result, 'structured_changed_count', 0)}",
+        f"- 預算延後：{getattr(result, 'structured_deferred_count', 0)}",
+        f"- 抽取錯誤：{getattr(result, 'structured_error_count', 0)}",
     ]
     if source_lines:
         lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
