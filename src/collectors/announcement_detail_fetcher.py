@@ -5,7 +5,6 @@ import re
 
 import httpx
 
-from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
     ExtractedAttachment,
@@ -24,7 +23,6 @@ from src.extractors.attachment_content_classifier import (
     classify_attachment_content,
 )
 from src.extractors.attachment_link_extractor import (
-    RULES,
     AttachmentLinkInventory,
     extract_attachment_inventory,
 )
@@ -34,15 +32,13 @@ from src.models.scholarship import Scholarship
 
 @dataclass(frozen=True)
 class DownloadedResource:
-    """單次 HTTP 下載後的最終網址、內容類型與位元資料。"""
-
     url: str
     content_type: str
     content: bytes
 
 
 class AnnouncementDetailFetcher:
-    """下載公告正文與附件，並提供稽核所需診斷。"""
+    """下載公告正文與附件，以結構化狀態保存解析結果。"""
 
     def __init__(
         self,
@@ -135,16 +131,10 @@ class AnnouncementDetailFetcher:
             for item in extracted_attachments
             if item.status == "success" and item.content_role == CONTENT_RULES
         ]
-        rules_status = self._determine_rules_status(
-            body,
-            inventory,
-            extracted_attachments,
-        )
+        rules_status = self._determine_rules_status(body, inventory, extracted_attachments)
         source = self._success_diagnostic("source", requested_url, resource, "html", body)
-        combined = self._combine_text(body, rules_texts)
-        combined = self._apply_rules_status_marker(combined, rules_status)
         return DetailFetchResult(
-            combined,
+            self._combine_text(body, rules_texts),
             source,
             diagnostics,
             inventory.discovered_count,
@@ -181,58 +171,26 @@ class AnnouncementDetailFetcher:
         inventory: AttachmentLinkInventory,
         attachments: tuple[ExtractedAttachment, ...],
     ) -> str:
-        resolved = any(
+        if any(
             item.status == "success" and item.content_role == CONTENT_RULES
             for item in attachments
-        )
-        if resolved:
+        ):
             return RULES_STATUS_RESOLVED
 
         requirement = detect_attachment_requirement(body_text)
         if requirement.required and inventory.discovered_count == 0:
             return RULES_STATUS_DECLARED_MISSING
-
         if inventory.discovered_rules_count > 0:
             return RULES_STATUS_DISCOVERED_UNRESOLVED
-
         if inventory.discovered_generic_count > 0:
             return RULES_STATUS_GENERIC_UNCONFIRMED
-
         if requirement.required:
             return RULES_STATUS_DISCOVERED_UNRESOLVED
-
         if inventory.discovered_count > 0 and not any(
             item.status == "success" for item in attachments
         ):
             return RULES_STATUS_DISCOVERED_UNRESOLVED
-
         return RULES_STATUS_NOT_REQUIRED
-
-    def _apply_rules_status_marker(self, text: str, rules_status: str) -> str:
-        safe = {RULES_STATUS_NOT_REQUIRED, RULES_STATUS_RESOLVED}
-        if rules_status in safe or UNRESOLVED_ATTACHMENT_MARKER in text:
-            return text
-        return f"{text}\n{UNRESOLVED_ATTACHMENT_MARKER}"
-
-    def _mark_unresolved_attachments(
-        self,
-        text: str,
-        discovered_count: int,
-        attachment_texts: list[str],
-        body_text: str = "",
-        diagnostics: tuple[ResourceDiagnostic, ...] = tuple(),
-        discovered_rules_count: int = 0,
-    ) -> str:
-        resolved_rules = any(
-            item.status == "success" and item.attachment_role == RULES
-            for item in diagnostics
-        )
-        rules_missing = discovered_rules_count > 0 and not resolved_rules
-        declared_missing = _body_requires_rules(body_text or text) and not resolved_rules
-        all_failed = discovered_count > 0 and not attachment_texts
-        if rules_missing or declared_missing or all_failed:
-            return f"{text}\n{UNRESOLVED_ATTACHMENT_MARKER}"
-        return text
 
     def _attachment_result(
         self,
@@ -247,7 +205,7 @@ class AnnouncementDetailFetcher:
             resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
             text = self._resource_text(resource, kind)
-            diagnostic = self._success_diagnostic(
+            return text, self._success_diagnostic(
                 "attachment",
                 requested_url,
                 resource,
@@ -256,7 +214,6 @@ class AnnouncementDetailFetcher:
                 attachment_role,
                 attachment_label,
             )
-            return text, diagnostic
         except Exception as error:
             return "", self._error_diagnostic(
                 requested_url,
@@ -271,8 +228,7 @@ class AnnouncementDetailFetcher:
         if kind != "unsupported":
             return self._document_text(resource)
         if self._is_html(resource):
-            html = self._decode_html(resource)
-            return extract_announcement_text(html, "", resource.url)
+            return extract_announcement_text(self._decode_html(resource), "", resource.url)
         raise ValueError("不支援的附件格式")
 
     def _success_diagnostic(
@@ -308,15 +264,12 @@ class AnnouncementDetailFetcher:
         attachment_role: str = "unknown",
         attachment_label: str = "",
     ) -> ResourceDiagnostic:
-        final_url = resource.url if resource else ""
-        content_type = resource.content_type if resource else ""
-        size_bytes = len(resource.content) if resource else 0
         return ResourceDiagnostic(
             "attachment",
             requested_url,
-            final_url,
-            content_type,
-            size_bytes,
+            resource.url if resource else "",
+            resource.content_type if resource else "",
+            len(resource.content) if resource else 0,
             kind,
             "error",
             0,
@@ -348,8 +301,7 @@ class AnnouncementDetailFetcher:
         )
 
     def _error_text(self, error: Exception) -> str:
-        message = " ".join(str(error).split())
-        return f"{type(error).__name__}: {message}"[:240]
+        return f"{type(error).__name__}: {' '.join(str(error).split())}"[:240]
 
     def _document_text(self, resource: DownloadedResource) -> str:
         return extract_document_text(
@@ -364,8 +316,11 @@ class AnnouncementDetailFetcher:
             response.raise_for_status()
             self._validate_content_length(response)
             content = self._read_limited(response)
-            content_type = response.headers.get("Content-Type", "")
-            return DownloadedResource(str(response.url), content_type, content)
+            return DownloadedResource(
+                str(response.url),
+                response.headers.get("Content-Type", ""),
+                content,
+            )
 
     def _validate_content_length(self, response: httpx.Response) -> None:
         raw_length = response.headers.get("Content-Length", "0")
@@ -393,14 +348,7 @@ class AnnouncementDetailFetcher:
         return resource.content.decode(encoding, errors="replace")
 
     def _combine_text(self, body: str, attachment_texts: list[str]) -> str:
-        if not attachment_texts:
-            return body
-        attachments = "\n".join(attachment_texts)
-        return f"{body}\n{ATTACHMENT_TEXT_MARKER}\n{attachments}"
+        return "\n".join([body, *(text for text in attachment_texts if text.strip())])
 
     def _parse_text(self, html: str, title: str = "", source_url: str = "") -> str:
         return extract_announcement_text(html, title, source_url)
-
-
-def _body_requires_rules(text: str) -> bool:
-    return detect_attachment_requirement(text).required

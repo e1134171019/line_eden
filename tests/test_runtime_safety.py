@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from config import UNRESOLVED_ATTACHMENT_MARKER
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtraction
+from src.diagnostics.detail_fetch_diagnostics import RULES_STATUS_DISCOVERED_UNRESOLVED
 from src.evaluators.eligibility_evaluator import INELIGIBLE, REVIEW, EligibilityEvaluator
 from src.evaluators.runtime_safety import extract_application_deadline, find_deadline_exclusions
 from src.models.scholarship import Scholarship
@@ -89,8 +89,9 @@ def test_full_time_student_requirement_stays_review() -> None:
 def test_unresolved_rules_ignore_body_graduate_noise() -> None:
     decision = EligibilityEvaluator().evaluate(
         _item("儒鴻教育獎助學金", "2026-07-27"),
-        f"基金會業務包含研究生獎學金與博士班合作。{UNRESOLVED_ATTACHMENT_MARKER}",
+        "基金會業務包含研究生獎學金與博士班合作。",
         _profile(),
+        rules_status=RULES_STATUS_DISCOVERED_UNRESOLVED,
     )
 
     assert decision.status == REVIEW
