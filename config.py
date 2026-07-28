@@ -58,7 +58,7 @@ MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 40
-ELIGIBILITY_RULE_VERSION = "eligibility-v5"
+ELIGIBILITY_RULE_VERSION = "eligibility-v6"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
 GEMINI_MAX_CALLS_PER_RUN = _env_int("GEMINI_MAX_CALLS_PER_RUN", 3)
 GEMINI_MAX_INPUT_TOKENS_PER_RUN = _env_int("GEMINI_MAX_INPUT_TOKENS_PER_RUN", 12000)
@@ -74,6 +74,11 @@ SCHOLARSHIP_FILTER_KEYWORDS = (
     "助學金",
     "就學貸款",
     "補助",
+)
+NOTIFIABLE_OPPORTUNITY_CATEGORIES = (
+    "scholarship",
+    "student_aid",
+    "subsidy",
 )
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
