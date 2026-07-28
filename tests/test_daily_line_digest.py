@@ -73,7 +73,7 @@ def test_daily_main_sends_completion_summary(monkeypatch: Any) -> None:
     messages: list[str] = []
     monkeypatch.setattr(daily_line_digest, "validate_settings", lambda: None)
     monkeypatch.setattr(daily_line_digest, "validate_gemini_settings", lambda: None)
-    monkeypatch.setattr(daily_line_digest, "build_service", lambda **_: service)
+    monkeypatch.setattr(daily_line_digest, "build_full_service", lambda *_args, **_kwargs: service)
     monkeypatch.setattr(daily_line_digest, "_send", messages.append)
 
     daily_line_digest.main()
@@ -89,7 +89,7 @@ def test_daily_main_sends_failure_alert_and_reraises(monkeypatch: Any) -> None:
     messages: list[str] = []
     monkeypatch.setattr(daily_line_digest, "validate_settings", lambda: None)
     monkeypatch.setattr(daily_line_digest, "validate_gemini_settings", lambda: None)
-    monkeypatch.setattr(daily_line_digest, "build_service", lambda **_: service)
+    monkeypatch.setattr(daily_line_digest, "build_full_service", lambda *_args, **_kwargs: service)
     monkeypatch.setattr(daily_line_digest, "_send", messages.append)
 
     with pytest.raises(RuntimeError, match="five sources unavailable"):
