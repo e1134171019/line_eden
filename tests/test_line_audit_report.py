@@ -16,19 +16,38 @@ def _record(status: str, title: str) -> SimpleNamespace:
     return SimpleNamespace(item=item)
 
 
-# 報告只列明確符合公告；review 只顯示統計，不得混成推薦資料。
+def _result(
+    records: list[SimpleNamespace],
+    *,
+    eligible: int,
+    review: int,
+    ineligible: int,
+    gemini_calls: int = 0,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        records=records,
+        eligible_count=eligible,
+        review_count=review,
+        ineligible_count=ineligible,
+        gemini_calls=gemini_calls,
+        gemini_cache_hits=0,
+        structured_evaluated_count=0,
+        structured_changed_count=0,
+        structured_deferred_count=0,
+        structured_error_count=0,
+    )
+
+
 def test_report_lists_only_eligible_items() -> None:
-    result = SimpleNamespace(
-        records=[
+    result = _result(
+        [
             _record("eligible", "符合資格的獎學金"),
             _record("review", "待確認公告"),
             _record("ineligible", "不符合公告"),
         ],
-        eligible_count=1,
-        review_count=1,
-        ineligible_count=1,
-        gemini_calls=0,
-        gemini_cache_hits=0,
+        eligible=1,
+        review=1,
+        ineligible=1,
     )
 
     message = build_report_message(
@@ -49,15 +68,13 @@ def test_report_lists_only_eligible_items() -> None:
     assert "不符合公告" not in message
 
 
-# 沒有明確符合項目時仍傳送真實統計，而不是固定測試文字。
 def test_report_explains_when_no_eligible_items() -> None:
-    result = SimpleNamespace(
-        records=[_record("review", "待確認公告")],
-        eligible_count=0,
-        review_count=1,
-        ineligible_count=0,
+    result = _result(
+        [_record("review", "待確認公告")],
+        eligible=0,
+        review=1,
+        ineligible=0,
         gemini_calls=1,
-        gemini_cache_hits=0,
     )
 
     message = build_report_message(result)
