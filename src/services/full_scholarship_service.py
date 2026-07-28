@@ -12,6 +12,7 @@ from src.diagnostics.detail_fetch_diagnostics import (
 from src.evaluators.eligibility_evaluator import REVIEW, EligibilityDecision, EligibilityEvaluator
 from src.evaluators.notice_classifier import APPLICATION, UNKNOWN
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
+from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.gemini_fallback_service import GeminiAnalysisDiagnostic, GeminiFallbackService
@@ -57,7 +58,7 @@ class FullScholarshipService(ScholarshipService):
 
     def _evaluate_fetch_result(
         self,
-        item,
+        item: Scholarship,
         fetch_result: DetailFetchResult,
     ) -> tuple[EligibilityDecision, str, str, GeminiAnalysisDiagnostic | None]:
         """以 rules_status 傳遞附件狀態，不在文字中插入附件 marker。"""
