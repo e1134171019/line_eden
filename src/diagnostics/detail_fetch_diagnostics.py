@@ -43,8 +43,30 @@ class ExtractedAttachment:
 
 
 @dataclass(frozen=True)
+class NoticeContent:
+    """不依賴字串 marker 的公告正文、附件與規則狀態。"""
+
+    main_text: str
+    attachments: tuple[ExtractedAttachment, ...]
+    rules_status: str
+
+    def eligibility_text(self) -> str:
+        """只合併正文與經內容確認的主要辦法。"""
+        rules = [
+            item.text
+            for item in self.attachments
+            if item.status == "success"
+            and item.content_role == "scholarship_rules"
+            and item.text.strip()
+        ]
+        if not rules:
+            return self.main_text
+        return "\n".join([self.main_text, *rules])
+
+
+@dataclass(frozen=True)
 class DetailFetchResult:
-    """公告正文、結構化附件證據與完整擷取診斷結果。"""
+    """公告結構化證據與完整擷取診斷結果。"""
 
     text: str
     source: ResourceDiagnostic
@@ -54,19 +76,17 @@ class DetailFetchResult:
     extracted_attachments: tuple[ExtractedAttachment, ...] = tuple()
     rules_status: str = RULES_STATUS_UNKNOWN
 
+    @property
+    def content(self) -> NoticeContent:
+        return NoticeContent(
+            main_text=self.body_text or self.text,
+            attachments=self.extracted_attachments,
+            rules_status=self.rules_status,
+        )
+
     def eligibility_text(self) -> str:
-        """從結構化正文與已確認的主要辦法建立 legacy 判斷文字。"""
-        body = self.body_text or self.text
-        rules = [
-            item.text
-            for item in self.extracted_attachments
-            if item.status == "success"
-            and item.content_role == "scholarship_rules"
-            and item.text.strip()
-        ]
-        if not rules:
-            return body
-        return "\n".join([body, *rules])
+        """保留既有呼叫介面，實際由 NoticeContent 建立資格文字。"""
+        return self.content.eligibility_text()
 
     def successful_attachment_count(self) -> int:
         return sum(item.status == "success" for item in self.attachments)
