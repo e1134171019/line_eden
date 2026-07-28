@@ -3,7 +3,6 @@
 from dataclasses import dataclass, replace
 from typing import Callable
 
-from config import ATTACHMENT_TEXT_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.base_collector import BaseCollector
 from src.diagnostics.detail_fetch_diagnostics import (
@@ -436,8 +435,8 @@ class ScholarshipService:
 
 
 def _merge_gemini_rules(detail_text: str, rule_text: str) -> str:
-    resolved = detail_text.replace(UNRESOLVED_ATTACHMENT_MARKER, "")
-    return f"{resolved}\n{ATTACHMENT_TEXT_MARKER}\n【Gemini資格抽取】\n{rule_text}"
+    """合併正文與 Gemini 資格文字，不加入具控制語意的字串 marker。"""
+    return "\n".join(part for part in (detail_text, rule_text) if part.strip())
 
 
 def _error_text(error: Exception) -> str:
