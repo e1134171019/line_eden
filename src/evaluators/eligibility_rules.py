@@ -7,6 +7,7 @@ from src.profiles.student_profile import StudentProfile
 
 EXCLUSIVE_WORDS = r"(?:限|僅限|只限|申請對象(?:為|限於)?|申請資格(?:為|限於)?|資格限於)"
 PREFERENCE_WORDS = ("優先", "優先考量", "加分", "酌予優先", "不限")
+CONTRAST_MARKERS = ("但是", "但", "惟", "然而", "不過", "反之")
 SPECIAL_STATUSES = (
     "原住民",
     "低收入戶",
@@ -228,10 +229,33 @@ def _sentence_includes_groups(sentence: str, groups: tuple[str, ...]) -> bool:
 
 
 def _sentence_requires_group(sentence: str, targets: tuple[str, ...]) -> bool:
+    """在同一語意片段內尋找限制對象，避免固定字距漏掉長句。"""
     pattern = "|".join(re.escape(target) for target in targets)
-    prefix = rf"{EXCLUSIVE_WORDS}.{{0,18}}(?:{pattern})"
-    suffix = rf"(?:{pattern}).{{0,10}}(?:始得|方可|才可|可申請)"
-    return bool(re.search(prefix, sentence) or re.search(suffix, sentence))
+    for exclusive in re.finditer(EXCLUSIVE_WORDS, sentence):
+        segment = _before_contrast(sentence[exclusive.end():])
+        target = re.search(pattern, segment)
+        if target is None:
+            continue
+        before_target = segment[:target.start()]
+        if _contains_preference(before_target):
+            continue
+        return True
+    required_suffix = r"(?:始得|方可|才可|可申請)"
+    for target in re.finditer(pattern, sentence):
+        segment = _before_contrast(sentence[target.end():])
+        suffix = re.search(required_suffix, segment)
+        if suffix is None:
+            continue
+        before_suffix = segment[:suffix.start()]
+        if _contains_preference(before_suffix):
+            continue
+        return True
+    return False
+
+
+def _before_contrast(text: str) -> str:
+    indexes = [text.find(marker) for marker in CONTRAST_MARKERS if marker in text]
+    return text[:min(indexes)] if indexes else text
 
 
 def _explicitly_excludes(text: str, terms: tuple[str, ...]) -> bool:
