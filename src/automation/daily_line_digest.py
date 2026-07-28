@@ -11,9 +11,10 @@ from config import (
     validate_gemini_settings,
     validate_settings,
 )
-from main import build_service
+from main import build_full_service
 from src.notifiers.line_notifier import send_text_message
-from src.services.scholarship_service import ServiceResult
+from src.runtime.run_mode import RunMode
+from src.services.scholarship_service import ScholarshipService, ServiceResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
@@ -24,7 +25,6 @@ def build_daily_message(
     source_lines: list[str] | tuple[str, ...] = (),
     checked_at: datetime | None = None,
 ) -> str:
-    """建立每日固定 LINE 摘要；即使沒有符合公告也必須產生訊息。"""
     local_time = checked_at or datetime.now(TAIPEI_TIMEZONE)
     lines = [
         "獎學金每日檢查完成",
@@ -45,7 +45,6 @@ def build_daily_message(
 
 
 def build_failure_message(error: Exception, checked_at: datetime | None = None) -> str:
-    """建立每日執行失敗通知，避免排程壞掉時完全靜默。"""
     local_time = checked_at or datetime.now(TAIPEI_TIMEZONE)
     reason = " ".join(str(error).split())[:800] or type(error).__name__
     return (
@@ -56,9 +55,8 @@ def build_failure_message(error: Exception, checked_at: datetime | None = None) 
     )[:MAX_LINE_TEXT_LENGTH]
 
 
-def _source_summary_lines(service: object) -> list[str]:
-    collector = getattr(service, "collector", None)
-    summary = getattr(collector, "source_summary_lines", None)
+def _source_summary_lines(service: ScholarshipService) -> list[str]:
+    summary = getattr(service.collector, "source_summary_lines", None)
     if not callable(summary):
         return []
     return list(summary())
@@ -75,10 +73,9 @@ def _send(text: str) -> None:
 
 
 def main() -> None:
-    """執行正式檢查並固定傳送每日完成或失敗通知。"""
     validate_settings()
     validate_gemini_settings()
-    service = build_service(profile_required=True, use_gemini=True)
+    service = build_full_service(RunMode.LIVE, use_gemini=True)
     try:
         result = service.run(dry_run=False)
     except Exception as error:
