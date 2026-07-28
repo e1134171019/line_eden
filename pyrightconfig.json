@@ -1,0 +1,21 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "reportMissingTypeStubs": false,
+  "include": [
+    "main.py",
+    "config.py",
+    "src/runtime",
+    "src/formatters/cli_output_formatter.py",
+    "src/diagnostics/detail_fetch_diagnostics.py",
+    "src/collectors/evidence_detail_fetcher.py",
+    "src/ai/gemini_text_requirement_extractor.py",
+    "src/automation/line_transport_test.py"
+  ],
+  "exclude": [
+    "tests",
+    ".venv",
+    "data",
+    "temp"
+  ]
+}

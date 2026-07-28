@@ -10,7 +10,7 @@ from src.ai.gemini_requirement_extractor import (
     GeminiRequirementExtraction,
     GeminiRequirementExtractor,
 )
-from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult
+from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, NoticeContent
 
 
 @dataclass(frozen=True)
@@ -28,12 +28,13 @@ class GeminiTextRequirementExtractor:
         self.extractor = extractor
 
     def prepare(self, title: str, fetch_result: DetailFetchResult) -> PreparedGeminiText:
-        prompt = _build_text_prompt(title, fetch_result)
+        prompt = _build_text_prompt(title, fetch_result.content)
         digest = sha256(prompt.encode("utf-8")).hexdigest()
         return PreparedGeminiText(digest, prompt)
 
     def count_tokens(self, prepared: PreparedGeminiText) -> int:
-        response = self.extractor.client.models.count_tokens(
+        # Google SDK 的 contents 聯集型別內含 Unknown；呼叫參數由本模組固定為 list[str]。
+        response = self.extractor.client.models.count_tokens(  # pyright: ignore[reportUnknownMemberType]
             model=self.extractor.model,
             contents=[prepared.prompt],
         )
@@ -45,7 +46,8 @@ class GeminiTextRequirementExtractor:
         return tokens
 
     def extract(self, prepared: PreparedGeminiText) -> GeminiApiResult:
-        response = self.extractor.client.models.generate_content(
+        # Google SDK 的 contents 聯集型別內含 Unknown；回應再由 Pydantic Schema 驗證。
+        response = self.extractor.client.models.generate_content(  # pyright: ignore[reportUnknownMemberType]
             model=self.extractor.model,
             contents=[prepared.prompt],
             config=types.GenerateContentConfig(
@@ -64,21 +66,24 @@ class GeminiTextRequirementExtractor:
         )
 
 
-def _build_text_prompt(title: str, fetch_result: DetailFetchResult) -> str:
+def _build_text_prompt(title: str, content: NoticeContent) -> str:
     parts = [
         "你是獎學金申請資格文件抽取器。",
         f"公告標題：{title}",
-        f"公告正文：\n{fetch_result.body_text or fetch_result.text}",
+        f"主要辦法狀態：{content.rules_status}",
+        f"公告正文：\n{content.main_text}",
     ]
-    for index, attachment in enumerate(fetch_result.extracted_attachments, start=1):
+    for index, attachment in enumerate(content.attachments, start=1):
         if not attachment.text.strip():
             continue
         parts.append(
             "\n".join(
                 (
                     f"附件{index}：",
+                    f"標籤：{attachment.label}",
                     f"角色提示：{attachment.role_hint}",
                     f"內容角色：{attachment.content_role}",
+                    f"解析狀態：{attachment.status}",
                     f"網址：{attachment.final_url or attachment.requested_url}",
                     f"內容：\n{attachment.text}",
                 )

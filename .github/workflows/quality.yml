@@ -40,6 +40,25 @@ jobs:
       - name: Run Ruff
         run: python -m ruff check .
 
+      - name: Run Pyright
+        shell: bash
+        run: |
+          log_file="pyright-${{ matrix.python-version }}.log"
+          set +e
+          python -m pyright > "$log_file" 2>&1
+          status=$?
+          cat "$log_file"
+          exit $status
+
+      - name: Upload failed Pyright log
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: pyright-log-${{ matrix.python-version }}
+          path: pyright-${{ matrix.python-version }}.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Run tests
         shell: bash
         run: |

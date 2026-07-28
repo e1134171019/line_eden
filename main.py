@@ -59,7 +59,16 @@ from src.services.scholarship_service import AuditResult, ScholarshipService, Se
 Notifier = Callable[[str], None]
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+class ParsedArgs(argparse.Namespace):
+    """Scholarship Agent 已知的命令列欄位。"""
+
+    dry_run: bool
+    audit: bool
+    initialize_baseline: bool
+    use_gemini: bool
+
+
+def parse_args(argv: list[str] | None = None) -> ParsedArgs:
     parser = argparse.ArgumentParser(description="Scholarship Agent 第三階段")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="評估適合度但不傳 LINE")
@@ -74,13 +83,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="啟用掃描 PDF 備援；audit 另執行文字 structured shadow",
     )
-    args = parser.parse_args(argv)
+    args = ParsedArgs()
+    parser.parse_args(argv, namespace=args)
     if args.initialize_baseline and args.use_gemini:
         parser.error("建立歷史基準時不需要 Gemini")
     return args
 
 
-def resolve_run_mode(args: argparse.Namespace) -> RunMode:
+def resolve_run_mode(args: ParsedArgs) -> RunMode:
     """將命令列旗標解析成單一明確模式。"""
     if args.initialize_baseline:
         return RunMode.INITIALIZE_BASELINE
@@ -200,12 +210,6 @@ def _build_gemini_services(
         f"{GEMINI_PROMPT_VERSION}-text-v1",
     )
     return fallback, text_service
-
-
-def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
-    """保留既有測試與呼叫介面。"""
-    fallback, _ = _build_gemini_services(use_gemini)
-    return fallback
 
 
 def execute_service(
