@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 import re
 
-from config import GEMINI_PARTIAL_EXCLUSION_MARKER
 from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_DECLARED_MISSING,
     RULES_STATUS_DISCOVERED_UNRESOLVED,
@@ -32,6 +31,10 @@ from src.evaluators.eligibility_safety_rules import (
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
 from src.evaluators.special_status_aliases import find_alias_exclusions
+from src.models.evaluator_input import (
+    GEMINI_RULE_PARTIAL_EXCLUSIONS,
+    EvaluatorInput,
+)
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 
@@ -48,6 +51,45 @@ _SAFE_RULES_STATUSES = {
 def _normalize_rule_text(text: str) -> str:
     normalized = normalize_eligibility_text(normalize_text(text))
     return re.sub(r"(不得低於|至少|須達|需達|達)\s+(?=\d)", r"\1", normalized)
+
+
+def _assemble_evaluation_text(evaluator_input: EvaluatorInput) -> str:
+    """只為規則掃描組裝文字；分隔標題不承擔任何狀態語意。"""
+    parts = [evaluator_input.body_text.strip()]
+    parts.extend(
+        f"--- 附件 {index} ---\n{text.strip()}"
+        for index, text in enumerate(
+            evaluator_input.resolved_attachment_texts,
+            start=1,
+        )
+        if text.strip()
+    )
+    if evaluator_input.gemini_rule_text:
+        parts.append(
+            "--- Gemini 資格抽取 ---\n"
+            f"{evaluator_input.gemini_rule_text.strip()}"
+        )
+    return "\n\n".join(part for part in parts if part)
+
+
+def _coerce_evaluator_input(
+    detail: str | EvaluatorInput,
+    rules_status: str | None,
+) -> EvaluatorInput:
+    if isinstance(detail, EvaluatorInput):
+        if rules_status is None or rules_status == detail.rules_status:
+            return detail
+        return EvaluatorInput(
+            body_text=detail.body_text,
+            resolved_attachment_texts=detail.resolved_attachment_texts,
+            gemini_rule_text=detail.gemini_rule_text,
+            rules_status=rules_status,
+            gemini_rule_scope=detail.gemini_rule_scope,
+        )
+    return EvaluatorInput(
+        body_text=detail,
+        rules_status=rules_status or RULES_STATUS_UNKNOWN,
+    )
 
 
 def _filter_resolved_attachment_unknowns(
@@ -89,11 +131,19 @@ def _deduplicate_reasons(reasons: list[str]) -> list[str]:
     return unique
 
 
-def _trusted_unresolved_text(title: str, detail_text: str) -> str:
-    if GEMINI_PARTIAL_EXCLUSION_MARKER not in detail_text:
+def _trusted_unresolved_text(
+    title: str,
+    evaluator_input: EvaluatorInput,
+) -> str:
+    """未完整解析時，只信任標題與明確標示為部分排除的 Gemini 證據。"""
+    if (
+        evaluator_input.gemini_rule_scope != GEMINI_RULE_PARTIAL_EXCLUSIONS
+        or not evaluator_input.gemini_rule_text
+    ):
         return title
-    partial = detail_text.split(GEMINI_PARTIAL_EXCLUSION_MARKER, 1)[1]
-    return _normalize_rule_text(f"{title}。{partial}")
+    return _normalize_rule_text(
+        f"{title}。{evaluator_input.gemini_rule_text}"
+    )
 
 
 @dataclass(frozen=True)
@@ -113,11 +163,14 @@ class EligibilityEvaluator:
     def evaluate(
         self,
         scholarship: Scholarship,
-        detail_text: str,
+        detail: str | EvaluatorInput,
         profile: StudentProfile,
         *,
         rules_status: str | None = None,
     ) -> EligibilityDecision:
+        evaluator_input = _coerce_evaluator_input(detail, rules_status)
+        effective_rules_status = evaluator_input.rules_status
+        detail_text = _assemble_evaluation_text(evaluator_input)
         title = _normalize_rule_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
         exclusions = find_deadline_exclusions(scholarship, text)
@@ -125,15 +178,15 @@ class EligibilityEvaluator:
             self._find_exclusions(
                 title,
                 text,
-                detail_text,
+                evaluator_input,
                 profile,
-                rules_status,
+                effective_rules_status,
             )
         )
         exclusions = _deduplicate_reasons(exclusions)
         if exclusions:
             return EligibilityDecision(INELIGIBLE, tuple(exclusions))
-        unknowns = self._find_unknowns(text, profile, rules_status)
+        unknowns = self._find_unknowns(text, profile, effective_rules_status)
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
@@ -150,12 +203,12 @@ class EligibilityEvaluator:
         self,
         title: str,
         text: str,
-        detail_text: str,
+        evaluator_input: EvaluatorInput,
         profile: StudentProfile,
         rules_status: str | None,
     ) -> list[str]:
         trusted_text = (
-            _trusted_unresolved_text(title, detail_text)
+            _trusted_unresolved_text(title, evaluator_input)
             if _rules_status_is_unresolved(rules_status)
             else text
         )
