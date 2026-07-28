@@ -34,7 +34,7 @@ from config import (
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtractor
 from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtractor
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
-from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
+from src.collectors.evidence_detail_fetcher import EvidenceDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
@@ -162,8 +162,8 @@ def _build_repository() -> ScholarshipRepository:
     return ScholarshipRepository(DATA_DIR / SCHOLARSHIP_DB_FILENAME)
 
 
-def _build_detail_fetcher() -> AnnouncementDetailFetcher:
-    return AnnouncementDetailFetcher(
+def _build_detail_fetcher() -> EvidenceDetailFetcher:
+    return EvidenceDetailFetcher(
         HTTP_TIMEOUT_SECONDS,
         HTTP_USER_AGENT,
         MAX_ATTACHMENT_COUNT,
