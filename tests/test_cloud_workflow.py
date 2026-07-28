@@ -57,10 +57,12 @@ def test_cloud_report_restores_and_saves_gemini_cache() -> None:
 
     assert "python -m src.automation.line_audit_report" in content
     restore_section = content.split("- name: Find latest cloud state", 1)[1].split(
-        "- name: Build private profile file", 1
+        "- name: Build private profile file",
+        1,
     )[0]
     state_section = content.split("- name: Encrypt updated cloud state", 1)[1].split(
-        "- name: Upload encrypted cloud state", 1
+        "- name: Upload encrypted cloud state",
+        1,
     )[0]
     assert "env.OPERATION == 'report'" in restore_section
     assert "env.OPERATION == 'report'" in state_section
@@ -96,5 +98,16 @@ def test_cloud_workflow_has_concurrency_and_modes() -> None:
     assert "python main.py --dry-run --use-gemini" in content
     assert "- daily" in content
     assert "- report" in content
-    assert "python -m src.automation.line_transport_test" in content
-    assert "TEST_MESSAGE" not in content
+
+
+def test_cloud_test_line_is_stdlib_only() -> None:
+    content = WORKFLOW_PATH.read_text(encoding="utf-8")
+    test_line_section = content.split("test-line)", 1)[1].split(";;", 1)[0]
+
+    assert "import urllib.request" in test_line_section
+    assert "api.line.me/v2/bot/message/push" in test_line_section
+    assert "GitHub Actions 雲端測試" in test_line_section
+    assert "from config import" not in test_line_section
+    assert "from src." not in test_line_section
+    assert "python -m src.automation.line_transport_test" not in test_line_section
+    assert "TEST_MESSAGE" not in test_line_section
