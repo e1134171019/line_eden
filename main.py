@@ -49,12 +49,13 @@ from src.profiles.student_profile import load_student_profile
 from src.repositories.gemini_cache_repository import GeminiCacheRepository
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.baseline_service import BaselineService
+from src.services.full_scholarship_service import FullScholarshipService
 from src.services.gemini_fallback_service import (
     GeminiFallbackService,
     GeminiUsageLimiter,
 )
 from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
-from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
+from src.services.scholarship_service import AuditResult, ServiceResult
 
 NotificationSender = Callable[[str], None]
 
@@ -134,14 +135,14 @@ def build_full_service(
     mode: RunMode,
     *,
     use_gemini: bool = False,
-) -> ScholarshipService:
+) -> FullScholarshipService:
     """建立具備 profile、正文解析與資格判斷的完整服務。"""
     if mode is RunMode.INITIALIZE_BASELINE:
         raise ValueError("建立歷史基準必須使用 build_baseline_service")
 
     profile = load_student_profile(PROFILE_PATH)
     gemini_fallback, gemini_text_analysis = _build_gemini_services(use_gemini)
-    return ScholarshipService(
+    return FullScholarshipService(
         _build_collector(),
         _build_repository(),
         build_notifier(mode),
@@ -214,7 +215,7 @@ def _build_gemini_fallback(use_gemini: bool) -> GeminiFallbackService | None:
 
 def execute_full_service(
     options: CliOptions,
-    service: ScholarshipService,
+    service: FullScholarshipService,
 ) -> ServiceResult | AuditResult:
     """依明確 RunMode 執行完整服務，不使用負條件推測模式。"""
     if options.mode is RunMode.LIVE:
