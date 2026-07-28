@@ -5,14 +5,12 @@ import pytest
 import config
 
 
-# 空白環境變數使用程式預設值，避免 .env 留空時直接崩潰。
 def test_env_int_uses_default_for_blank_value(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_INTEGER_SETTING", "  ")
 
     assert config._env_int("TEST_INTEGER_SETTING", 7) == 7
 
 
-# 非整數設定會指出實際欄位名稱。
 def test_env_int_rejects_non_integer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_INTEGER_SETTING", "three")
 
@@ -20,7 +18,21 @@ def test_env_int_rejects_non_integer(monkeypatch: pytest.MonkeyPatch) -> None:
         config._env_int("TEST_INTEGER_SETTING", 7)
 
 
-# 單份文件 Token 上限不得高於整次執行上限。
+def test_env_bool_accepts_explicit_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_BOOL_SETTING", "true")
+    assert config._env_bool("TEST_BOOL_SETTING", False) is True
+
+    monkeypatch.setenv("TEST_BOOL_SETTING", "0")
+    assert config._env_bool("TEST_BOOL_SETTING", True) is False
+
+
+def test_env_bool_rejects_ambiguous_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TEST_BOOL_SETTING", "maybe")
+
+    with pytest.raises(RuntimeError, match="TEST_BOOL_SETTING"):
+        config._env_bool("TEST_BOOL_SETTING", False)
+
+
 def test_validate_gemini_rejects_inconsistent_token_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -36,7 +48,6 @@ def test_validate_gemini_rejects_inconsistent_token_budget(
         config.validate_gemini_settings()
 
 
-# 頁數上限屬於模型輸入範圍，必須納入快取提示版本。
 def test_gemini_prompt_version_contains_page_scope() -> None:
     expected = f"pages-{config.GEMINI_MAX_PAGES_PER_DOCUMENT}"
 
