@@ -10,7 +10,11 @@
     "src/diagnostics/detail_fetch_diagnostics.py",
     "src/collectors/evidence_detail_fetcher.py",
     "src/ai/gemini_text_requirement_extractor.py",
-    "src/automation/line_transport_test.py"
+    "src/automation/line_transport_test.py",
+    "src/models/evaluator_input.py",
+    "src/evaluators/evaluator_input_builder.py",
+    "src/evaluators/eligibility_evaluator.py",
+    "src/services/scholarship_service.py"
   ],
   "exclude": [
     "tests",
