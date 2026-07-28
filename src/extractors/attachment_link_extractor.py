@@ -13,7 +13,9 @@ DOCUMENT_LABELS = ("附件", "附檔", "下載", "辦法", "簡章", "資格", "
 HIGH_VALUE_LABELS = ("辦法", "資格", "簡章", "評選", "規定", "要點", "申請須知")
 FORM_LABELS = ("申請表", "推薦書", "報名表")
 SUPPORTING_LABELS = ("證明書", "同意書", "切結書", "聲明書", "名冊")
+GENERIC_LABELS = ("附件", "附檔", "檔案", "文件下載", "下載文件")
 RULES = "rules"
+GENERIC_ATTACHMENT = "generic_attachment"
 APPLICATION_FORM = "application_form"
 SUPPORTING_DOCUMENT = "supporting_document"
 UNRELATED = "unrelated"
@@ -27,15 +29,20 @@ class AttachmentLinkInventory:
     discovered_count: int
     selected_roles: tuple[str, ...] = tuple()
     discovered_rules_count: int = 0
+    selected_labels: tuple[str, ...] = tuple()
+    discovered_generic_count: int = 0
 
-    # 依選取順序取得附件角色，舊資料缺值時採保守 unknown。
     def role_at(self, index: int) -> str:
         if index < len(self.selected_roles):
             return self.selected_roles[index]
         return "unknown"
 
+    def label_at(self, index: int) -> str:
+        if index < len(self.selected_labels):
+            return self.selected_labels[index]
+        return ""
 
-# 從公告內容鄰近區塊擷取可解析的 PDF 與 DOCX 附件網址。
+
 def extract_attachment_links(
     html: str,
     base_url: str,
@@ -46,7 +53,6 @@ def extract_attachment_links(
     return list(inventory.selected_urls)
 
 
-# 建立附件總數、角色與安全上限內的選取清單。
 def extract_attachment_inventory(
     html: str,
     base_url: str,
@@ -60,17 +66,20 @@ def extract_attachment_inventory(
     ranked = sorted(candidates, key=lambda item: item[0], reverse=True)
     selected = ranked[:max_count]
     selected_urls = tuple(url for _, url, _, _ in selected)
+    selected_labels = tuple(label for _, _, label, _ in selected)
     selected_roles = tuple(role for _, _, _, role in selected)
     rules_count = sum(role == RULES for _, _, _, role in ranked)
+    generic_count = sum(role == GENERIC_ATTACHMENT for _, _, _, role in ranked)
     return AttachmentLinkInventory(
-        selected_urls,
-        len(ranked),
-        selected_roles,
-        rules_count,
+        selected_urls=selected_urls,
+        discovered_count=len(ranked),
+        selected_roles=selected_roles,
+        discovered_rules_count=rules_count,
+        selected_labels=selected_labels,
+        discovered_generic_count=generic_count,
     )
 
 
-# 向上尋找最小且包含附件清單的祖先容器。
 def _select_attachment_scope(root: Tag | None, base_url: str) -> Tag | None:
     current = root
     for _ in range(ATTACHMENT_SCOPE_MAX_DEPTH):
@@ -82,7 +91,6 @@ def _select_attachment_scope(root: Tag | None, base_url: str) -> Tag | None:
     return root
 
 
-# 取得下一層祖先，但避免退化成掃描整個 body。
 def _safe_parent(node: Tag) -> Tag | None:
     parent = node.parent
     if not isinstance(parent, Tag) or parent.name in {"body", "html"}:
@@ -90,7 +98,6 @@ def _safe_parent(node: Tag) -> Tag | None:
     return parent
 
 
-# 收集附件連結並依內容價值與角色建立排序分數。
 def _collect_links(root: Tag | None, base_url: str) -> list[tuple[int, str, str, str]]:
     if root is None:
         return []
@@ -107,7 +114,6 @@ def _collect_links(root: Tag | None, base_url: str) -> list[tuple[int, str, str,
     return records
 
 
-# 依連結文字判斷附件是否為主要辦法、表單、證明或其他文件。
 def classify_attachment_role(label: str) -> str:
     if any(marker in label for marker in HIGH_VALUE_LABELS):
         return RULES
@@ -115,10 +121,11 @@ def classify_attachment_role(label: str) -> str:
         return APPLICATION_FORM
     if any(marker in label for marker in SUPPORTING_LABELS):
         return SUPPORTING_DOCUMENT
+    if any(marker in label for marker in GENERIC_LABELS):
+        return GENERIC_ATTACHMENT
     return UNRELATED
 
 
-# 判斷網址或連結文字是否代表可解析文件。
 def _is_supported_document(url: str, label: str) -> bool:
     path = urlparse(url).path.lower()
     if path.endswith(SUPPORTED_SUFFIXES):
@@ -128,11 +135,11 @@ def _is_supported_document(url: str, label: str) -> bool:
     return has_suffix and any(marker in label for marker in DOCUMENT_LABELS)
 
 
-# 優先處理辦法與資格文件，避免次要證明文件搶占解析名額。
 def _attachment_score(url: str, label: str, role: str) -> int:
     score = 10 if urlparse(url).path.lower().endswith(".pdf") else 5
     role_bonus = {
         RULES: 80,
+        GENERIC_ATTACHMENT: 50,
         APPLICATION_FORM: 30,
         SUPPORTING_DOCUMENT: 10,
         UNRELATED: 0,
