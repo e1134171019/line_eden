@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from config import GEMINI_PARTIAL_EXCLUSION_MARKER, UNRESOLVED_ATTACHMENT_MARKER
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtraction
+from src.diagnostics.detail_fetch_diagnostics import RULES_STATUS_DISCOVERED_UNRESOLVED
 from src.evaluators.eligibility_evaluator import INELIGIBLE, REVIEW, EligibilityEvaluator
+from src.models.evaluator_input import GEMINI_RULE_PARTIAL_EXCLUSIONS, EvaluatorInput
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 from src.services.gemini_fallback_service import _usable_diagnostic, _usable_rule_text
@@ -37,6 +38,27 @@ def _item() -> Scholarship:
     )
 
 
+# 建立只含硬性身分證據的不完整抽取。
+def _partial_extraction() -> GeminiRequirementExtraction:
+    return GeminiRequirementExtraction(
+        document_type="other",
+        criteria_complete=False,
+        needs_more_pages=True,
+        required_special_statuses=["顱顏患者"],
+        evidence=[{"page": 1, "text": "本獎助學金用以鼓勵顱顏患者。"}],
+    )
+
+
+# 建立明確標示為部分排除範圍的 typed evaluator 輸入。
+def _partial_input(body_text: str, rule_text: str) -> EvaluatorInput:
+    return EvaluatorInput(
+        body_text=body_text,
+        gemini_rule_text=rule_text,
+        rules_status=RULES_STATUS_DISCOVERED_UNRESOLVED,
+        gemini_rule_scope=GEMINI_RULE_PARTIAL_EXCLUSIONS,
+    )
+
+
 # 不完整抽取只輸出有證據的硬性身分，不得輸出成績或學位正向條件。
 def test_incomplete_gemini_only_returns_evidenced_hard_exclusion() -> None:
     extraction = GeminiRequirementExtraction(
@@ -51,26 +73,19 @@ def test_incomplete_gemini_only_returns_evidenced_hard_exclusion() -> None:
 
     rule_text = _usable_rule_text(extraction)
 
-    assert UNRESOLVED_ATTACHMENT_MARKER in rule_text
-    assert GEMINI_PARTIAL_EXCLUSION_MARKER in rule_text
     assert "顱顏患者" in rule_text
     assert "大學生" not in rule_text
     assert "80" not in rule_text
+    assert "【" not in rule_text
 
 
 # 有頁碼證據的硬性身分可將不符合者判為 ineligible。
 def test_partial_gemini_status_excludes_non_matching_profile() -> None:
-    extraction = GeminiRequirementExtraction(
-        document_type="other",
-        criteria_complete=False,
-        needs_more_pages=True,
-        required_special_statuses=["顱顏患者"],
-        evidence=[{"page": 1, "text": "本獎助學金用以鼓勵顱顏患者。"}],
-    )
+    rule_text = _usable_rule_text(_partial_extraction())
 
     decision = EligibilityEvaluator().evaluate(
         _item(),
-        f"基金會網站含其他研究合作內容。{_usable_rule_text(extraction)}",
+        _partial_input("基金會網站含其他研究合作內容。", rule_text),
         _profile(),
     )
 
@@ -80,17 +95,11 @@ def test_partial_gemini_status_excludes_non_matching_profile() -> None:
 
 # 已具有該身分時仍因附件不完整維持 review，不得變成 eligible。
 def test_partial_gemini_never_creates_eligible() -> None:
-    extraction = GeminiRequirementExtraction(
-        document_type="other",
-        criteria_complete=False,
-        needs_more_pages=True,
-        required_special_statuses=["顱顏患者"],
-        evidence=[{"page": 1, "text": "本獎助學金用以鼓勵顱顏患者。"}],
-    )
+    rule_text = _usable_rule_text(_partial_extraction())
 
     decision = EligibilityEvaluator().evaluate(
         _item(),
-        _usable_rule_text(extraction),
+        _partial_input("", rule_text),
         _profile(("顱顏患者",)),
     )
 
@@ -99,16 +108,8 @@ def test_partial_gemini_never_creates_eligible() -> None:
 
 # Audit 診斷需明確標示部分硬性排除，而不是宣稱條件完整。
 def test_partial_gemini_diagnostic_is_explicit() -> None:
-    extraction = GeminiRequirementExtraction(
-        document_type="other",
-        criteria_complete=False,
-        needs_more_pages=True,
-        required_special_statuses=["顱顏患者"],
-        evidence=[{"page": 1, "text": "本獎助學金用以鼓勵顱顏患者。"}],
-    )
-
     diagnostic = _usable_diagnostic(
-        extraction,
+        _partial_extraction(),
         "https://example.com/rules.pdf",
         "test-model",
         False,
