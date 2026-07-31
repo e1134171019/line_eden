@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python scripts/source_audit.py > source-smoke.log 2>&1
+          python -m scripts.source_audit > source-smoke.log 2>&1
           exit_code=$?
           set -e
           cat source-smoke.log
