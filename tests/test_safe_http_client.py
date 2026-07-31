@@ -26,6 +26,10 @@ def test_legacy_retry_is_restricted_to_known_certificate_error() -> None:
     )
     try:
         assert client._can_use_legacy_context("https://www.edu.tw/page", error)
+        assert client._can_use_legacy_context(
+            "https://xinzhuangawards.ntpc.gov.tw/Schs/Frontend/RowView",
+            error,
+        )
         assert not client._can_use_legacy_context("https://example.com/page", error)
         assert not client._can_use_legacy_context(
             "https://www.edu.tw/page",
