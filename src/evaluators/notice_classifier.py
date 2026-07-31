@@ -7,8 +7,25 @@ RESULT = "result"
 INFORMATION = "information"
 UNKNOWN = "unknown"
 
-RESULT_MARKERS = ("獲獎名單", "錄取名單", "得獎名單", "核定名單", "結果公告")
-POLICY_MARKERS = ("修正", "修訂", "條文", "法規", "作業要點", "函送", "廢止")
+RESULT_MARKERS = (
+    "獲獎名單",
+    "錄取名單",
+    "得獎名單",
+    "核定名單",
+    "結果公告",
+    "正取名單",
+    "備取名單",
+)
+POLICY_MARKERS = (
+    "修正",
+    "修訂",
+    "條文",
+    "法規",
+    "作業要點",
+    "函送",
+    "廢止",
+    "不適用",
+)
 APPLICATION_MARKERS = (
     "申請公告",
     "受理申請",
@@ -20,7 +37,24 @@ APPLICATION_MARKERS = (
     "徵件",
     "報名",
 )
-INFORMATION_MARKERS = ("說明會", "注意事項", "相關事宜", "宣導", "提醒")
+INFORMATION_MARKERS = (
+    "說明會",
+    "注意事項",
+    "相關事宜",
+    "宣導",
+    "提醒",
+    "暑假作息",
+    "作息公告",
+    "獲配名額",
+    "名額人數表",
+    "排名換算",
+    "流程圖",
+    "申辦流程",
+    "作業流程",
+    "常見問題",
+    "問答集",
+    "FAQ",
+)
 AWARD_MARKERS = ("獎學金", "助學金", "獎助學金", "補助")
 
 
@@ -41,7 +75,7 @@ def classify_notice(title: str, detail_text: str) -> str:
     return UNKNOWN
 
 
-# 判斷標題是否明確屬於法規或制度修正。
+# 判斷標題是否明確屬於法規、制度修正或適用範圍說明。
 def _is_policy_notice(title: str) -> bool:
     if _contains_any(title, POLICY_MARKERS):
         return True
