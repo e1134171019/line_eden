@@ -15,16 +15,18 @@ SOURCE_PENDING = "pending"
 
 # 直接官方入口失效時，以主辦單位新頁面取代；沒有公開官網者使用政府／學校正式轉載。
 _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
+    # 主辦單位頁在 Runner 憑證鏈失敗，改用 115 年大學正式公告。
     "it-social-care": (
-        "https://www.csroc.org.tw/page.jsp?ID=41",
-        OFFICIAL_VERIFIED,
+        "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01",
+        SOURCE_RELAY,
     ),
+    # 使用陽光基金會 2026 獎助學金申請專站，不走舊 WordPress 憑證鏈。
     "sunshine-scholarship": (
-        "https://scholarship.sunshine.org.tw/?cat=1",
+        "https://scls.sunshine.org.tw/",
         OFFICIAL_VERIFIED,
     ),
     "sunshine-wanzu": (
-        "https://scholarship.sunshine.org.tw/?cat=1",
+        "https://scls.sunshine.org.tw/",
         OFFICIAL_VERIFIED,
     ),
     "auden-innovation-research": (
@@ -39,12 +41,14 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.ccft.org.tw/OnePage.aspx?tid=148",
         OFFICIAL_VERIFIED,
     ),
+    # 主辦單位舊文章已 404，改用正式學校轉載頁。
     "harmony-stability": (
-        "https://rsd.fashui.org/archives/33101",
-        OFFICIAL_VERIFIED,
+        "https://www.hk.edu.tw/remote/HKlf_1238963/",
+        SOURCE_RELAY,
     ),
+    # 舊單篇公告已下架，改監測校方持續更新的校外獎學金列表。
     "tcb-foundation": (
-        "https://student.nutc.edu.tw/p/406-1020-117849%2Cr34.php?Lang=zh-tw",
+        "https://student.nutc.edu.tw/p/403-1020-34-2.php?Lang=zh-tw",
         SOURCE_RELAY,
     ),
     "tainan-kaiji": (
