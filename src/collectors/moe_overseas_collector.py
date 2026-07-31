@@ -39,7 +39,7 @@ OVERSEAS_CHILD_SOURCES = (
     OverseasChildSource(
         "moe-studyabroad",
         "公費留學考試",
-        "https://www.scholarship.moe.gov.tw/studyabroad/exam",
+        "https://scholarship.moe.gov.tw/studyabroad/exam",
     ),
     OverseasChildSource(
         "moe-top100",
@@ -149,7 +149,7 @@ class MoeOverseasCollector(BaseCollector):
             page_records, page_rows = self._parse_page(html, child, url)
             records.extend(page_records)
             raw_rows += page_rows
-            detected = max(detected, detect_total_pages(html))
+            detected = max(detected, detect_total_pages(html), len(visited))
             if self.collection_mode is CollectionMode.INCREMENTAL:
                 break
             self._enqueue_pages(queue, visited, html, url)
