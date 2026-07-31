@@ -22,7 +22,7 @@ def _profile(**updates: object) -> StudentProfile:
         "special_statuses": tuple(),
         "research_keywords": ("電力電子", "能源"),
         "nationality": "中華民國",
-        "enrollment_status": "在學、未休學",
+        "enrollment_status": "在學",
         "credits_earned": 67,
         "residence_years": 10.0,
         "cumulative_average": 88.03,
@@ -60,7 +60,7 @@ def test_confirmed_profile_meets_full_basic_requirements() -> None:
         "各科均及格，且未受記過；請於2026/12/31前完成申請。"
     )
 
-    assert status == ELIGIBLE
+    assert status == ELIGIBLE, reason
     assert "中華民國國籍" in reason
     assert "60 學分" in reason
     assert "新莊區" in reason
