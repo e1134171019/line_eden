@@ -161,7 +161,10 @@ def _crawl_sequential(
         _enqueue_pages(queue, visited, html, url, max_pages)
 
     if not stop_reason:
-        stop_reason = _final_stop_reason(queue, errors)
+        if requested >= max_pages and len(pages) < detected:
+            stop_reason = "max_page_limit"
+        else:
+            stop_reason = _final_stop_reason(queue, errors)
     return _result(tuple(pages), detected, requested, tuple(errors), stop_reason, mode)
 
 
