@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 
+import httpx
+
 from src.catalogs.tun_2025_program_catalog import ScholarshipProgramWatch
 from src.collectors.tun_program_watch_collector import (
     _extract_program_notices,
+    _fetch_text_with_retry,
     _group_programs_by_url,
 )
 
@@ -22,6 +25,17 @@ def _program(
     )
 
 
+class _TimeoutThenSuccessClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def get_text(self, _: str) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            raise httpx.ReadTimeout("temporary timeout")
+        return "<html>ok</html>"
+
+
 # 同一主辦單位的方案必須合併為一次官方頁面請求。
 def test_groups_programs_by_shared_official_url() -> None:
     programs = (
@@ -37,6 +51,17 @@ def test_groups_programs_by_shared_official_url() -> None:
         "one",
         "two",
     ]
+
+
+# 暫時性 timeout 只重試一次，成功後不得繼續請求。
+def test_fetch_retries_one_transient_timeout(monkeypatch: object) -> None:
+    client = _TimeoutThenSuccessClient()
+    monkeypatch.setattr("src.collectors.tun_program_watch_collector.time.sleep", lambda _: None)  # type: ignore[attr-defined]
+
+    result = _fetch_text_with_retry(client, "https://foundation.example/news")  # type: ignore[arg-type]
+
+    assert result == "<html>ok</html>"
+    assert client.calls == 2
 
 
 # 官方公告列的西元日期應轉成 Scholarship 標準日期。
