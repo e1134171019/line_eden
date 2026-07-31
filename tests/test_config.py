@@ -33,6 +33,16 @@ def test_env_bool_rejects_ambiguous_value(monkeypatch: pytest.MonkeyPatch) -> No
         config._env_bool("TEST_BOOL_SETTING", False)
 
 
+def test_default_gemini_budget_supports_full_review_batch() -> None:
+    assert config.GEMINI_MAX_CALLS_PER_RUN == 50
+    assert config.GEMINI_MAX_INPUT_TOKENS_PER_RUN == 250000
+    assert (
+        config.GEMINI_MAX_INPUT_TOKENS_PER_RUN
+        >= config.GEMINI_MAX_CALLS_PER_RUN
+        * config.GEMINI_MAX_INPUT_TOKENS_PER_DOCUMENT
+    )
+
+
 def test_validate_gemini_rejects_inconsistent_token_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
