@@ -19,6 +19,7 @@ from src.collectors.listing_utils import (
 )
 from src.collectors.moe_overseas_collector import MoeOverseasCollector
 from src.collectors.multi_source_collector import MultiSourceCollector
+from src.collectors.xinzhuang_awards_collector import XinzhuangAwardsCollector
 from src.models.scholarship import Scholarship
 
 _HELPDREAMS_PRIVATE_URL = (
@@ -30,10 +31,14 @@ _HELPDREAMS_GOVERNMENT_URL = (
     "n=11EFF33070D6DF4B&sms=931FF851D2FB2128"
 )
 _INDIGENOUS_GRANTS_URL = "https://cipgrant.fju.edu.tw/news"
+_XINZHUANG_AWARDS_URL = (
+    "https://xinzhuangawards.ntpc.gov.tw/Schs/Frontend/RowView?"
+    "alias=Cht_News&&id=MjE="
+)
 
 
 class LhuCollector(BaseCollector):
-    """五個官方來源入口；完整稽核與每日增量使用不同翻頁策略。"""
+    """六個官方來源入口；完整稽核與每日增量使用不同翻頁策略。"""
 
     def __init__(
         self,
@@ -51,7 +56,7 @@ class LhuCollector(BaseCollector):
         self.multi_source: MultiSourceCollector | None = None
         self.lhu_diagnostic = CollectorDiagnostic()
 
-    # 建立五個專用來源，不再以單一通用 selector 套全部網站。
+    # 建立六個專用來源，不再以單一通用 selector 套全部網站。
     def collect(self) -> list[Scholarship]:
         collectors: list[BaseCollector] = [
             _LhuOnlyCollector(self),
@@ -75,6 +80,13 @@ class LhuCollector(BaseCollector):
                 self.user_agent,
             ),
             MoeOverseasCollector(
+                self.timeout_seconds,
+                self.user_agent,
+                self.collection_mode,
+                self.max_pages,
+            ),
+            XinzhuangAwardsCollector(
+                _XINZHUANG_AWARDS_URL,
                 self.timeout_seconds,
                 self.user_agent,
                 self.collection_mode,
@@ -233,7 +245,7 @@ class LhuCollector(BaseCollector):
 
 
 class _LhuOnlyCollector(BaseCollector):
-    """提供龍華單站給 MultiSourceCollector，避免遞迴建立五來源。"""
+    """提供龍華單站給 MultiSourceCollector，避免遞迴建立六來源。"""
 
     source_label = "龍華科技大學"
 
