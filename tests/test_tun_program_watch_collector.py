@@ -3,11 +3,16 @@
 from typing import cast
 
 import httpx
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 
 from src.catalogs.tun_2025_program_catalog import ScholarshipProgramWatch
+from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.http_client import DetailSafeHttpClient
+from src.collectors.listing_paginator import ListingCrawlResult, ListingPage
 from src.collectors.tun_program_watch_collector import (
+    TunProgramWatchCollector,
+    _ProgramPageFetcher,
+    _build_diagnostic,
     _extract_program_notices,
     _fetch_text_with_retry,
     _group_programs_by_url,
@@ -38,6 +43,24 @@ class _TimeoutThenSuccessClient:
         if self.calls == 1:
             raise httpx.ReadTimeout("temporary timeout")
         return "<html>ok</html>"
+
+
+class _FakeDetailClient:
+    def __init__(self, _: float, __: str) -> None:
+        self.fallback_hosts: set[str] = set()
+
+    def __enter__(self) -> "_FakeDetailClient":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def get_text(self, url: str) -> str:
+        if url.endswith("/fail"):
+            raise ValueError("invalid page")
+        if url.endswith("/fallback"):
+            self.fallback_hosts.add("foundation.example")
+        return f"<html>{url}</html>"
 
 
 # 同一主辦單位的方案必須合併為一次官方頁面請求。
@@ -72,6 +95,81 @@ def test_fetch_retries_one_transient_timeout(monkeypatch: MonkeyPatch) -> None:
 
     assert result == "<html>ok</html>"
     assert client.calls == 2
+
+
+# 批次分頁使用獨立 client，結果依輸入順序重組並保留單頁錯誤。
+def test_parallel_page_fetcher_orders_results_and_records_errors(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.collectors.tun_program_watch_collector.DetailSafeHttpClient",
+        _FakeDetailClient,
+    )
+    fetcher = _ProgramPageFetcher(1.0, "test-agent", 2)
+    urls = (
+        "https://foundation.example/page/2",
+        "https://foundation.example/fail",
+        "https://foundation.example/fallback",
+    )
+
+    pages, errors = fetcher.fetch_many(urls)
+
+    assert list(pages) == [urls[0], urls[2]]
+    assert list(errors) == [urls[1]]
+    assert "invalid page" in errors[urls[1]]
+    assert fetcher.fallback_used is True
+
+
+# 非法工作數必須在啟動網路請求前失敗。
+def test_program_watch_rejects_invalid_worker_count() -> None:
+    with raises(ValueError, match="fetch_workers"):
+        TunProgramWatchCollector(
+            1.0,
+            "test-agent",
+            CollectionMode.FULL_AUDIT,
+            20,
+            0,
+        )
+
+
+# 群組診斷必須累計實際頁數並在任一入口缺頁時降級。
+def test_watch_diagnostic_aggregates_complete_and_partial_crawls() -> None:
+    page = ListingPage("https://one.example/news", "<html>one</html>")
+    complete = ListingCrawlResult(
+        (page,),
+        1,
+        1,
+        1,
+        "complete",
+        "all_detected_pages_completed",
+        tuple(),
+    )
+    partial = ListingCrawlResult(
+        (page,),
+        3,
+        2,
+        1,
+        "partial",
+        "parallel_fetch_errors",
+        ("page 2 timeout",),
+    )
+
+    diagnostic = _build_diagnostic(
+        [("https://one.example/news", complete), ("https://two.example/news", partial)],
+        parsed_rows=4,
+        raw_rows=7,
+        successful_programs=38,
+        fallback_used=True,
+    )
+
+    assert diagnostic.completeness == "partial"
+    assert diagnostic.pages_detected == 4
+    assert diagnostic.pages_requested == 3
+    assert diagnostic.pages_succeeded == 2
+    assert diagnostic.rejected_rows == 3
+    assert diagnostic.child_sources_succeeded == 38
+    assert diagnostic.ssl_compatibility_fallback is True
+    assert "parallel_fetch_errors" in diagnostic.error
 
 
 # 官方公告列的西元日期應轉成 Scholarship 標準日期。
