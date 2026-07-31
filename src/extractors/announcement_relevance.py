@@ -3,23 +3,20 @@
 import re
 import unicodedata
 
-_CONTEXT_MARKERS = (
-    "申請",
-    "申辦",
-    "報名",
-    "受理",
-    "收件",
-    "資格",
-    "辦法",
+_RELEVANCE_SIGNALS = (
+    "申請資格",
+    "申請對象",
+    "申請期間",
+    "申請辦法",
+    "截止",
+    "應備文件",
     "獎學金",
     "助學金",
     "獎助學金",
-    "補助",
-    "截止",
-    "甄選",
-    "名額",
-    "獎額",
-    "應備文件",
+    "補助金額",
+    "獎勵金",
+    "學年度",
+    "學年",
 )
 _GENERIC_TITLE_TERMS = (
     "獎學金",
@@ -38,7 +35,7 @@ _GENERIC_TITLE_TERMS = (
 )
 
 
-# 驗證正文或主要辦法是否與公告標題及申請語境一致。
+# 驗證正文或主要辦法是否與公告標題及獎助申請語境一致。
 def content_matches_announcement(
     title: str,
     body_text: str,
@@ -51,12 +48,11 @@ def content_matches_announcement(
     normalized_title = _normalize(_strip_prefix(title))
     if len(normalized_title) >= 6 and normalized_title in normalized_content:
         return True
-    if not _contains_context(combined):
-        return False
-    anchors = _title_anchors(title)
-    if not anchors:
+    hits = sum(signal in combined for signal in _RELEVANCE_SIGNALS)
+    if hits >= 2:
         return True
-    return any(anchor in normalized_content for anchor in anchors)
+    anchors = _title_anchors(title)
+    return hits >= 1 and any(anchor in normalized_content for anchor in anchors)
 
 
 # 移除轉知與括號型公告前綴，保留真正名稱。
@@ -66,7 +62,7 @@ def _strip_prefix(title: str) -> str:
     return re.sub(r"^(?:轉知|公告|有關|函轉)+[：:－\-｜|\s]*", "", value)
 
 
-# 從公告名稱建立具識別力的四字以上片段。
+# 從公告名稱建立具識別力的四字片段。
 def _title_anchors(title: str) -> tuple[str, ...]:
     value = _strip_prefix(title)
     value = re.sub(r"(?:民國)?(?:20\d{2}|\d{3})年(?:度)?", " ", value)
@@ -79,11 +75,6 @@ def _title_anchors(title: str) -> tuple[str, ...]:
     if len(compact) <= 8:
         return (compact,)
     return tuple(dict.fromkeys(compact[index : index + 4] for index in range(len(compact) - 3)))
-
-
-# 公告內容至少要具有獎助或申請行動語境。
-def _contains_context(text: str) -> bool:
-    return any(marker in text for marker in _CONTEXT_MARKERS)
 
 
 # 以 NFKC、大小寫折疊與去除標點建立比對字串。
