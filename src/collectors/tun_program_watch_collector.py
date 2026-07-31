@@ -20,8 +20,9 @@ from src.catalogs.tun_program_sources import (
     unresolved_programs,
 )
 from src.collectors.base_collector import BaseCollector
-from src.collectors.collection_diagnostics import CollectorDiagnostic
+from src.collectors.collection_diagnostics import CollectionMode, CollectorDiagnostic
 from src.collectors.http_client import DetailSafeHttpClient
+from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
 from src.models.scholarship import Scholarship
 
 _GREGORIAN_DATE = re.compile(
@@ -37,14 +38,22 @@ _FETCH_ATTEMPTS = 2
 
 
 class TunProgramWatchCollector(BaseCollector):
-    """監測 TUN 彙整的 38 項方案，但不採信 TUN 舊資格與期限。"""
+    """監測 38 項方案；完整稽核翻頁，每日模式只抓入口頁。"""
 
     source_label = "TUN 38方案官方監測"
     empty_is_healthy = True
 
-    def __init__(self, timeout_seconds: float, user_agent: str) -> None:
+    def __init__(
+        self,
+        timeout_seconds: float,
+        user_agent: str,
+        collection_mode: CollectionMode = CollectionMode.INCREMENTAL,
+        max_pages: int = 20,
+    ) -> None:
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
+        self.collection_mode = collection_mode
+        self.max_pages = max_pages
         self.diagnostic = CollectorDiagnostic()
 
     def collect(self) -> list[Scholarship]:
@@ -52,58 +61,110 @@ class TunProgramWatchCollector(BaseCollector):
         core_covered = core_covered_programs()
         records: list[Scholarship] = []
         seen_records: set[str] = set()
-        pages_requested = 0
-        pages_succeeded = 0
+        crawls: list[tuple[str, ListingCrawlResult]] = []
         successful_programs = len(core_covered)
         raw_matches = 0
-        failures: list[str] = []
         fallback_used = False
 
         with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
             for official_url, programs in groups.items():
-                pages_requested += 1
-                try:
-                    html = _fetch_text_with_retry(client, official_url)
-                except Exception as error:
-                    program_ids = ",".join(item.program_id for item in programs)
-                    message = " ".join(str(error).split())[:100]
-                    failures.append(f"{program_ids}={official_url}（{message}）")
-                    continue
-                pages_succeeded += 1
-                successful_programs += len(programs)
-                found, matched = _extract_program_notices(html, official_url, programs)
-                raw_matches += matched
-                for item in found:
-                    if item.content_hash in seen_records:
-                        continue
-                    seen_records.add(item.content_hash)
-                    records.append(item)
+                crawl = crawl_listing_pages(
+                    official_url,
+                    self.collection_mode,
+                    self.max_pages,
+                    lambda url: _fetch_text_with_retry(client, url),
+                )
+                crawls.append((official_url, crawl))
+                if crawl.pages:
+                    successful_programs += len(programs)
+                for page in crawl.pages:
+                    found, matched = _extract_program_notices(
+                        page.html,
+                        page.url,
+                        programs,
+                    )
+                    raw_matches += matched
+                    _append_unique(records, seen_records, found)
             fallback_used = bool(client.fallback_hosts)
 
-        unresolved_count = len(unresolved_programs())
-        complete = unresolved_count == 0 and not failures
-        error_parts: list[str] = []
-        if unresolved_count:
-            error_parts.append(f"可靠入口待確認 {unresolved_count}")
-        if failures:
-            error_parts.append(
-                f"官方／正式轉載頁抓取失敗 {len(failures)}：" + "｜".join(failures)
-            )
-        self.diagnostic = CollectorDiagnostic(
-            completeness="complete" if complete else "partial",
-            pages_detected=len(groups),
-            pages_requested=pages_requested,
-            pages_succeeded=pages_succeeded,
-            raw_rows=raw_matches,
-            parsed_rows=len(records),
-            rejected_rows=max(raw_matches - len(records), 0),
-            stop_reason="program_watch_scan_completed",
-            error="；".join(error_parts),
-            ssl_compatibility_fallback=fallback_used,
-            child_sources_detected=len(TUN_2025_PROGRAMS),
-            child_sources_succeeded=successful_programs,
+        self.diagnostic = _build_diagnostic(
+            crawls,
+            len(records),
+            raw_matches,
+            successful_programs,
+            fallback_used,
         )
         return records
+
+
+# 彙整所有入口分頁結果，完整模式若任一網站缺頁即標示 partial。
+def _build_diagnostic(
+    crawls: list[tuple[str, ListingCrawlResult]],
+    parsed_rows: int,
+    raw_rows: int,
+    successful_programs: int,
+    fallback_used: bool,
+) -> CollectorDiagnostic:
+    unresolved_count = len(unresolved_programs())
+    partial = [(url, item) for url, item in crawls if item.completeness == "partial"]
+    failed = [(url, item) for url, item in crawls if not item.pages]
+    mode = crawls[0][1].completeness if crawls else "unknown"
+    completeness = "incremental" if mode == "incremental" else "complete"
+    if unresolved_count or partial or failed:
+        completeness = "partial"
+    return CollectorDiagnostic(
+        completeness=completeness,
+        pages_detected=sum(item.pages_detected for _, item in crawls),
+        pages_requested=sum(item.pages_requested for _, item in crawls),
+        pages_succeeded=sum(item.pages_succeeded for _, item in crawls),
+        raw_rows=raw_rows,
+        parsed_rows=parsed_rows,
+        rejected_rows=max(raw_rows - parsed_rows, 0),
+        stop_reason=_watch_stop_reason(completeness),
+        error=_diagnostic_error(unresolved_count, partial, failed),
+        ssl_compatibility_fallback=fallback_used,
+        child_sources_detected=len(TUN_2025_PROGRAMS),
+        child_sources_succeeded=successful_programs,
+    )
+
+
+# 建立 partial 的實際網址與停止原因，避免只顯示模糊來源數量。
+def _diagnostic_error(
+    unresolved_count: int,
+    partial: list[tuple[str, ListingCrawlResult]],
+    failed: list[tuple[str, ListingCrawlResult]],
+) -> str:
+    parts: list[str] = []
+    if unresolved_count:
+        parts.append(f"可靠入口待確認 {unresolved_count}")
+    if partial:
+        detail = "｜".join(f"{url}（{item.stop_reason}）" for url, item in partial[:8])
+        parts.append(f"分頁未完整 {len(partial)}：{detail}")
+    if failed:
+        detail = "｜".join(f"{url}（{';'.join(item.errors)}）" for url, item in failed[:8])
+        parts.append(f"入口抓取失敗 {len(failed)}：{detail}")
+    return "；".join(parts)
+
+
+def _watch_stop_reason(completeness: str) -> str:
+    if completeness == "incremental":
+        return "program_watch_incremental_first_pages"
+    if completeness == "complete":
+        return "program_watch_all_detected_pages_completed"
+    return "program_watch_partial"
+
+
+# 依內容雜湊合併跨頁重複公告。
+def _append_unique(
+    records: list[Scholarship],
+    seen_records: set[str],
+    found: list[Scholarship],
+) -> None:
+    for item in found:
+        if item.content_hash in seen_records:
+            continue
+        seen_records.add(item.content_hash)
+        records.append(item)
 
 
 def _fetch_text_with_retry(client: DetailSafeHttpClient, url: str) -> str:

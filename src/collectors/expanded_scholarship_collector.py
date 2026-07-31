@@ -56,7 +56,12 @@ class ExpandedScholarshipCollector(LhuCollector):
                 self.collection_mode,
                 self.max_pages,
             ),
-            TunProgramWatchCollector(self.timeout_seconds, self.user_agent),
+            TunProgramWatchCollector(
+                self.timeout_seconds,
+                self.user_agent,
+                self.collection_mode,
+                self.max_pages,
+            ),
         ]
         self.multi_source = MultiSourceCollector(collectors)
         return self.multi_source.collect()
