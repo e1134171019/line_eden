@@ -58,9 +58,9 @@ class TunProgramWatchCollector(BaseCollector):
                 try:
                     html = client.get_text(official_url)
                 except Exception as error:
-                    failures.append(
-                        f"{official_url}: {' '.join(str(error).split())[:100]}"
-                    )
+                    program_ids = ",".join(item.program_id for item in programs)
+                    message = " ".join(str(error).split())[:100]
+                    failures.append(f"{program_ids}={official_url}（{message}）")
                     continue
                 pages_succeeded += 1
                 successful_programs += len(programs)
@@ -79,7 +79,9 @@ class TunProgramWatchCollector(BaseCollector):
         if pending_count:
             error_parts.append(f"官方入口待確認 {pending_count}")
         if failures:
-            error_parts.append(f"官方頁面抓取失敗 {len(failures)}")
+            error_parts.append(
+                f"官方頁面抓取失敗 {len(failures)}：" + "｜".join(failures)
+            )
         self.diagnostic = CollectorDiagnostic(
             completeness="complete" if complete else "partial",
             pages_detected=len(groups),
