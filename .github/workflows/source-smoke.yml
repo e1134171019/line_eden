@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -m scripts.source_audit > source-smoke.log 2>&1
+          PYTHONPATH=. python scripts/source_audit.py > source-smoke.log 2>&1
           exit_code=$?
           set -e
           cat source-smoke.log
@@ -45,7 +45,7 @@ jobs:
       - name: Probe incomplete source HTML
         if: always() && env.SOURCE_SMOKE_EXIT_CODE != '0'
         shell: bash
-        run: python -u -m scripts.source_probe | tee source-probe.log
+        run: PYTHONPATH=. python -u scripts/source_probe.py 2>&1 | tee source-probe.log
 
       - name: Upload source smoke logs
         if: always()
