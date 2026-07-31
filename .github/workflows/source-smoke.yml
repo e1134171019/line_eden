@@ -42,19 +42,12 @@ jobs:
           cat source-smoke.log
           echo "SOURCE_SMOKE_EXIT_CODE=$exit_code" >> "$GITHUB_ENV"
 
-      - name: Probe incomplete source HTML
-        if: always() && env.SOURCE_SMOKE_EXIT_CODE != '0'
-        shell: bash
-        run: PYTHONPATH=. python -u scripts/source_probe.py 2>&1 | tee source-probe.log
-
-      - name: Upload source smoke logs
+      - name: Upload source smoke log
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: source-smoke-log-${{ github.run_id }}
-          path: |
-            source-smoke.log
-            source-probe.log
+          path: source-smoke.log
           if-no-files-found: error
           retention-days: 30
 
