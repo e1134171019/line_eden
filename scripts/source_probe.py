@@ -20,6 +20,7 @@ from src.collectors.moe_overseas_collector import (
 
 _PAGE_LABELS = {"1", "2", "3", "4", "5", ">", ">>", "»", "下一頁", "下頁"}
 _ROC_DATE = re.compile(r"1\d{2}[./-]\d{1,2}[./-]\d{1,2}")
+_PROBE_TERMS = ("公告", "notice", "announcement", "公費留學考試簡章", "發佈日期")
 
 
 def main() -> None:
@@ -59,7 +60,7 @@ def _probe_lhu(client: SafeHttpClient) -> None:
             print(f"LHU 分頁 JavaScript：{text[:8000]}")
 
 
-# 輸出四個留學子站結果；零解析時顯示日期節點周邊結構。
+# 輸出四個留學子站結果；零解析時顯示動態公告載入線索。
 def _probe_overseas(client: SafeHttpClient) -> None:
     print("\n教育部留學子站診斷：")
     collector = MoeOverseasCollector(
@@ -85,7 +86,7 @@ def _probe_overseas(client: SafeHttpClient) -> None:
             _probe_zero_record_page(client, child.list_url)
 
 
-# 顯示零解析頁面的標題、公告連結與民國日期最近父層。
+# 顯示零解析頁面的公告文字、日期、表單與可能的 API／JS 路徑。
 def _probe_zero_record_page(client: SafeHttpClient, url: str) -> None:
     html = client.get_text(url)
     soup = BeautifulSoup(html, "html.parser")
@@ -94,17 +95,44 @@ def _probe_zero_record_page(client: SafeHttpClient, url: str) -> None:
         for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
     ]
     print(f"  headings={headings[:30]!r}")
+    _print_matching_links(soup)
+    _print_matching_text_nodes(soup)
+    _print_dynamic_scripts(soup)
+    for form in soup.find_all("form"):
+        print(
+            f"  form action={form.get('action')!r} method={form.get('method')!r} "
+            f"id={form.get('id')!r} class={form.get('class')!r}"
+        )
+
+
+# 顯示可能是公告或 API 導航的站內連結。
+def _print_matching_links(soup: BeautifulSoup) -> None:
     for link in soup.find_all("a", href=True):
         text = " ".join(link.get_text(" ", strip=True).split())
-        if "公費留學" in text or "留學考試" in text:
-            parent = link.parent
-            ancestor = parent.parent if isinstance(parent, Tag) and isinstance(parent.parent, Tag) else parent
-            print(
-                f"  announcement-link text={text!r} href={link.get('href')!r} "
-                f"html={str(ancestor)[:5000]}"
-            )
+        href = str(link.get("href", ""))
+        normalized = f"{text} {href}".casefold()
+        if not any(term.casefold() in normalized for term in _PROBE_TERMS):
+            continue
+        parent = link.parent
+        ancestor = parent.parent if isinstance(parent, Tag) and isinstance(parent.parent, Tag) else parent
+        print(
+            f"  matching-link text={text!r} href={href!r} "
+            f"html={str(ancestor)[:5000]}"
+        )
+
+
+# 顯示公告標題、發佈文字與民國日期附近的 HTML。
+def _print_matching_text_nodes(soup: BeautifulSoup) -> None:
     printed: set[str] = set()
-    for text_node in soup.find_all(string=lambda value: value and _ROC_DATE.search(value)):
+    for text_node in soup.find_all(string=True):
+        value = " ".join(str(text_node).split())
+        if not value:
+            continue
+        matched = _ROC_DATE.search(value) or any(
+            term.casefold() in value.casefold() for term in _PROBE_TERMS
+        )
+        if not matched:
+            continue
         parent = text_node.parent
         if not isinstance(parent, Tag):
             continue
@@ -112,11 +140,24 @@ def _probe_zero_record_page(client: SafeHttpClient, url: str) -> None:
         for _ in range(3):
             if isinstance(ancestor.parent, Tag):
                 ancestor = ancestor.parent
-        snippet = str(ancestor)[:6000]
+        snippet = str(ancestor)[:7000]
         if snippet in printed:
             continue
         printed.add(snippet)
-        print(f"  roc-date-html={snippet}")
+        print(f"  matching-text value={value[:300]!r} html={snippet}")
+
+
+# 顯示內含公告、API、fetch 或 ajax 關鍵字的 script。
+def _print_dynamic_scripts(soup: BeautifulSoup) -> None:
+    for script in soup.find_all("script"):
+        src = script.get("src")
+        text = script.get_text("\n", strip=True)
+        normalized = f"{src or ''} {text}".casefold()
+        if any(
+            marker in normalized
+            for marker in ("announcement", "notice", "公告", "fetch(", "ajax", "/api/")
+        ):
+            print(f"  script src={src!r} text={text[:9000]!r}")
 
 
 if __name__ == "__main__":
