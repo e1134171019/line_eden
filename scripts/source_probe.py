@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import re
+
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
@@ -17,6 +19,7 @@ from src.collectors.moe_overseas_collector import (
 )
 
 _PAGE_LABELS = {"1", "2", "3", "4", "5", ">", ">>", "»", "下一頁", "下頁"}
+_ROC_DATE = re.compile(r"1\d{2}[./-]\d{1,2}[./-]\d{1,2}")
 
 
 def main() -> None:
@@ -82,7 +85,7 @@ def _probe_overseas(client: SafeHttpClient) -> None:
             _probe_zero_record_page(client, child.list_url)
 
 
-# 顯示零解析頁面的標題與「發佈日期」最近父層。
+# 顯示零解析頁面的標題、公告連結與民國日期最近父層。
 def _probe_zero_record_page(client: SafeHttpClient, url: str) -> None:
     html = client.get_text(url)
     soup = BeautifulSoup(html, "html.parser")
@@ -91,11 +94,29 @@ def _probe_zero_record_page(client: SafeHttpClient, url: str) -> None:
         for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
     ]
     print(f"  headings={headings[:30]!r}")
-    for text_node in soup.find_all(string=lambda value: value and "發佈日期" in value):
+    for link in soup.find_all("a", href=True):
+        text = " ".join(link.get_text(" ", strip=True).split())
+        if "公費留學" in text or "留學考試" in text:
+            parent = link.parent
+            ancestor = parent.parent if isinstance(parent, Tag) and isinstance(parent.parent, Tag) else parent
+            print(
+                f"  announcement-link text={text!r} href={link.get('href')!r} "
+                f"html={str(ancestor)[:5000]}"
+            )
+    printed: set[str] = set()
+    for text_node in soup.find_all(string=lambda value: value and _ROC_DATE.search(value)):
         parent = text_node.parent
-        if isinstance(parent, Tag):
-            ancestor = parent.parent if isinstance(parent.parent, Tag) else parent
-            print(f"  date-node-html={str(ancestor)[:5000]}")
+        if not isinstance(parent, Tag):
+            continue
+        ancestor: Tag = parent
+        for _ in range(3):
+            if isinstance(ancestor.parent, Tag):
+                ancestor = ancestor.parent
+        snippet = str(ancestor)[:6000]
+        if snippet in printed:
+            continue
+        printed.add(snippet)
+        print(f"  roc-date-html={snippet}")
 
 
 if __name__ == "__main__":
