@@ -277,6 +277,11 @@ jobs:
             echo "- 雲端狀態已保存：\`${{ steps.state.outputs.has_state || 'false' }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Clear private profile
+        if: always()
+        shell: bash
+        run: rm -f profile.json
+
       - name: Return agent exit code
         if: always()
         shell: bash
