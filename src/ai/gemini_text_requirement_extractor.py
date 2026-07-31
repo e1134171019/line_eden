@@ -5,6 +5,7 @@ from hashlib import sha256
 
 from google.genai import types
 
+from src.ai.eligibility_evidence_compactor import compact_notice_content
 from src.ai.gemini_requirement_extractor import (
     GeminiApiResult,
     GeminiRequirementExtraction,
@@ -28,7 +29,8 @@ class GeminiTextRequirementExtractor:
         self.extractor = extractor
 
     def prepare(self, title: str, fetch_result: DetailFetchResult) -> PreparedGeminiText:
-        prompt = _build_text_prompt(title, fetch_result.content)
+        compacted = compact_notice_content(fetch_result.content)
+        prompt = _build_text_prompt(title, compacted)
         digest = sha256(prompt.encode("utf-8")).hexdigest()
         return PreparedGeminiText(digest, prompt)
 
@@ -71,7 +73,7 @@ def _build_text_prompt(title: str, content: NoticeContent) -> str:
         "你是獎學金申請資格文件抽取器。",
         f"公告標題：{title}",
         f"主要辦法狀態：{content.rules_status}",
-        f"公告正文：\n{content.main_text}",
+        f"公告正文或資格相關節錄：\n{content.main_text}",
     ]
     for index, attachment in enumerate(content.attachments, start=1):
         if not attachment.text.strip():
@@ -79,13 +81,13 @@ def _build_text_prompt(title: str, content: NoticeContent) -> str:
         parts.append(
             "\n".join(
                 (
-                    f"附件{index}：",
+                    f"主要辦法附件{index}：",
                     f"標籤：{attachment.label}",
                     f"角色提示：{attachment.role_hint}",
                     f"內容角色：{attachment.content_role}",
                     f"解析狀態：{attachment.status}",
                     f"網址：{attachment.final_url or attachment.requested_url}",
-                    f"內容：\n{attachment.text}",
+                    f"資格相關節錄：\n{attachment.text}",
                 )
             )
         )
@@ -96,9 +98,9 @@ def _build_text_prompt(title: str, content: NoticeContent) -> str:
 2. 正文與附件若互相衝突，保留較具體且有資格語境的條件。
 3. program_types 只能放日間部、進修部、在職專班等學制。
 4. 科系、學系、學院與專業領域必須放 departments 欄位。
-5. 若資訊不足以涵蓋全部必要資格，criteria_complete=false。
+5. 輸入可能是長文件的資格相關節錄；若節錄不足以涵蓋全部必要資格，criteria_complete=false。
 6. 文字輸入沒有可靠 PDF 頁碼；evidence.page 一律填 1，並在 evidence.text 保留短句來源。
-7. 申請表、聲明書或證明文件不得假裝成 scholarship_rules。
+7. 申請表、聲明書、行政契約或其他支援文件不得假裝成 scholarship_rules。
 """.strip()
     )
     return "\n\n".join(parts)
