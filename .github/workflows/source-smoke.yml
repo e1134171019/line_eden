@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --quiet -r requirements.txt
 
-      - name: Run five-source completeness audit
+      - name: Run six-source completeness audit
         shell: bash
         run: |
           set +e
