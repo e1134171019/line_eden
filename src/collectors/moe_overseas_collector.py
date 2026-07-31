@@ -90,6 +90,9 @@ class MoeOverseasCollector(BaseCollector):
                 except Exception as error:
                     errors.append(f"{child.display_name}: {' '.join(str(error).split())[:180]}")
                     continue
+                if child_diagnostic.completeness == "failed":
+                    errors.append(f"{child.display_name}: {child_diagnostic.error or '抓取失敗'}")
+                    continue
                 records.extend(child_records)
                 diagnostics.append(child_diagnostic)
             fallback_used = bool(client.fallback_hosts)
@@ -104,9 +107,7 @@ class MoeOverseasCollector(BaseCollector):
                 ssl_compatibility_fallback=fallback_used,
             )
             raise RuntimeError(f"教育部留學四個子站全部失敗：{'; '.join(errors)}")
-        completeness = "complete" if succeeded == len(OVERSEAS_CHILD_SOURCES) else "partial"
-        if any(item.completeness == "partial" for item in diagnostics):
-            completeness = "partial"
+        completeness = self._overall_completeness(diagnostics, succeeded)
         self.diagnostic = CollectorDiagnostic(
             completeness=completeness,
             pages_detected=sum(item.pages_detected or 0 for item in diagnostics),
@@ -115,7 +116,7 @@ class MoeOverseasCollector(BaseCollector):
             raw_rows=sum(item.raw_rows for item in diagnostics),
             parsed_rows=len(unique),
             rejected_rows=sum(item.rejected_rows for item in diagnostics),
-            stop_reason="all_child_sources_completed" if completeness == "complete" else "child_source_partial",
+            stop_reason=self._overall_stop_reason(completeness),
             error="; ".join(errors),
             ssl_compatibility_fallback=fallback_used,
             child_sources_detected=len(OVERSEAS_CHILD_SOURCES),
@@ -154,7 +155,12 @@ class MoeOverseasCollector(BaseCollector):
             self._enqueue_pages(queue, visited, html, url)
             if len(visited) >= detected and not queue:
                 break
-        completeness = self._child_completeness(detected, len(visited), error)
+        completeness = self._child_completeness(
+            detected,
+            len(visited),
+            error,
+            len(records),
+        )
         diagnostic = CollectorDiagnostic(
             completeness=completeness,
             pages_detected=detected,
@@ -163,7 +169,7 @@ class MoeOverseasCollector(BaseCollector):
             raw_rows=raw_rows,
             parsed_rows=len(records),
             rejected_rows=max(raw_rows - len(records), 0),
-            stop_reason=self._child_stop_reason(completeness),
+            stop_reason=self._child_stop_reason(completeness, len(records)),
             error=error,
         )
         return self._deduplicate(records), diagnostic
@@ -243,21 +249,53 @@ class MoeOverseasCollector(BaseCollector):
         normalized = title.casefold()
         return len(title) >= 4 and normalized not in _GENERIC_HEADINGS
 
-    # 依頁面宣告數及錯誤決定完整性。
-    def _child_completeness(self, detected: int, succeeded: int, error: str) -> str:
+    # 依頁面宣告數、錯誤及解析結果決定子站完整性。
+    def _child_completeness(
+        self,
+        detected: int,
+        succeeded: int,
+        error: str,
+        parsed_count: int,
+    ) -> str:
         if error:
             return "partial" if succeeded else "failed"
+        if parsed_count == 0:
+            return "partial"
         if self.collection_mode is CollectionMode.INCREMENTAL:
             return "incremental"
         return "complete" if succeeded >= detected else "partial"
 
-    # 產生可稽核停止原因。
-    def _child_stop_reason(self, completeness: str) -> str:
+    # 產生可稽核子站停止原因。
+    def _child_stop_reason(self, completeness: str, parsed_count: int) -> str:
+        if parsed_count == 0:
+            return "no_announcements_parsed"
         if completeness == "incremental":
             return "incremental_first_page"
         if completeness == "complete":
             return "all_detected_pages_completed"
         return "page_fetch_or_pagination_incomplete"
+
+    # 彙整四個子站完整性。
+    def _overall_completeness(
+        self,
+        diagnostics: list[CollectorDiagnostic],
+        succeeded: int,
+    ) -> str:
+        if succeeded != len(OVERSEAS_CHILD_SOURCES):
+            return "partial"
+        if any(item.completeness == "partial" for item in diagnostics):
+            return "partial"
+        if self.collection_mode is CollectionMode.INCREMENTAL:
+            return "incremental"
+        return "complete"
+
+    # 產生聚合來源停止原因。
+    def _overall_stop_reason(self, completeness: str) -> str:
+        if completeness == "incremental":
+            return "all_child_sources_incremental"
+        if completeness == "complete":
+            return "all_child_sources_completed"
+        return "child_source_partial"
 
     # 依來源、標題、日期及網址移除同站重複公告。
     def _deduplicate(self, records: list[Scholarship]) -> list[Scholarship]:
