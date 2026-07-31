@@ -14,6 +14,10 @@ _DATE_PATTERNS = (
 _PAGE_COUNT_PATTERN = re.compile(r"共\s*(?P<count>\d+)\s*頁")
 _PAGE_PATH_PATTERN = re.compile(r"/page/(?P<number>\d+)(?:/|$)")
 _PAGE_SUFFIX_PATTERN = re.compile(r"/page/\d+$")
+_DYNA_URL_PREFIX_PATTERN = re.compile(
+    r"urlPrefix\s*:\s*['\"](?P<prefix>[^'\"]*PAGE[^'\"]*)['\"]"
+)
+_DYNA_TOTAL_PAGE_PATTERN = re.compile(r"totalPage\s*:\s*(?P<count>\d+)")
 _NEXT_LABELS = frozenset({"下一頁", "下頁", "next", ">", "»"})
 
 
@@ -33,7 +37,7 @@ def extract_date(text: str) -> str:
     return ""
 
 
-# 從頁面文字與數字頁碼連結推導總頁數。
+# 從頁面文字、數字頁碼連結及 DYNA script 推導總頁數。
 def detect_total_pages(html: str) -> int:
     soup = BeautifulSoup(html, "html.parser")
     text_match = _PAGE_COUNT_PATTERN.search(soup.get_text(" ", strip=True))
@@ -44,7 +48,21 @@ def detect_total_pages(html: str) -> int:
             numbers.append(number)
     if text_match:
         numbers.append(int(text_match.group("count")))
+    dyna = dyna_page_urls(html, "")
+    if dyna:
+        numbers.append(dyna[-1][0])
     return max(numbers)
+
+
+# 解析 DYNA CMS 的 urlPrefix 與 totalPage，生成實際第 2 頁以後網址。
+def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
+    prefix_match = _DYNA_URL_PREFIX_PATTERN.search(html)
+    total_match = _DYNA_TOTAL_PAGE_PATTERN.search(html)
+    if prefix_match is None or total_match is None:
+        return []
+    prefix = urljoin(base_url, prefix_match.group("prefix"))
+    total = int(total_match.group("count"))
+    return [(page, prefix.replace("PAGE", str(page))) for page in range(2, total + 1)]
 
 
 # 找出頁面中的數字分頁連結，依頁碼排序。
@@ -54,7 +72,7 @@ def numbered_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
     for link in soup.find_all("a", href=True):
         number = _page_number(link)
         href = str(link.get("href", "")).strip()
-        if number is None or not href:
+        if number is None or not href or href.casefold().startswith("javascript:"):
             continue
         url = urljoin(base_url, href)
         if _same_listing_host_and_path(base_url, url):
@@ -71,7 +89,7 @@ def next_page_url(html: str, base_url: str) -> str | None:
         if label not in _NEXT_LABELS and "next" not in rel:
             continue
         href = str(link.get("href", "")).strip()
-        if not href:
+        if not href or href.casefold().startswith("javascript:"):
             continue
         url = urljoin(base_url, href)
         if _same_listing_host_and_path(base_url, url):
