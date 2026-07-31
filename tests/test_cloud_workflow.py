@@ -3,6 +3,9 @@
 from pathlib import Path
 
 WORKFLOW_PATH = Path(__file__).parents[1] / ".github/workflows/scholarship-cloud.yml"
+LINE_REPORT_WORKFLOW_PATH = (
+    Path(__file__).parents[1] / ".github/workflows/line-report-trigger.yml"
+)
 
 
 def test_cloud_workflow_uses_taiwan_0730_daily_schedule() -> None:
@@ -111,3 +114,12 @@ def test_cloud_test_line_is_stdlib_only() -> None:
     assert "from src." not in test_line_section
     assert "python -m src.automation.line_transport_test" not in test_line_section
     assert "TEST_MESSAGE" not in test_line_section
+
+
+def test_cloud_workflows_always_clear_private_profile() -> None:
+    for path in (WORKFLOW_PATH, LINE_REPORT_WORKFLOW_PATH):
+        content = path.read_text(encoding="utf-8")
+        cleanup_section = content.split("- name: Clear private profile", 1)[1]
+
+        assert "if: always()" in cleanup_section
+        assert "run: rm -f profile.json" in cleanup_section
