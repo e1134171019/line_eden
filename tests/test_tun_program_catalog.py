@@ -46,21 +46,26 @@ def test_source_kinds_are_explicit() -> None:
 
     assert by_id["tcb-foundation"].official_status == SOURCE_RELAY
     assert "nutc.edu.tw" in by_id["tcb-foundation"].official_url
+    assert by_id["it-social-care"].official_status == SOURCE_RELAY
+    assert "yzu.edu.tw" in by_id["it-social-care"].official_url
     assert by_id["yonglin-hope"].official_status == SOURCE_CORE
     assert by_id["yonglin-hope"].official_url == ""
     assert by_id["hndasset-wenxiang"].official_status == SOURCE_CORE
     assert by_id["hndasset-wenxiang"].official_url == ""
 
 
-# 真實 smoke 發現的逾時與 404 入口必須改用新頁面。
+# 真實 smoke 發現的逾時、憑證與 404 入口必須改用新頁面。
 def test_failed_official_entries_are_replaced() -> None:
     by_id = {item.program_id: item for item in resolved_programs()}
 
     assert by_id["it-social-care"].official_url == (
-        "https://www.csroc.org.tw/page.jsp?ID=41"
+        "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01"
     )
-    assert by_id["sunshine-scholarship"].official_url.startswith(
-        "https://scholarship.sunshine.org.tw/"
+    assert by_id["sunshine-scholarship"].official_url == (
+        "https://scls.sunshine.org.tw/"
+    )
+    assert by_id["harmony-stability"].official_url == (
+        "https://www.hk.edu.tw/remote/HKlf_1238963/"
     )
     assert by_id["auden-innovation-research"].official_url == (
         "https://www.auden.com.tw/news-4/"
