@@ -72,7 +72,7 @@ def classify_notice(title: str, detail_text: str) -> str:
     return UNKNOWN
 
 
-# 快速排除作息、換算表與流程說明，避免獎助關鍵字造成誤判。
+# 快速排除作息、換算表、程序文件與尚待公布訊息，避免獎助關鍵字造成誤判。
 def pre_classify(title: str, detail_text: str) -> str | None:
     text = f"{title} {detail_text[:200]}"
     if re.search(r"作息|行事曆|辦公時間|暑假|寒假", text):
@@ -83,7 +83,28 @@ def pre_classify(title: str, detail_text: str) -> str | None:
         return INFORMATION
     if re.search(r"說明會|座談會|宣導", text):
         return INFORMATION
+    if re.search(r"(?:將於|預計).{0,24}(?:公布|公告|上線)|尚未公布", title):
+        return INFORMATION
+    if _is_standalone_contract(title):
+        return INFORMATION
     return None
+
+
+# 單獨契約書是獲獎後程序文件；同時包含甄試或申請簡章時仍視為申請公告。
+def _is_standalone_contract(title: str) -> bool:
+    if not re.search(r"(?:行政)?契約書", title):
+        return False
+    application_context = (
+        "甄試簡章",
+        "甄選簡章",
+        "申請簡章",
+        "申請公告",
+        "受理申請",
+        "開放申請",
+        "徵件",
+        "報名",
+    )
+    return not _contains_any(title, application_context)
 
 
 # 判斷標題是否明確屬於法規、制度修正或適用範圍說明。
