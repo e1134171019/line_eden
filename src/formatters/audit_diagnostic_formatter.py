@@ -44,9 +44,10 @@ def _attachment_lines(index: int, item: ResourceDiagnostic) -> list[str]:
 def _resource_summary(item: ResourceDiagnostic) -> str:
     content_type = item.content_type or "unknown"
     size = _format_bytes(item.size_bytes)
+    fallback = " | SSL 相容重試" if item.ssl_compatibility_fallback else ""
     return (
         f"{item.status} | {item.document_kind} | {content_type} | "
-        f"{size} | 文字 {item.text_length} 字"
+        f"{size} | 文字 {item.text_length} 字{fallback}"
     )
 
 
