@@ -33,6 +33,9 @@ from src.evaluators.extended_profile_rules import (
     find_extended_matches,
     find_extended_unknowns,
 )
+from src.evaluators.extended_reason_normalizer import (
+    filter_false_residence_exclusions,
+)
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
 from src.evaluators.special_status_aliases import find_alias_exclusions
@@ -223,6 +226,7 @@ class EligibilityEvaluator:
         exclusions.extend(find_graduation_exclusions(title, trusted_text, profile))
         exclusions.extend(find_exclusions(trusted_text, title, profile))
         exclusions.extend(find_extended_exclusions(trusted_text, profile))
+        exclusions = filter_false_residence_exclusions(exclusions, profile)
         filtered = filter_missing_score_exclusions(exclusions, profile)
         return _deduplicate_reasons(filtered)
 
