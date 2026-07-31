@@ -96,3 +96,7 @@ def _probe_zero_record_page(client: SafeHttpClient, url: str) -> None:
         if isinstance(parent, Tag):
             ancestor = parent.parent if isinstance(parent.parent, Tag) else parent
             print(f"  date-node-html={str(ancestor)[:5000]}")
+
+
+if __name__ == "__main__":
+    main()
