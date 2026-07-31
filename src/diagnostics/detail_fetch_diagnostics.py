@@ -25,6 +25,7 @@ class ResourceDiagnostic:
     error: str = ""
     attachment_role: str = "unknown"
     attachment_label: str = ""
+    ssl_compatibility_fallback: bool = False
 
 
 @dataclass(frozen=True)
