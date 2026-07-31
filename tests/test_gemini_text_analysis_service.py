@@ -19,9 +19,11 @@ from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
 class FakeTextExtractor:
     def __init__(self) -> None:
         self.extractor = SimpleNamespace(model="test-model")
+        self.prepare_calls = 0
         self.calls = 0
 
     def prepare(self, _: str, __: DetailFetchResult) -> PreparedGeminiText:
+        self.prepare_calls += 1
         return PreparedGeminiText("a" * 64, "測試 prompt")
 
     def count_tokens(self, _: PreparedGeminiText) -> int:
@@ -39,18 +41,18 @@ class FakeTextExtractor:
         return GeminiApiResult(extraction, 100, 20, 120)
 
 
-def _fetch_result() -> DetailFetchResult:
+def _fetch_result(body: str = "正文") -> DetailFetchResult:
     source = ResourceDiagnostic(
         "source",
         "https://example.com/item",
         "https://example.com/item",
         "text/html",
-        20,
+        len(body.encode("utf-8")),
         "html",
         "success",
-        10,
+        len(body),
     )
-    return DetailFetchResult("正文", source, tuple(), 0, body_text="正文")
+    return DetailFetchResult(body, source, tuple(), 0, body_text=body)
 
 
 def _cache_key(prompt_version: str) -> str:
@@ -139,3 +141,21 @@ def test_text_analysis_retries_previously_cached_error(tmp_path: Path) -> None:
     assert extractor.calls == 1
     assert cache.get(key) is not None
     assert cache.get(key).status == "success"  # type: ignore[union-attr]
+
+
+def test_text_analysis_skips_expired_notice_before_preparing_prompt(tmp_path: Path) -> None:
+    extractor = FakeTextExtractor()
+    service = GeminiTextAnalysisService(
+        extractor,
+        GeminiCacheRepository(tmp_path / "gemini.db"),
+        GeminiUsageLimiter(3, 12000),
+        "text-v1",
+    )
+    expired = _fetch_result("申請截止日期為109年9月30日。")
+
+    result = service.analyze("109年留學獎學金甄試簡章", expired)
+
+    assert result.extraction is None
+    assert result.diagnostic.status == "expired"
+    assert extractor.prepare_calls == 0
+    assert extractor.calls == 0
