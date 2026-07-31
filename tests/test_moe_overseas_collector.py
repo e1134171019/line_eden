@@ -70,3 +70,43 @@ def test_moe_overseas_parser_filters_navigation_heading() -> None:
     assert len(records) == 1
     assert records[0].title == "115年教育部歐盟獎學金甄選簡章"
     assert records[0].published_date == "2026-05-13"
+
+
+# 新版公費留學頁應收集簡章下載與公告欄，未提供發布日則保持空白。
+def test_studyabroad_parser_collects_brochures_and_notice_panel() -> None:
+    html = """
+    <div class="brochure-dropdown">
+      <a class="brochure-dropdown__item" href="/exam-v2/student/brochure/general">
+        115年簡章(不含五大信賴產業學門)
+      </a>
+      <a class="brochure-dropdown__item" href="/exam-v2/student/brochure/trusted">
+        115年簡章(五大信賴產業學門)
+      </a>
+    </div>
+    <div class="login-announce-body">
+      <div class="announce-item">
+        <h3 class="announce-title">115年公費留學考試試務聯絡資訊</h3>
+      </div>
+      <div class="announce-item">
+        <h3 class="announce-title">請特別留意「補件」規定</h3>
+      </div>
+    </div>
+    """
+    collector = MoeOverseasCollector(
+        10.0,
+        "test",
+        CollectionMode.FULL_AUDIT,
+        10,
+    )
+    child = OVERSEAS_CHILD_SOURCES[0]
+
+    records, candidate_count = collector._parse_page(html, child, child.list_url)
+
+    assert candidate_count == 4
+    assert [record.title for record in records] == [
+        "115年簡章(不含五大信賴產業學門)",
+        "115年簡章(五大信賴產業學門)",
+        "115年公費留學考試試務聯絡資訊",
+        "請特別留意「補件」規定",
+    ]
+    assert all(record.published_date == "" for record in records)
