@@ -21,6 +21,7 @@ from src.services.gemini_fallback_service import (
     _error_text,
     _extracted_fields,
 )
+from src.services.structured_shadow_scope import structured_shadow_skip_status
 
 
 @dataclass(frozen=True)
@@ -47,15 +48,19 @@ class GeminiTextAnalysisService:
         self.prompt_version = prompt_version
 
     def analyze(self, title: str, fetch_result: DetailFetchResult) -> GeminiTextAnalysisResult:
-        prepared = self.extractor.prepare(title, fetch_result)
         model = self.extractor.extractor.model
+        source_url = fetch_result.source.final_url or fetch_result.source.requested_url
+        skip_status = structured_shadow_skip_status(title, fetch_result)
+        if skip_status is not None:
+            return self._skipped(source_url, model, skip_status)
+
+        prepared = self.extractor.prepare(title, fetch_result)
         cache_key = _cache_key(prepared.content_hash, model, self.prompt_version)
         cached = self.cache.get(cache_key)
         if cached is not None and cached.status == "success":
             return self._cached_result(cached)
         if cached is not None:
             self.cache.delete(cache_key)
-        source_url = fetch_result.source.final_url or fetch_result.source.requested_url
         if not self.limiter.has_capacity():
             return self._deferred(source_url, model)
         try:
@@ -130,6 +135,25 @@ class GeminiTextAnalysisService:
                 "",
             )
         )
+
+    def _skipped(
+        self,
+        source_url: str,
+        model: str,
+        status: str,
+    ) -> GeminiTextAnalysisResult:
+        diagnostic = GeminiAnalysisDiagnostic(
+            status,
+            source_url,
+            model,
+            False,
+            0,
+            0,
+            0,
+            0,
+            "申請期限已截止，不執行 structured shadow。",
+        )
+        return GeminiTextAnalysisResult(None, diagnostic)
 
     def _deferred(self, source_url: str, model: str) -> GeminiTextAnalysisResult:
         diagnostic = GeminiAnalysisDiagnostic(
