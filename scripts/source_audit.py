@@ -47,18 +47,19 @@ def main() -> None:
     watch = diagnostics[-1]
     if watch.source != "TUN 38方案官方監測":
         raise SystemExit("第七個來源群組不是 TUN 38方案官方監測。")
-    if watch.status == "error":
-        raise SystemExit("38 方案監測群組執行失敗。")
+    if watch.status != "success" or watch.completeness != "complete":
+        raise SystemExit(f"38 方案分頁尚未完整：{watch.error or watch.stop_reason}")
     if watch.child_sources_detected != EXPECTED_PROGRAM_WATCH_COUNT:
         raise SystemExit("38 方案監測目錄數量不正確。")
+    if watch.child_sources_succeeded != EXPECTED_PROGRAM_WATCH_COUNT:
+        raise SystemExit("38 方案仍有入口無法連線。")
 
     print("六個核心來源均完成完整抓取。")
     print(
         "38 方案監測完成："
-        f"官方入口可連線 {watch.child_sources_succeeded}/{watch.child_sources_detected}。"
+        f"方案 {watch.child_sources_succeeded}/{watch.child_sources_detected}，"
+        f"分頁 {watch.pages_succeeded}/{watch.pages_detected}。"
     )
-    if watch.error:
-        print(f"38 方案監測診斷：{watch.error}")
 
 
 if __name__ == "__main__":
