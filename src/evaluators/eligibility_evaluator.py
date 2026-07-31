@@ -39,6 +39,11 @@ from src.evaluators.extended_reason_normalizer import (
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
 from src.evaluators.special_status_aliases import find_alias_exclusions
+from src.evaluators.supplemental_profile_rules import (
+    find_supplemental_exclusions,
+    find_supplemental_matches,
+    find_supplemental_unknowns,
+)
 from src.models.evaluator_input import (
     GEMINI_RULE_PARTIAL_EXCLUSIONS,
     EvaluatorInput,
@@ -199,6 +204,7 @@ class EligibilityEvaluator:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
         matches.extend(find_extended_matches(text, profile))
+        matches.extend(find_supplemental_matches(text, profile))
         matches = filter_contextual_matches(matches, title, detail_text, profile)
         matches = filter_general_college_matches(matches, text)
         completeness = find_completeness_unknowns(matches)
@@ -226,6 +232,7 @@ class EligibilityEvaluator:
         exclusions.extend(find_graduation_exclusions(title, trusted_text, profile))
         exclusions.extend(find_exclusions(trusted_text, title, profile))
         exclusions.extend(find_extended_exclusions(trusted_text, profile))
+        exclusions.extend(find_supplemental_exclusions(trusted_text, profile))
         exclusions = filter_false_residence_exclusions(exclusions, profile)
         filtered = filter_missing_score_exclusions(exclusions, profile)
         return _deduplicate_reasons(filtered)
@@ -244,4 +251,5 @@ class EligibilityEvaluator:
         unknowns.extend(find_runtime_unknowns(text, profile))
         unknowns.extend(find_safety_unknowns(text, profile))
         unknowns.extend(find_extended_unknowns(text, profile))
+        unknowns.extend(find_supplemental_unknowns(text, profile))
         return list(dict.fromkeys(unknowns))
