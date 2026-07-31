@@ -28,6 +28,11 @@ from src.evaluators.eligibility_safety_rules import (
     find_graduation_exclusions,
     find_safety_unknowns,
 )
+from src.evaluators.extended_profile_rules import (
+    find_extended_exclusions,
+    find_extended_matches,
+    find_extended_unknowns,
+)
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
 from src.evaluators.special_status_aliases import find_alias_exclusions
@@ -190,6 +195,7 @@ class EligibilityEvaluator:
         if unknowns:
             return EligibilityDecision(REVIEW, tuple(unknowns))
         matches = find_matches(text, profile)
+        matches.extend(find_extended_matches(text, profile))
         matches = filter_contextual_matches(matches, title, detail_text, profile)
         matches = filter_general_college_matches(matches, text)
         completeness = find_completeness_unknowns(matches)
@@ -216,6 +222,7 @@ class EligibilityEvaluator:
         exclusions.extend(find_alias_exclusions(title, trusted_text, profile))
         exclusions.extend(find_graduation_exclusions(title, trusted_text, profile))
         exclusions.extend(find_exclusions(trusted_text, title, profile))
+        exclusions.extend(find_extended_exclusions(trusted_text, profile))
         filtered = filter_missing_score_exclusions(exclusions, profile)
         return _deduplicate_reasons(filtered)
 
@@ -232,4 +239,5 @@ class EligibilityEvaluator:
             unknowns.append(status_reason)
         unknowns.extend(find_runtime_unknowns(text, profile))
         unknowns.extend(find_safety_unknowns(text, profile))
+        unknowns.extend(find_extended_unknowns(text, profile))
         return list(dict.fromkeys(unknowns))
