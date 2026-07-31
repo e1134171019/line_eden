@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from src.collectors.base_collector import BaseCollector
+from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.helpdreams_collector import HelpDreamsCollector
 from src.collectors.indigenous_grant_collector import IndigenousGrantCollector
 from src.collectors.lhu_collector import (
@@ -20,6 +21,24 @@ from src.models.scholarship import Scholarship
 
 class ExpandedScholarshipCollector(LhuCollector):
     """現有六個官方來源，加上 TUN 38 項方案的官方監測群組。"""
+
+    def __init__(
+        self,
+        source_url: str,
+        timeout_seconds: float,
+        user_agent: str,
+        collection_mode: CollectionMode = CollectionMode.INCREMENTAL,
+        max_pages: int = 20,
+        fetch_workers: int = 1,
+    ) -> None:
+        super().__init__(
+            source_url,
+            timeout_seconds,
+            user_agent,
+            collection_mode,
+            max_pages,
+        )
+        self.fetch_workers = fetch_workers
 
     def collect(self) -> list[Scholarship]:
         collectors: list[BaseCollector] = [
@@ -61,6 +80,7 @@ class ExpandedScholarshipCollector(LhuCollector):
                 self.user_agent,
                 self.collection_mode,
                 self.max_pages,
+                self.fetch_workers,
             ),
         ]
         self.multi_source = MultiSourceCollector(collectors)
