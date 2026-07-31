@@ -57,6 +57,8 @@ def main() -> None:
         "38 方案監測完成："
         f"官方入口可連線 {watch.child_sources_succeeded}/{watch.child_sources_detected}。"
     )
+    if watch.error:
+        print(f"38 方案監測診斷：{watch.error}")
 
 
 if __name__ == "__main__":
