@@ -1,21 +1,15 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
-from datetime import date
-import re
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
-import httpx
 
 from src.collectors.base_collector import BaseCollector
+from src.collectors.collection_diagnostics import CollectorDiagnostic
+from src.collectors.http_client import SafeHttpClient
+from src.collectors.listing_utils import extract_date
 from src.models.scholarship import Scholarship
-
-
-DATE_PATTERNS = (
-    re.compile(r"(?P<year>20\d{2})[./-](?P<month>\d{1,2})[./-](?P<day>\d{1,2})"),
-    re.compile(r"(?P<year>1\d{2})[./-](?P<month>\d{1,2})[./-](?P<day>\d{1,2})"),
-)
 
 
 @dataclass(frozen=True)
@@ -28,7 +22,7 @@ class OfficialSourceConfig:
 
 
 class OfficialListingCollector(BaseCollector):
-    """解析官方公告列表中的標題、日期與站內連結。"""
+    """相容舊測試的單頁官方公告解析器；新來源改用專用 collector。"""
 
     def __init__(
         self,
@@ -39,42 +33,53 @@ class OfficialListingCollector(BaseCollector):
         self.config = config
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
+        self.diagnostic = CollectorDiagnostic()
 
     @property
     def source_label(self) -> str:
         return self.config.display_name or self.config.source_name
 
+    # 下載一頁並回報解析數量。
     def collect(self) -> list[Scholarship]:
-        html = self._fetch_html()
-        return self._parse_html(html)
+        with SafeHttpClient(self.timeout_seconds, self.user_agent) as client:
+            html = client.get_text(self.config.source_url)
+            records, raw_rows = self._parse_html_with_count(html)
+            self.diagnostic = CollectorDiagnostic(
+                completeness="complete",
+                pages_detected=1,
+                pages_requested=1,
+                pages_succeeded=1,
+                raw_rows=raw_rows,
+                parsed_rows=len(records),
+                rejected_rows=max(raw_rows - len(records), 0),
+                stop_reason="single_page_completed",
+                ssl_compatibility_fallback=bool(client.fallback_hosts),
+            )
+            return records
 
+    # 保留可直接呼叫的下載函式。
     def _fetch_html(self) -> str:
-        response = httpx.get(
-            self.config.source_url,
-            headers={"User-Agent": self.user_agent},
-            timeout=self.timeout_seconds,
-            follow_redirects=True,
-        )
-        response.raise_for_status()
-        return response.text
+        with SafeHttpClient(self.timeout_seconds, self.user_agent) as client:
+            return client.get_text(self.config.source_url)
 
-    def _parse_html(self, html: str) -> list[Scholarship]:
+    # 解析候選容器並統計有連結的原始列。
+    def _parse_html_with_count(self, html: str) -> tuple[list[Scholarship], int]:
         soup = BeautifulSoup(html, "html.parser")
         records: list[Scholarship] = []
         seen_urls: set[str] = set()
+        raw_rows = 0
         for container in soup.select(self.config.row_selector):
-            text = container.get_text(" ", strip=True)
             link = container.find("a", href=True)
             if link is None:
                 continue
+            raw_rows += 1
+            text = container.get_text(" ", strip=True)
             title = link.get_text(" ", strip=True)
-            url = urljoin(self.config.source_url, link.get("href", ""))
+            url = urljoin(self.config.source_url, str(link.get("href", "")))
             if not self._is_allowed_url(url) or not _looks_relevant(title):
                 continue
-            published_date = _extract_date(text)
-            if not published_date:
-                continue
-            if url in seen_urls:
+            published_date = extract_date(text)
+            if not published_date or url in seen_urls:
                 continue
             seen_urls.add(url)
             records.append(
@@ -85,6 +90,10 @@ class OfficialListingCollector(BaseCollector):
                     url,
                 )
             )
+        return records, raw_rows
+
+    def _parse_html(self, html: str) -> list[Scholarship]:
+        records, _ = self._parse_html_with_count(html)
         return records
 
     def _is_allowed_url(self, url: str) -> bool:
@@ -99,18 +108,8 @@ class OfficialListingCollector(BaseCollector):
 
 
 def _extract_date(text: str) -> str:
-    for pattern in DATE_PATTERNS:
-        match = pattern.search(text)
-        if not match:
-            continue
-        year = int(match.group("year"))
-        if year < 1911:
-            year += 1911
-        try:
-            return date(year, int(match.group("month")), int(match.group("day"))).isoformat()
-        except ValueError:
-            continue
-    return ""
+    """保留舊匯入名稱，實際共用 listing_utils。"""
+    return extract_date(text)
 
 
 def _looks_relevant(title: str) -> bool:
