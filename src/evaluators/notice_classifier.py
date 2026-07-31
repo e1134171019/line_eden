@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import re
+
 APPLICATION = "application"
 LOAN = "loan"
 POLICY = "policy"
@@ -43,14 +45,6 @@ INFORMATION_MARKERS = (
     "相關事宜",
     "宣導",
     "提醒",
-    "暑假作息",
-    "作息公告",
-    "獲配名額",
-    "名額人數表",
-    "排名換算",
-    "流程圖",
-    "申辦流程",
-    "作業流程",
     "常見問題",
     "問答集",
     "FAQ",
@@ -64,6 +58,9 @@ def classify_notice(title: str, detail_text: str) -> str:
     normalized_text = " ".join(detail_text.split())
     if _contains_any(normalized_title, RESULT_MARKERS):
         return RESULT
+    preclassified = pre_classify(normalized_title, normalized_text)
+    if preclassified is not None:
+        return preclassified
     if _is_policy_notice(normalized_title):
         return POLICY
     if _contains_any(normalized_title, INFORMATION_MARKERS):
@@ -73,6 +70,20 @@ def classify_notice(title: str, detail_text: str) -> str:
     if _is_application_notice(normalized_title, normalized_text):
         return APPLICATION
     return UNKNOWN
+
+
+# 快速排除作息、換算表與流程說明，避免獎助關鍵字造成誤判。
+def pre_classify(title: str, detail_text: str) -> str | None:
+    text = f"{title} {detail_text[:200]}"
+    if re.search(r"作息|行事曆|辦公時間|暑假|寒假", text):
+        return INFORMATION
+    if re.search(r"換算表|名額.{0,12}換算|排名.{0,12}換算", text):
+        return POLICY
+    if re.search(r"申辦流程|申請流程|作業流程|流程圖", text):
+        return INFORMATION
+    if re.search(r"說明會|座談會|宣導", text):
+        return INFORMATION
+    return None
 
 
 # 判斷標題是否明確屬於法規、制度修正或適用範圍說明。
