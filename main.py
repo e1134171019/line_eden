@@ -37,7 +37,7 @@ from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtrac
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.evidence_detail_fetcher import EvidenceDetailFetcher
-from src.collectors.lhu_collector import LhuCollector
+from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
 from src.formatters.cli_output_formatter import (
@@ -168,9 +168,9 @@ def _collection_mode(mode: RunMode) -> CollectionMode:
     return CollectionMode.INCREMENTAL
 
 
-# 建立五來源 collector 並注入一致的分頁安全上限。
-def _build_collector(mode: RunMode) -> LhuCollector:
-    return LhuCollector(
+# 建立六個既有來源與 38 項方案官方監測群組。
+def _build_collector(mode: RunMode) -> ExpandedScholarshipCollector:
+    return ExpandedScholarshipCollector(
         LHU_SCHOLARSHIP_URL,
         HTTP_TIMEOUT_SECONDS,
         HTTP_USER_AGENT,
