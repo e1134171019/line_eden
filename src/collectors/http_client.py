@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
 import ssl
 from types import TracebackType
 from urllib.parse import urlparse
@@ -11,10 +13,6 @@ LEGACY_CERTIFICATE_DOMAINS = frozenset({
     "www.scholarship.moe.gov.tw",
     "scholarship.moe.gov.tw",
     "xinzhuangawards.ntpc.gov.tw",
-    "education.ylc.edu.tw",
-    "college.itri.org.tw",
-    "service.gov.taipei",
-    "service.taipower.com.tw",
 })
 _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
@@ -31,13 +29,10 @@ def build_legacy_compatible_ssl_context() -> ssl.SSLContext:
     return context
 
 
-# 僅允許已知網域及明確 X.509 格式錯誤進入相容模式。
-def can_use_legacy_context(url: str, error: Exception) -> bool:
-    host = urlparse(url).hostname or ""
+# 確認錯誤是否為可由非 strict X.509 context 相容的舊憑證格式。
+def _is_legacy_certificate_error(error: Exception) -> bool:
     message = " ".join(str(error).lower().split())
-    return host in LEGACY_CERTIFICATE_DOMAINS and all(
-        marker in message for marker in _CERTIFICATE_ERROR_MARKERS
-    )
+    return all(marker in message for marker in _CERTIFICATE_ERROR_MARKERS)
 
 
 class SafeHttpClient:
@@ -66,13 +61,26 @@ class SafeHttpClient:
         except httpx.TransportError as error:
             if not self._can_use_legacy_context(url, error):
                 raise
-            host = urlparse(url).hostname or ""
-            self.fallback_hosts.add(host)
-            if self._legacy_client is None:
-                self._legacy_client = self._build_client(
-                    build_legacy_compatible_ssl_context()
-                )
-            return self._get(self._legacy_client, url)
+            return self._get(self._legacy_client_for(url), url)
+
+    # 以串流方式下載二進位正文或附件，並回報是否使用相容模式。
+    @contextmanager
+    def stream(self, url: str) -> Iterator[tuple[httpx.Response, bool]]:
+        manager: AbstractContextManager[httpx.Response]
+        fallback = False
+        manager = self._strict_client.stream("GET", url)
+        try:
+            response = manager.__enter__()
+        except httpx.TransportError as error:
+            if not self._can_use_legacy_context(url, error):
+                raise
+            manager = self._legacy_client_for(url).stream("GET", url)
+            response = manager.__enter__()
+            fallback = True
+        try:
+            yield response, fallback
+        finally:
+            manager.__exit__(None, None, None)
 
     # 執行單一 GET 並確認 HTTP 狀態。
     def _get(self, client: httpx.Client, url: str) -> str:
@@ -80,9 +88,20 @@ class SafeHttpClient:
         response.raise_for_status()
         return response.text
 
-    # 保留既有私有介面，統一委派給可測試的模組函式。
+    # 僅允許白名單網域進入清單來源的相容模式。
     def _can_use_legacy_context(self, url: str, error: Exception) -> bool:
-        return can_use_legacy_context(url, error)
+        host = urlparse(url).hostname or ""
+        return host in LEGACY_CERTIFICATE_DOMAINS and _is_legacy_certificate_error(error)
+
+    # 延遲建立相容 client 並記錄實際使用網域。
+    def _legacy_client_for(self, url: str) -> httpx.Client:
+        host = urlparse(url).hostname or ""
+        self.fallback_hosts.add(host)
+        if self._legacy_client is None:
+            self._legacy_client = self._build_client(
+                build_legacy_compatible_ssl_context()
+            )
+        return self._legacy_client
 
     # 關閉連線池。
     def close(self) -> None:
@@ -100,3 +119,11 @@ class SafeHttpClient:
         traceback: TracebackType | None,
     ) -> None:
         self.close()
+
+
+class DetailSafeHttpClient(SafeHttpClient):
+    """公告內頁版：任意 HTTPS 網域僅遇到指定舊憑證格式時安全重試。"""
+
+    # 內頁來源不可預先枚舉，因此只限制 HTTPS 與精確的 X.509 錯誤類型。
+    def _can_use_legacy_context(self, url: str, error: Exception) -> bool:
+        return urlparse(url).scheme == "https" and _is_legacy_certificate_error(error)
