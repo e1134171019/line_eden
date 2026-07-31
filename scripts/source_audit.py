@@ -9,11 +9,11 @@ from config import (
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.lhu_collector import LhuCollector
 
-EXPECTED_SOURCE_COUNT = 5
+EXPECTED_SOURCE_COUNT = 6
 
 
 def main() -> None:
-    """完整抓取五個來源，只輸出診斷，不讀 profile、DB 或 LINE Secrets。"""
+    """完整抓取六個來源，只輸出診斷，不讀 profile、DB 或 LINE Secrets。"""
     collector = LhuCollector(
         LHU_SCHOLARSHIP_URL,
         HTTP_TIMEOUT_SECONDS,
@@ -24,7 +24,7 @@ def main() -> None:
     records = collector.collect()
     diagnostics = collector.multi_source.diagnostics if collector.multi_source else []
 
-    print("五來源完整性 smoke test")
+    print("六來源完整性 smoke test")
     print(f"設定來源網站：{EXPECTED_SOURCE_COUNT}")
     print(f"實際來源診斷：{len(diagnostics)}")
     print(f"跨來源去重後公告：{len(records)}")
@@ -32,7 +32,7 @@ def main() -> None:
         print(f"- {line}")
 
     if len(diagnostics) != EXPECTED_SOURCE_COUNT:
-        raise SystemExit("來源診斷數量不是 5，視為失敗。")
+        raise SystemExit("來源診斷數量不是 6，視為失敗。")
     incomplete = [
         item.source
         for item in diagnostics
@@ -40,7 +40,7 @@ def main() -> None:
     ]
     if incomplete:
         raise SystemExit(f"來源尚未完整：{', '.join(incomplete)}")
-    print("五個來源均完成完整抓取。")
+    print("六個來源均完成完整抓取。")
 
 
 if __name__ == "__main__":
