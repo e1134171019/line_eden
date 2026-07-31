@@ -9,6 +9,7 @@ from src.profiles.student_profile import StudentProfile
 
 APPLICATION_ACTION_MARKERS = (
     "申請",
+    "申辦",
     "報名",
     "受理",
     "收件",
@@ -18,6 +19,9 @@ APPLICATION_ACTION_MARKERS = (
     "寄送",
     "送件",
     "上傳",
+    "登錄",
+    "完成",
+    "填寫",
 )
 DEADLINE_MARKERS = (
     "截止",
@@ -40,9 +44,14 @@ DIRECT_APPLICANT_MARKERS = (
     "報名截止",
     "受理期間",
     "收件期間",
+    "收件截止",
+    "受理截止",
     "完成申請",
     "完成網路報名",
     "線上申請",
+    "系統申請",
+    "系統報名",
+    "上網登錄",
     "自行寄",
     "交至",
     "寄至",
@@ -72,6 +81,19 @@ DATE_PATTERN = re.compile(
     r"(?:(?P<year_value>20\d{2}|\d{3})(?:年|[\-/.]))?"
     r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
 )
+_DATE_TOKEN = (
+    r"(?:(?:20\d{2}|\d{3})(?:年|[\-/.]))?"
+    r"\d{1,2}(?:月|[\-/.])\d{1,2}日?"
+)
+EXPLICIT_DEADLINE_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        rf"於\s*{_DATE_TOKEN}\s*前.{{0,16}}(?:登錄|申請|送件|繳交|完成)",
+        rf"(?:收件|系統|受理).{{0,8}}(?:截止|開放至).{{0,8}}{_DATE_TOKEN}",
+        rf"即日起.{{0,16}}至\s*{_DATE_TOKEN}\s*(?:止|截止)",
+        rf"{_DATE_TOKEN}.{{0,12}}郵戳為憑",
+    )
+)
 
 UPCOMING = "upcoming"
 OPEN = "open"
@@ -92,7 +114,7 @@ class ApplicationPeriod:
 # 只從學生申請行為語境擷取日期；同一期間取結束日，多個必要步驟取最早期限。
 def extract_application_deadline(text: str, published_date: str) -> date | None:
     published = _parse_iso_date(published_date)
-    ranked: list[tuple[int, date]] = []
+    ranked = _explicit_deadlines(text, published)
     for segment in _deadline_segments(text):
         if not _is_application_deadline_segment(segment):
             continue
@@ -105,6 +127,20 @@ def extract_application_deadline(text: str, published_date: str) -> date | None:
         return None
     best_priority = min(priority for priority, _ in ranked)
     return min(deadline for priority, deadline in ranked if priority == best_priority)
+
+
+# 直接辨識動作前置、收件截止、即日起與郵戳句型。
+def _explicit_deadlines(
+    text: str,
+    published: date | None,
+) -> list[tuple[int, date]]:
+    ranked: list[tuple[int, date]] = []
+    for pattern in EXPLICIT_DEADLINE_PATTERNS:
+        for match in pattern.finditer(text):
+            candidates = _parse_segment_dates(match.group(0), published)
+            if candidates:
+                ranked.append((0, max(candidates)))
+    return ranked
 
 
 # 只有明確日期區間才擷取開始日，避免把單一截止日誤當開放日。

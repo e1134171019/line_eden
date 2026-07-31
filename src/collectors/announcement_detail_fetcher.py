@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 
 import httpx
 
+from src.collectors.http_client import DetailSafeHttpClient
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
     ExtractedAttachment,
@@ -18,6 +19,7 @@ from src.diagnostics.detail_fetch_diagnostics import (
 )
 from src.evaluators.attachment_requirement import detect_attachment_requirement
 from src.extractors.announcement_content_extractor import extract_announcement_text
+from src.extractors.announcement_relevance import content_matches_announcement
 from src.extractors.attachment_content_classifier import (
     CONTENT_RULES,
     classify_attachment_content,
@@ -35,6 +37,7 @@ class DownloadedResource:
     url: str
     content_type: str
     content: bytes
+    ssl_compatibility_fallback: bool = False
 
 
 class AnnouncementDetailFetcher:
@@ -64,17 +67,17 @@ class AnnouncementDetailFetcher:
             return self._source_failure(scholarship.source_url, error)
 
     def _fetch_result(self, scholarship: Scholarship) -> DetailFetchResult:
-        headers = {"User-Agent": self.user_agent}
-        with httpx.Client(
-            headers=headers,
-            timeout=self.timeout_seconds,
-            follow_redirects=True,
-        ) as client:
+        with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
             requested_url = scholarship.source_url
             resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
             if kind != "unsupported":
-                return self._direct_document_result(resource, kind, requested_url)
+                return self._direct_document_result(
+                    resource,
+                    kind,
+                    requested_url,
+                    scholarship.title,
+                )
             if not self._is_html(resource):
                 raise ValueError("來源不是支援文件或 HTML")
             return self._html_result(client, resource, scholarship.title, requested_url)
@@ -84,9 +87,12 @@ class AnnouncementDetailFetcher:
         resource: DownloadedResource,
         kind: str,
         requested_url: str,
+        title: str,
     ) -> DetailFetchResult:
         text = self._document_text(resource)
         source = self._success_diagnostic("source", requested_url, resource, kind, text)
+        if not content_matches_announcement(title, text):
+            return self._content_mismatch_result(source, text)
         return DetailFetchResult(
             text,
             source,
@@ -99,7 +105,7 @@ class AnnouncementDetailFetcher:
 
     def _html_result(
         self,
-        client: httpx.Client,
+        client: DetailSafeHttpClient,
         resource: DownloadedResource,
         title: str,
         requested_url: str,
@@ -133,12 +139,45 @@ class AnnouncementDetailFetcher:
         ]
         rules_status = self._determine_rules_status(body, inventory, extracted_attachments)
         source = self._success_diagnostic("source", requested_url, resource, "html", body)
+        if not content_matches_announcement(title, body, rules_texts):
+            return self._content_mismatch_result(
+                source,
+                body,
+                diagnostics,
+                inventory.discovered_count,
+                extracted_attachments,
+                rules_status,
+            )
         return DetailFetchResult(
             self._combine_text(body, rules_texts),
             source,
             diagnostics,
             inventory.discovered_count,
             body_text=body,
+            extracted_attachments=extracted_attachments,
+            rules_status=rules_status,
+        )
+
+    def _content_mismatch_result(
+        self,
+        source: ResourceDiagnostic,
+        body_text: str,
+        attachments: tuple[ResourceDiagnostic, ...] = tuple(),
+        discovered_attachment_count: int = 0,
+        extracted_attachments: tuple[ExtractedAttachment, ...] = tuple(),
+        rules_status: str = RULES_STATUS_UNKNOWN,
+    ) -> DetailFetchResult:
+        mismatch = replace(
+            source,
+            status="error",
+            error="ContentMismatchError: 公告正文與標題或申請語境不相符",
+        )
+        return DetailFetchResult(
+            "",
+            mismatch,
+            attachments,
+            discovered_attachment_count,
+            body_text=body_text,
             extracted_attachments=extracted_attachments,
             rules_status=rules_status,
         )
@@ -194,7 +233,7 @@ class AnnouncementDetailFetcher:
 
     def _attachment_result(
         self,
-        client: httpx.Client,
+        client: DetailSafeHttpClient,
         requested_url: str,
         attachment_role: str = "unknown",
         attachment_label: str = "",
@@ -253,6 +292,7 @@ class AnnouncementDetailFetcher:
             "",
             attachment_role,
             attachment_label,
+            resource.ssl_compatibility_fallback,
         )
 
     def _error_diagnostic(
@@ -276,6 +316,7 @@ class AnnouncementDetailFetcher:
             self._error_text(error),
             attachment_role,
             attachment_label,
+            bool(resource and resource.ssl_compatibility_fallback),
         )
 
     def _source_failure(self, requested_url: str, error: Exception) -> DetailFetchResult:
@@ -311,8 +352,8 @@ class AnnouncementDetailFetcher:
             self.max_pdf_pages,
         )
 
-    def _download(self, client: httpx.Client, url: str) -> DownloadedResource:
-        with client.stream("GET", url) as response:
+    def _download(self, client: DetailSafeHttpClient, url: str) -> DownloadedResource:
+        with client.stream(url) as (response, fallback):
             response.raise_for_status()
             self._validate_content_length(response)
             content = self._read_limited(response)
@@ -320,6 +361,7 @@ class AnnouncementDetailFetcher:
                 str(response.url),
                 response.headers.get("Content-Type", ""),
                 content,
+                fallback,
             )
 
     def _validate_content_length(self, response: httpx.Response) -> None:

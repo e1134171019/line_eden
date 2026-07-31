@@ -49,6 +49,40 @@ def test_classifies_information_notice() -> None:
     assert kind == INFORMATION
 
 
+# 暑假作息即使含獎助學金字樣也不是申請公告。
+def test_classifies_summer_schedule_as_information() -> None:
+    kind = classify_notice("原民會獎助學金作業中心115年暑假作息公告", "公布辦公時間。")
+
+    assert kind == INFORMATION
+
+
+# 名額與排名換算表是制度說明，不是本期申請案。
+def test_classifies_quota_conversion_as_policy() -> None:
+    kind = classify_notice(
+        "公私立各校獎學金獲配名額人數表及班級排名換算百分比級距",
+        "提供各校換算方式。",
+    )
+
+    assert kind == POLICY
+
+
+# 申辦流程圖只提供程序資訊，不得進入資格判斷。
+def test_classifies_application_flowchart_as_information() -> None:
+    kind = classify_notice("欲申請獎助學金者請先詳見申辦流程圖", "請依流程辦理。")
+
+    assert kind == INFORMATION
+
+
+# 不適用特定學程的制度說明屬於 policy。
+def test_classifies_non_applicable_program_notice_as_policy() -> None:
+    kind = classify_notice(
+        "學士後第二專長學位學程學生不適用本獎助學金要點",
+        "說明適用範圍。",
+    )
+
+    assert kind == POLICY
+
+
 # 驗證沒有足夠訊號的公告採 unknown。
 def test_classifies_unknown_notice() -> None:
     kind = classify_notice("轉知相關消息", "詳細內容請參閱網站。")
