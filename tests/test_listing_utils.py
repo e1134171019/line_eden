@@ -20,7 +20,7 @@ def test_query_string_pagination_is_detected() -> None:
     <p>共3頁</p>
     """
 
-    assert detect_total_pages(html) == 3
+    assert detect_total_pages(html, base_url) == 3
     assert numbered_page_urls(html, base_url) == [
         (1, base_url),
         (2, f"{base_url}&page=2"),
@@ -41,13 +41,46 @@ def test_dyna_javascript_pagination_is_generated() -> None:
     <a class="_cgptlist_gopage" href="javascript:void(0)">2</a>
     """
 
-    assert detect_total_pages(html) == 5
+    assert detect_total_pages(html, base_url) == 5
     assert dyna_page_urls(html, base_url) == [
         (2, "https://www.lhu.edu.tw/p/422-1000-4-2.php?Lang=zh-tw"),
         (3, "https://www.lhu.edu.tw/p/422-1000-4-3.php?Lang=zh-tw"),
         (4, "https://www.lhu.edu.tw/p/422-1000-4-4.php?Lang=zh-tw"),
         (5, "https://www.lhu.edu.tw/p/422-1000-4-5.php?Lang=zh-tw"),
     ]
+    assert numbered_page_urls(html, base_url) == []
+
+
+# 頁面明示 143 頁時，不得把 DYNA 的資料總筆數 1308 當成頁數。
+def test_explicit_page_count_overrides_dyna_record_count() -> None:
+    base_url = "https://student.example/p/403-list.php"
+    html = """
+    <p>共 143 頁</p>
+    <script>
+    var option = {
+      urlPrefix: '/p/403-list-PAGE.php',
+      totalPage: 1308
+    };
+    </script>
+    """
+
+    urls = dyna_page_urls(html, base_url)
+
+    assert detect_total_pages(html, base_url) == 143
+    assert len(urls) == 142
+    assert urls[-1][0] == 143
+
+
+# 文章編號、年份與一般數字導覽不得被當成分頁。
+def test_plain_numeric_links_are_not_pagination() -> None:
+    base_url = "https://example.test/posts/1238"
+    html = """
+    <a href="/posts/2026">2026</a>
+    <a href="/posts/1238#section">693</a>
+    <a href="/donate?id=1308">1308</a>
+    """
+
+    assert detect_total_pages(html, base_url) == 1
     assert numbered_page_urls(html, base_url) == []
 
 
