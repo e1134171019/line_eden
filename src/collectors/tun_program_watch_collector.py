@@ -4,7 +4,6 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 import re
-from threading import Lock
 import time
 import unicodedata
 from urllib.parse import urljoin
@@ -36,7 +35,7 @@ _ROC_DATE = re.compile(
     r"(?P<month>\d{1,2})\s*月\s*(?P<day>\d{1,2})\s*日?"
 )
 _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
-_FETCH_ATTEMPTS = 2
+_FETCH_ATTEMPTS = 3
 
 
 class TunProgramWatchCollector(BaseCollector):
@@ -107,47 +106,62 @@ class TunProgramWatchCollector(BaseCollector):
 
 
 class _ProgramPageFetcher:
-    """每個執行緒建立獨立 HTTP client，避免共享非同步安全連線狀態。"""
+    """每個工作執行緒重用一個 HTTP client，降低 TLS 與連線壓力。"""
 
     def __init__(self, timeout_seconds: float, user_agent: str, workers: int) -> None:
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
         self.workers = workers
         self.fallback_used = False
-        self._fallback_lock = Lock()
 
-    # 單頁下載同樣使用獨立 client，適用入口頁與 next-only 列表。
+    # 入口頁及 next-only 頁面維持單頁下載。
     def fetch_one(self, url: str) -> str:
         with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
             html = _fetch_text_with_retry(client, url)
-            self._record_fallback(client)
+            self.fallback_used = self.fallback_used or bool(client.fallback_hosts)
             return html
 
-    # 已知頁碼清單以固定工作數並行，結果依輸入 URL 順序回傳。
+    # URL 分塊後平行處理；每塊內循序並共用同一個 HTTP client。
     def fetch_many(
         self,
         urls: tuple[str, ...],
     ) -> tuple[dict[str, str], dict[str, str]]:
         pages: dict[str, str] = {}
         errors: dict[str, str] = {}
-        with ThreadPoolExecutor(max_workers=min(self.workers, len(urls))) as executor:
-            futures = {executor.submit(self.fetch_one, url): url for url in urls}
+        chunks = _chunk_urls(urls, self.workers)
+        with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+            futures = [executor.submit(self._fetch_chunk, chunk) for chunk in chunks]
             for future in as_completed(futures):
-                url = futures[future]
-                try:
-                    pages[url] = future.result()
-                except Exception as error:
-                    errors[url] = _error_text(error)
+                chunk_pages, chunk_errors, fallback_used = future.result()
+                pages.update(chunk_pages)
+                errors.update(chunk_errors)
+                self.fallback_used = self.fallback_used or fallback_used
         return (
             {url: pages[url] for url in urls if url in pages},
             {url: errors[url] for url in urls if url in errors},
         )
 
-    def _record_fallback(self, client: DetailSafeHttpClient) -> None:
-        if not client.fallback_hosts:
-            return
-        with self._fallback_lock:
-            self.fallback_used = True
+    # 單一工作執行緒只建立一次 client，逐頁重用 keep-alive 連線。
+    def _fetch_chunk(
+        self,
+        urls: tuple[str, ...],
+    ) -> tuple[dict[str, str], dict[str, str], bool]:
+        pages: dict[str, str] = {}
+        errors: dict[str, str] = {}
+        with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
+            for url in urls:
+                try:
+                    pages[url] = _fetch_text_with_retry(client, url)
+                except Exception as error:
+                    errors[url] = _error_text(error)
+            fallback_used = bool(client.fallback_hosts)
+        return pages, errors, fallback_used
+
+
+# 以輪詢方式分配 URL，讓前後頁平均散佈於各工作執行緒。
+def _chunk_urls(urls: tuple[str, ...], workers: int) -> tuple[tuple[str, ...], ...]:
+    worker_count = min(workers, len(urls))
+    return tuple(tuple(urls[index::worker_count]) for index in range(worker_count))
 
 
 # 彙整所有入口分頁結果，完整模式若任一網站缺頁即標示 partial。
@@ -181,7 +195,7 @@ def _build_diagnostic(
     )
 
 
-# 建立 partial 的實際網址與停止原因，避免只顯示模糊來源數量。
+# 建立 partial 的網址、停止原因與前三筆實際失敗頁。
 def _diagnostic_error(
     unresolved_count: int,
     partial: list[tuple[str, ListingCrawlResult]],
@@ -191,12 +205,19 @@ def _diagnostic_error(
     if unresolved_count:
         parts.append(f"可靠入口待確認 {unresolved_count}")
     if partial:
-        detail = "｜".join(f"{url}（{item.stop_reason}）" for url, item in partial[:8])
+        detail = "｜".join(_partial_detail(url, item) for url, item in partial[:8])
         parts.append(f"分頁未完整 {len(partial)}：{detail}")
     if failed:
         detail = "｜".join(f"{url}（{';'.join(item.errors)}）" for url, item in failed[:8])
         parts.append(f"入口抓取失敗 {len(failed)}：{detail}")
     return "；".join(parts)
+
+
+# 將 partial 原因及最多三個錯誤壓縮成單站診斷。
+def _partial_detail(url: str, item: ListingCrawlResult) -> str:
+    errors = "；".join(item.errors[:3])
+    suffix = f"；{errors}" if errors else ""
+    return f"{url}（{item.stop_reason}{suffix}）"
 
 
 def _watch_stop_reason(completeness: str) -> str:
@@ -221,7 +242,7 @@ def _append_unique(
 
 
 def _fetch_text_with_retry(client: DetailSafeHttpClient, url: str) -> str:
-    """只對 timeout／transport error 進行一次有限重試。"""
+    """只對 timeout／transport error 進行兩次有限重試。"""
 
     last_error: Exception | None = None
     for attempt in range(_FETCH_ATTEMPTS):
@@ -230,7 +251,7 @@ def _fetch_text_with_retry(client: DetailSafeHttpClient, url: str) -> str:
         except (httpx.TimeoutException, httpx.TransportError) as error:
             last_error = error
             if attempt + 1 < _FETCH_ATTEMPTS:
-                time.sleep(0.5)
+                time.sleep(0.5 * (attempt + 1))
     assert last_error is not None
     raise last_error
 
