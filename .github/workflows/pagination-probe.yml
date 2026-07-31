@@ -1,0 +1,78 @@
+name: Pagination probe
+
+on:
+  push:
+    branches:
+      - "fix/tun-pagination-probe"
+    paths:
+      - ".github/pagination-probe-trigger"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --quiet -r requirements.txt
+
+      - name: Inspect pagination markup
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+
+          from src.collectors.http_client import DetailSafeHttpClient
+          from src.collectors.listing_utils import (
+              detect_total_pages,
+              dyna_page_urls,
+              next_page_url,
+              numbered_page_urls,
+          )
+
+          urls = (
+              "https://student.nutc.edu.tw/p/403-1020-34-2.php?Lang=zh-tw",
+              "https://pyjh.chc.edu.tw/posts/1238",
+              "https://www.ht.org.tw/",
+              "https://www.chtf.org.tw/project/693",
+          )
+          patterns = (
+              r".{0,100}totalPage.{0,140}",
+              r".{0,100}(?:pageSize|pageRows|listRows|pageCount|totalRows).{0,140}",
+              r".{0,100}urlPrefix.{0,180}",
+              r".{0,100}共.{0,80}頁.{0,100}",
+          )
+
+          with DetailSafeHttpClient(20.0, "ScholarshipAgent-pagination-probe") as client:
+              for url in urls:
+                  print("=" * 100)
+                  print(f"URL={url}")
+                  html = client.get_text(url)
+                  print(f"HTML_LENGTH={len(html)}")
+                  for pattern in patterns:
+                      matches = re.findall(pattern, html, re.IGNORECASE | re.DOTALL)
+                      normalized = [" ".join(str(item).split())[:320] for item in matches[:6]]
+                      print(f"PATTERN={pattern}")
+                      print(f"MATCHES={normalized}")
+                  dyna = dyna_page_urls(html, url)
+                  numbered = numbered_page_urls(html, url)
+                  print(f"DETECTED={detect_total_pages(html, url)}")
+                  print(f"DYNA_COUNT={len(dyna)}")
+                  print(f"DYNA_HEAD={dyna[:3]}")
+                  print(f"DYNA_TAIL={dyna[-3:]}")
+                  print(f"NUMBERED={numbered[:20]}")
+                  print(f"NEXT={next_page_url(html, url)}")
+          PY
