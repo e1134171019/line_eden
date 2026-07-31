@@ -65,11 +65,13 @@ def test_multi_source_keeps_other_sources_when_one_fails() -> None:
     ])
 
     records = collector.collect()
+    lines = collector.summary_lines()
 
     assert records == [item]
     assert len(collector.failures) == 1
     assert collector.failures[0].source == "故障官方來源"
-    assert "正常官方來源：讀取 1 筆，保留 1 筆" in collector.summary_lines()
+    assert lines[0].startswith("來源網站：設定 2，成功產生資料 1")
+    assert "正常官方來源：完整性未知；跨來源去重後保留 1/1 筆" in lines
 
 
 # 五個來源全部故障時不得回傳空清單假裝成功。
