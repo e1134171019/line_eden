@@ -18,6 +18,7 @@ _DYNA_URL_PREFIX_PATTERN = re.compile(
     r"urlPrefix\s*:\s*['\"](?P<prefix>[^'\"]*PAGE[^'\"]*)['\"]"
 )
 _DYNA_TOTAL_PAGE_PATTERN = re.compile(r"totalPage\s*:\s*(?P<count>\d+)")
+_DYNA_CURRENT_PAGE_PATTERN = re.compile(r"currentPage\s*:\s*(?P<number>\d+)")
 _NEXT_LABELS = frozenset({"下一頁", "下頁", "next", ">", "»"})
 _PAGE_QUERY_KEYS = frozenset({"page", "pageno", "page_no", "pageindex", "page_index"})
 
@@ -44,16 +45,16 @@ def detect_total_pages(html: str, base_url: str = "") -> int:
     explicit = _explicit_page_count(soup)
     if explicit is not None:
         return explicit
+    total_match = _DYNA_TOTAL_PAGE_PATTERN.search(html)
+    if total_match is not None:
+        return int(total_match.group("count"))
     numbers = [1]
     if base_url:
         numbers.extend(number for number, _ in numbered_page_urls(html, base_url))
-    dyna = dyna_page_urls(html, base_url)
-    if dyna:
-        numbers.append(dyna[-1][0])
     return max(numbers)
 
 
-# 解析 DYNA CMS；頁面明示總頁數時不得誤用資料總筆數。
+# 解析 DYNA CMS；依 currentPage 產生目前頁以外的所有分頁網址。
 def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
     prefix_match = _DYNA_URL_PREFIX_PATTERN.search(html)
     total_match = _DYNA_TOTAL_PAGE_PATTERN.search(html)
@@ -62,11 +63,17 @@ def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
     soup = BeautifulSoup(html, "html.parser")
     explicit = _explicit_page_count(soup)
     total = explicit if explicit is not None else int(total_match.group("count"))
+    current_match = _DYNA_CURRENT_PAGE_PATTERN.search(html)
+    current = int(current_match.group("number")) if current_match else 1
     prefix = _prefer_base_https(
         base_url,
         urljoin(base_url, prefix_match.group("prefix")),
     )
-    return [(page, prefix.replace("PAGE", str(page))) for page in range(2, total + 1)]
+    return [
+        (page, prefix.replace("PAGE", str(page)))
+        for page in range(1, total + 1)
+        if page != current
+    ]
 
 
 # 找出頁面中的數字分頁連結，依頁碼排序。
