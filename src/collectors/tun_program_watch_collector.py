@@ -3,16 +3,21 @@
 from collections import defaultdict
 from datetime import date
 import re
+import time
 import unicodedata
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
+import httpx
 
 from src.catalogs.tun_2025_program_catalog import (
     TUN_2025_PROGRAMS,
     ScholarshipProgramWatch,
-    pending_programs,
-    verified_programs,
+)
+from src.catalogs.tun_program_sources import (
+    core_covered_programs,
+    monitorable_programs,
+    unresolved_programs,
 )
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectorDiagnostic
@@ -28,10 +33,11 @@ _ROC_DATE = re.compile(
     r"(?P<month>\d{1,2})\s*月\s*(?P<day>\d{1,2})\s*日?"
 )
 _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
+_FETCH_ATTEMPTS = 2
 
 
 class TunProgramWatchCollector(BaseCollector):
-    """監測 TUN 彙整的 38 項方案，但只採信已驗證的官方網站。"""
+    """監測 TUN 彙整的 38 項方案，但不採信 TUN 舊資格與期限。"""
 
     source_label = "TUN 38方案官方監測"
     empty_is_healthy = True
@@ -42,12 +48,13 @@ class TunProgramWatchCollector(BaseCollector):
         self.diagnostic = CollectorDiagnostic()
 
     def collect(self) -> list[Scholarship]:
-        groups = _group_programs_by_url(verified_programs())
+        groups = _group_programs_by_url(monitorable_programs())
+        core_covered = core_covered_programs()
         records: list[Scholarship] = []
         seen_records: set[str] = set()
         pages_requested = 0
         pages_succeeded = 0
-        successful_programs = 0
+        successful_programs = len(core_covered)
         raw_matches = 0
         failures: list[str] = []
         fallback_used = False
@@ -56,7 +63,7 @@ class TunProgramWatchCollector(BaseCollector):
             for official_url, programs in groups.items():
                 pages_requested += 1
                 try:
-                    html = client.get_text(official_url)
+                    html = _fetch_text_with_retry(client, official_url)
                 except Exception as error:
                     program_ids = ",".join(item.program_id for item in programs)
                     message = " ".join(str(error).split())[:100]
@@ -73,14 +80,14 @@ class TunProgramWatchCollector(BaseCollector):
                     records.append(item)
             fallback_used = bool(client.fallback_hosts)
 
-        pending_count = len(pending_programs())
-        complete = pending_count == 0 and not failures
+        unresolved_count = len(unresolved_programs())
+        complete = unresolved_count == 0 and not failures
         error_parts: list[str] = []
-        if pending_count:
-            error_parts.append(f"官方入口待確認 {pending_count}")
+        if unresolved_count:
+            error_parts.append(f"可靠入口待確認 {unresolved_count}")
         if failures:
             error_parts.append(
-                f"官方頁面抓取失敗 {len(failures)}：" + "｜".join(failures)
+                f"官方／正式轉載頁抓取失敗 {len(failures)}：" + "｜".join(failures)
             )
         self.diagnostic = CollectorDiagnostic(
             completeness="complete" if complete else "partial",
@@ -97,6 +104,21 @@ class TunProgramWatchCollector(BaseCollector):
             child_sources_succeeded=successful_programs,
         )
         return records
+
+
+def _fetch_text_with_retry(client: DetailSafeHttpClient, url: str) -> str:
+    """只對 timeout／transport error 進行一次有限重試。"""
+
+    last_error: Exception | None = None
+    for attempt in range(_FETCH_ATTEMPTS):
+        try:
+            return client.get_text(url)
+        except (httpx.TimeoutException, httpx.TransportError) as error:
+            last_error = error
+            if attempt + 1 < _FETCH_ATTEMPTS:
+                time.sleep(0.5)
+    assert last_error is not None
+    raise last_error
 
 
 def _group_programs_by_url(
