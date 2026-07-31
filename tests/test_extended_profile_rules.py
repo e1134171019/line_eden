@@ -63,7 +63,7 @@ def test_confirmed_profile_meets_full_basic_requirements() -> None:
     assert status == ELIGIBLE, reason
     assert "中華民國國籍" in reason
     assert "60 學分" in reason
-    assert "新莊區" in reason
+    assert "戶籍條件符合" in reason
 
 
 def test_required_special_status_is_ineligible() -> None:
