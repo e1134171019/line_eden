@@ -83,6 +83,36 @@ def test_classifies_non_applicable_program_notice_as_policy() -> None:
     assert kind == POLICY
 
 
+# 單獨行政契約書是獲獎後程序文件，不是申請公告。
+def test_classifies_standalone_contract_as_information() -> None:
+    kind = classify_notice(
+        "115年教育部歐盟獎學金行政契約書",
+        "說明受獎生權利義務與違約責任。",
+    )
+
+    assert kind == INFORMATION
+
+
+# 同時包含甄試簡章與契約書時仍保留為申請公告。
+def test_keeps_brochure_and_contract_bundle_as_application() -> None:
+    kind = classify_notice(
+        "115年留學獎學金甄試簡章及行政契約書",
+        "申請資格及截止日期詳如簡章。",
+    )
+
+    assert kind == APPLICATION
+
+
+# 尚待公布的預告訊息不是當期申請公告。
+def test_classifies_future_publication_notice_as_information() -> None:
+    kind = classify_notice(
+        "115年留學獎學金甄試簡章將於114年12月底公布",
+        "目前尚未開放申請。",
+    )
+
+    assert kind == INFORMATION
+
+
 # 驗證沒有足夠訊號的公告採 unknown。
 def test_classifies_unknown_notice() -> None:
     kind = classify_notice("轉知相關消息", "詳細內容請參閱網站。")
