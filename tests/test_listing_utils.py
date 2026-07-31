@@ -69,6 +69,26 @@ def test_dyna_same_host_pages_keep_https() -> None:
     ]
 
 
+# 入口是第 2 頁時，必須補抓第 1 頁並排除已取得的第 2 頁。
+def test_dyna_current_page_generates_all_other_pages() -> None:
+    base_url = "https://student.example.edu/p/403-1000-20-2.php"
+    html = """
+    <p>共3頁</p>
+    <script>
+    var option = {
+      currentPage: 2,
+      urlPrefix: 'http://student.example.edu/p/403-1000-20-PAGE.php',
+      totalPage: 3
+    };
+    </script>
+    """
+
+    assert dyna_page_urls(html, base_url) == [
+        (1, "https://student.example.edu/p/403-1000-20-1.php"),
+        (3, "https://student.example.edu/p/403-1000-20-3.php"),
+    ]
+
+
 # 不同網域的 HTTP URL 不得因 HTTPS 入口而被改寫。
 def test_dyna_external_host_keeps_declared_scheme() -> None:
     base_url = "https://student.example.edu/list"
