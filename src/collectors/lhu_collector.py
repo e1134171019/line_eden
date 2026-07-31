@@ -165,7 +165,7 @@ class LhuCollector(BaseCollector):
             raise RuntimeError(error)
         return records
 
-    # 先使用 DYNA script 的 urlPrefix，再補一般數字頁碼與 next 連結。
+    # 龍華已有 canonical 首頁；後續 DYNA 頁不得再加入第 1 頁別名。
     def _enqueue_lhu_pages(
         self,
         queue: deque[str],
@@ -173,8 +173,13 @@ class LhuCollector(BaseCollector):
         html: str,
         current_url: str,
     ) -> None:
+        dyna_candidates = [
+            (page, url)
+            for page, url in dyna_page_urls(html, current_url)
+            if page != 1
+        ]
         candidates = [
-            *dyna_page_urls(html, current_url),
+            *dyna_candidates,
             *numbered_page_urls(html, current_url),
         ]
         for _, url in candidates:
