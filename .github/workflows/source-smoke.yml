@@ -38,6 +38,9 @@ jobs:
           set +e
           python -m scripts.source_audit > source-smoke.log 2>&1
           exit_code=$?
+          if [[ "$exit_code" -ne 0 ]]; then
+            python -m scripts.source_probe >> source-smoke.log 2>&1
+          fi
           set -e
           cat source-smoke.log
           echo "SOURCE_SMOKE_EXIT_CODE=$exit_code" >> "$GITHUB_ENV"
