@@ -108,3 +108,36 @@ def test_report_explains_when_no_eligible_items() -> None:
     assert "本次稽核公告：1" in message
     assert "目前沒有明確符合你背景且仍可申請的公告。" in message
     assert "LINE Messaging API 測試成功" not in message
+
+
+def test_report_lists_structured_divergence_and_error_details() -> None:
+    changed = _record("review", "Structured 判斷不同的公告")
+    changed.structured_shadow = SimpleNamespace(
+        changed=True,
+        legacy_status="review",
+        structured_status="ineligible",
+        structured_reason="公告明確限定研究生。",
+    )
+    changed.shadow_status = "compared"
+    changed.structured_gemini_diagnostic = None
+
+    failed = _record("review", "Gemini 暫時失敗公告")
+    failed.structured_shadow = None
+    failed.shadow_status = "text_error"
+    failed.structured_gemini_diagnostic = SimpleNamespace(
+        message="ServerError: 503 temporarily unavailable"
+    )
+    result = _result(
+        records=[changed, failed],
+        structured_evaluated_count=1,
+        structured_changed_count=1,
+        structured_error_count=1,
+    )
+
+    message = build_report_message(result)
+
+    assert "Structured 分歧明細：" in message
+    assert "review→ineligible" in message
+    assert "公告明確限定研究生" in message
+    assert "Structured 抽取錯誤：" in message
+    assert "503 temporarily unavailable" in message

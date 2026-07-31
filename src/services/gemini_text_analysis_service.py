@@ -3,11 +3,16 @@
 from dataclasses import dataclass
 from hashlib import sha256
 
+from config import GEMINI_MAX_ATTEMPTS, GEMINI_RETRY_BASE_SECONDS
 from src.ai.gemini_requirement_extractor import (
     GeminiApiResult,
     GeminiRequirementExtraction,
 )
-from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtractor
+from src.ai.gemini_retry import run_with_retry
+from src.ai.gemini_text_requirement_extractor import (
+    GeminiTextRequirementExtractor,
+    PreparedGeminiText,
+)
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult
 from src.repositories.gemini_cache_repository import GeminiCacheEntry, GeminiCacheRepository
 from src.services.gemini_fallback_service import (
@@ -46,21 +51,22 @@ class GeminiTextAnalysisService:
         model = self.extractor.extractor.model
         cache_key = _cache_key(prepared.content_hash, model, self.prompt_version)
         cached = self.cache.get(cache_key)
-        if cached is not None:
+        if cached is not None and cached.status == "success":
             return self._cached_result(cached)
+        if cached is not None:
+            self.cache.delete(cache_key)
         source_url = fetch_result.source.final_url or fetch_result.source.requested_url
         if not self.limiter.has_capacity():
             return self._deferred(source_url, model)
         try:
-            estimated = self.extractor.count_tokens(prepared)
+            estimated = self._count_tokens(prepared)
         except Exception as error:
             return self._failure(source_url, model, error)
         if not self.limiter.reserve(estimated):
             return self._deferred(source_url, model)
         try:
-            api_result = self.extractor.extract(prepared)
+            api_result = self._extract(prepared)
         except Exception as error:
-            self._save_error(cache_key, prepared.content_hash, source_url, model, estimated, error)
             return self._failure(source_url, model, error)
         self.limiter.record_actual(
             estimated,
@@ -79,21 +85,24 @@ class GeminiTextAnalysisService:
         )
         return GeminiTextAnalysisResult(api_result.extraction, diagnostic)
 
+    # count_tokens 也可能遇到 429、逾時或服務端錯誤，套用相同重試策略。
+    def _count_tokens(self, prepared: PreparedGeminiText) -> int:
+        return run_with_retry(
+            lambda: self.extractor.count_tokens(prepared),
+            GEMINI_MAX_ATTEMPTS,
+            GEMINI_RETRY_BASE_SECONDS,
+        )
+
+    # 生成只對可恢復錯誤重試；Schema 或內容錯誤立即回報。
+    def _extract(self, prepared: PreparedGeminiText) -> GeminiApiResult:
+        return run_with_retry(
+            lambda: self.extractor.extract(prepared),
+            GEMINI_MAX_ATTEMPTS,
+            GEMINI_RETRY_BASE_SECONDS,
+        )
+
     def _cached_result(self, entry: GeminiCacheEntry) -> GeminiTextAnalysisResult:
         self.limiter.record_cache_hit()
-        if entry.status != "success":
-            diagnostic = GeminiAnalysisDiagnostic(
-                "text_cached_error",
-                entry.source_url,
-                entry.model,
-                True,
-                0,
-                0,
-                0,
-                0,
-                entry.error or "先前 Gemini 文字抽取失敗，使用錯誤快取。",
-            )
-            return GeminiTextAnalysisResult(None, diagnostic)
         extraction = GeminiRequirementExtraction.model_validate_json(entry.extracted_json)
         diagnostic = _diagnostic(extraction, entry.source_url, entry.model, True, 0, 0, 0)
         return GeminiTextAnalysisResult(extraction, diagnostic)
@@ -119,31 +128,6 @@ class GeminiTextAnalysisService:
                 api_result.output_tokens,
                 api_result.total_tokens,
                 "",
-            )
-        )
-
-    def _save_error(
-        self,
-        cache_key: str,
-        content_hash: str,
-        source_url: str,
-        model: str,
-        tokens: int,
-        error: Exception,
-    ) -> None:
-        self.cache.save(
-            GeminiCacheEntry(
-                cache_key,
-                content_hash,
-                source_url,
-                model,
-                self.prompt_version,
-                "error",
-                "",
-                tokens,
-                0,
-                tokens,
-                _error_text(error),
             )
         )
 

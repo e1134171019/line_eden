@@ -92,3 +92,13 @@ class GeminiCacheRepository:
             cursor = conn.execute(query, values)
             conn.commit()
         return max(cursor.rowcount, 0)
+
+    # 移除失敗快取，使下一次稽核能重新嘗試同一文件。
+    def delete(self, cache_key: str) -> int:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM gemini_document_cache WHERE cache_key = ?",
+                [cache_key],
+            )
+            conn.commit()
+        return max(cursor.rowcount, 0)
