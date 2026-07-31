@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ from src.ai.gemini_requirement_extractor import (
 )
 from src.ai.gemini_text_requirement_extractor import PreparedGeminiText
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
-from src.repositories.gemini_cache_repository import GeminiCacheRepository
+from src.repositories.gemini_cache_repository import GeminiCacheEntry, GeminiCacheRepository
 from src.services.gemini_fallback_service import GeminiUsageLimiter
 from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
 
@@ -50,6 +51,11 @@ def _fetch_result() -> DetailFetchResult:
         10,
     )
     return DetailFetchResult("正文", source, tuple(), 0, body_text="正文")
+
+
+def _cache_key(prompt_version: str) -> str:
+    payload = f"text:{'a' * 64}:test-model:{prompt_version}".encode("utf-8")
+    return sha256(payload).hexdigest()
 
 
 def test_text_analysis_uses_persistent_cache(tmp_path: Path) -> None:
@@ -97,3 +103,39 @@ def test_text_analysis_defers_without_writing_error_cache(tmp_path: Path) -> Non
     assert result.extraction is None
     assert result.diagnostic.status == "budget_deferred"
     assert extractor.calls == 0
+
+
+def test_text_analysis_retries_previously_cached_error(tmp_path: Path) -> None:
+    extractor = FakeTextExtractor()
+    cache = GeminiCacheRepository(tmp_path / "gemini.db")
+    prompt_version = "text-v1"
+    key = _cache_key(prompt_version)
+    cache.save(
+        GeminiCacheEntry(
+            key,
+            "a" * 64,
+            "https://example.com/item",
+            "test-model",
+            prompt_version,
+            "error",
+            "",
+            100,
+            0,
+            100,
+            "RuntimeError: temporary failure",
+        )
+    )
+    service = GeminiTextAnalysisService(
+        extractor,
+        cache,
+        GeminiUsageLimiter(3, 12000),
+        prompt_version,
+    )
+
+    result = service.analyze("獎學金", _fetch_result())
+
+    assert result.extraction is not None
+    assert result.diagnostic.status == "text_success"
+    assert extractor.calls == 1
+    assert cache.get(key) is not None
+    assert cache.get(key).status == "success"  # type: ignore[union-attr]
