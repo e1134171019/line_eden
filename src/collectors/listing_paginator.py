@@ -69,7 +69,7 @@ def crawl_listing_pages(
             break
         fingerprints.add(fingerprint)
         pages.append(ListingPage(url, html))
-        detected = max(detected, detect_total_pages(html), len(visited))
+        detected = max(detected, detect_total_pages(html, url), len(visited))
         if collection_mode is CollectionMode.INCREMENTAL:
             stop_reason = "incremental_first_page"
             break
