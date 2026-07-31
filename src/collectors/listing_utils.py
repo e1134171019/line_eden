@@ -13,6 +13,7 @@ _DATE_PATTERNS = (
 )
 _PAGE_COUNT_PATTERN = re.compile(r"共\s*(?P<count>\d+)\s*頁")
 _PAGE_PATH_PATTERN = re.compile(r"/page/(?P<number>\d+)(?:/|$)")
+_PAGE_SUFFIX_PATTERN = re.compile(r"/page/\d+$")
 _NEXT_LABELS = frozenset({"下一頁", "下頁", "next", ">", "»"})
 
 
@@ -66,7 +67,7 @@ def next_page_url(html: str, base_url: str) -> str | None:
     soup = BeautifulSoup(html, "html.parser")
     for link in soup.find_all("a", href=True):
         label = " ".join(link.get_text(" ", strip=True).split()).casefold()
-        rel = {str(value).casefold() for value in link.get("rel", [])}
+        rel = _rel_values(link)
         if label not in _NEXT_LABELS and "next" not in rel:
             continue
         href = str(link.get("href", "")).strip()
@@ -76,6 +77,16 @@ def next_page_url(html: str, base_url: str) -> str | None:
         if _same_listing_host_and_path(base_url, url):
             return url
     return None
+
+
+# 正規化 BeautifulSoup 的 rel 屬性。
+def _rel_values(link: Tag) -> set[str]:
+    value = link.get("rel")
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        return {part.casefold() for part in value.split()}
+    return {str(part).casefold() for part in value}
 
 
 # 從連結文字或 /page/N 路徑取得頁碼。
@@ -98,4 +109,9 @@ def _same_listing_host_and_path(base_url: str, candidate_url: str) -> bool:
     candidate_path = candidate.path.rstrip("/")
     if candidate_path == base_path:
         return True
-    return candidate_path.startswith(f"{base_path}/page/")
+    return _listing_root(base_path) == _listing_root(candidate_path)
+
+
+# 移除 /page/N 後比較同一分頁列表根路徑。
+def _listing_root(path: str) -> str:
+    return _PAGE_SUFFIX_PATTERN.sub("", path)
