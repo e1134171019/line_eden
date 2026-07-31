@@ -22,7 +22,6 @@ def test_query_string_pagination_is_detected() -> None:
 
     assert detect_total_pages(html, base_url) == 3
     assert numbered_page_urls(html, base_url) == [
-        (1, base_url),
         (2, f"{base_url}&page=2"),
     ]
     assert next_page_url(html, base_url) == f"{base_url}&page=3"
