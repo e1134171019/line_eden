@@ -5,10 +5,7 @@ import re
 
 import httpx
 
-from src.collectors.http_client import (
-    build_legacy_compatible_ssl_context,
-    can_use_legacy_context,
-)
+from src.collectors.http_client import DetailSafeHttpClient
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
     ExtractedAttachment,
@@ -70,12 +67,7 @@ class AnnouncementDetailFetcher:
             return self._source_failure(scholarship.source_url, error)
 
     def _fetch_result(self, scholarship: Scholarship) -> DetailFetchResult:
-        headers = {"User-Agent": self.user_agent}
-        with httpx.Client(
-            headers=headers,
-            timeout=self.timeout_seconds,
-            follow_redirects=True,
-        ) as client:
+        with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
             requested_url = scholarship.source_url
             resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
@@ -113,7 +105,7 @@ class AnnouncementDetailFetcher:
 
     def _html_result(
         self,
-        client: httpx.Client,
+        client: DetailSafeHttpClient,
         resource: DownloadedResource,
         title: str,
         requested_url: str,
@@ -241,7 +233,7 @@ class AnnouncementDetailFetcher:
 
     def _attachment_result(
         self,
-        client: httpx.Client,
+        client: DetailSafeHttpClient,
         requested_url: str,
         attachment_role: str = "unknown",
         attachment_label: str = "",
@@ -360,24 +352,8 @@ class AnnouncementDetailFetcher:
             self.max_pdf_pages,
         )
 
-    def _download(self, client: httpx.Client, url: str) -> DownloadedResource:
-        try:
-            return self._download_once(client, url)
-        except httpx.TransportError as error:
-            if not can_use_legacy_context(url, error):
-                raise
-        headers = {"User-Agent": self.user_agent}
-        with httpx.Client(
-            headers=headers,
-            timeout=self.timeout_seconds,
-            follow_redirects=True,
-            verify=build_legacy_compatible_ssl_context(),
-        ) as legacy_client:
-            resource = self._download_once(legacy_client, url)
-        return replace(resource, ssl_compatibility_fallback=True)
-
-    def _download_once(self, client: httpx.Client, url: str) -> DownloadedResource:
-        with client.stream("GET", url) as response:
+    def _download(self, client: DetailSafeHttpClient, url: str) -> DownloadedResource:
+        with client.stream(url) as (response, fallback):
             response.raise_for_status()
             self._validate_content_length(response)
             content = self._read_limited(response)
@@ -385,6 +361,7 @@ class AnnouncementDetailFetcher:
                 str(response.url),
                 response.headers.get("Content-Type", ""),
                 content,
+                fallback,
             )
 
     def _validate_content_length(self, response: httpx.Response) -> None:
