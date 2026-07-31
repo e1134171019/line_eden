@@ -54,6 +54,7 @@ LINE_SUMMARY_BATCH_SIZE = 5
 NOTIFY_REVIEW_ITEMS = _env_bool("NOTIFY_REVIEW_ITEMS", False)
 HTTP_TIMEOUT_SECONDS = 10.0
 HTTP_USER_AGENT = "ScholarshipAgent/3.2 (+https://www.lhu.edu.tw/)"
+SOURCE_MAX_PAGES = _env_int("SOURCE_MAX_PAGES", 20)
 MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
@@ -111,9 +112,10 @@ def validate_gemini_settings() -> None:
         ("GEMINI_MAX_INPUT_TOKENS_PER_DOCUMENT", GEMINI_MAX_INPUT_TOKENS_PER_DOCUMENT),
         ("GEMINI_MAX_OUTPUT_TOKENS", GEMINI_MAX_OUTPUT_TOKENS),
         ("GEMINI_MAX_PAGES_PER_DOCUMENT", GEMINI_MAX_PAGES_PER_DOCUMENT),
+        ("SOURCE_MAX_PAGES", SOURCE_MAX_PAGES),
     )
     invalid = [name for name, value in budgets if value < 1]
     if invalid:
-        raise RuntimeError(f"Gemini 預算設定必須大於 0：{', '.join(invalid)}")
+        raise RuntimeError(f"Gemini 與來源上限設定必須大於 0：{', '.join(invalid)}")
     if GEMINI_MAX_INPUT_TOKENS_PER_DOCUMENT > GEMINI_MAX_INPUT_TOKENS_PER_RUN:
         raise RuntimeError("單份 Gemini input token 上限不得高於單次執行上限")
