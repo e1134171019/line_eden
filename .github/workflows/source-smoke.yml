@@ -1,0 +1,57 @@
+name: Source completeness smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "fix/**"
+      - "feat/**"
+    paths:
+      - ".github/source-smoke-trigger"
+
+permissions:
+  contents: read
+
+jobs:
+  source-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install --quiet -r requirements.txt
+
+      - name: Run five-source completeness audit
+        shell: bash
+        run: |
+          set +e
+          python scripts/source_audit.py > source-smoke.log 2>&1
+          exit_code=$?
+          set -e
+          cat source-smoke.log
+          echo "SOURCE_SMOKE_EXIT_CODE=$exit_code" >> "$GITHUB_ENV"
+
+      - name: Upload source smoke log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-smoke-log-${{ github.run_id }}
+          path: source-smoke.log
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Return smoke exit code
+        if: always()
+        shell: bash
+        run: exit "${SOURCE_SMOKE_EXIT_CODE:-1}"
