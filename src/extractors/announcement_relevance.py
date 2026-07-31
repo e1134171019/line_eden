@@ -4,6 +4,7 @@ import re
 import unicodedata
 
 _RELEVANCE_SIGNALS = (
+    "申請",
     "申請資格",
     "申請對象",
     "申請期間",
@@ -18,6 +19,7 @@ _RELEVANCE_SIGNALS = (
     "學年度",
     "學年",
 )
+_TITLE_AWARD_MARKERS = ("獎學金", "助學金", "獎助學金", "補助")
 _GENERIC_TITLE_TERMS = (
     "獎學金",
     "助學金",
@@ -50,6 +52,9 @@ def content_matches_announcement(
         return True
     hits = sum(signal in combined for signal in _RELEVANCE_SIGNALS)
     if hits >= 2:
+        return True
+    title_hit = any(marker in title for marker in _TITLE_AWARD_MARKERS)
+    if title_hit and hits >= 1:
         return True
     anchors = _title_anchors(title)
     return hits >= 1 and any(anchor in normalized_content for anchor in anchors)
