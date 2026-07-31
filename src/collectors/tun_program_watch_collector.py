@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 import re
+from threading import Lock
 import time
 import unicodedata
 from urllib.parse import urljoin
@@ -38,7 +40,7 @@ _FETCH_ATTEMPTS = 2
 
 
 class TunProgramWatchCollector(BaseCollector):
-    """監測 38 項方案；完整稽核翻頁，每日模式只抓入口頁。"""
+    """監測 38 項方案；完整稽核有限併發翻頁，每日只抓入口頁。"""
 
     source_label = "TUN 38方案官方監測"
     empty_is_healthy = True
@@ -49,11 +51,15 @@ class TunProgramWatchCollector(BaseCollector):
         user_agent: str,
         collection_mode: CollectionMode = CollectionMode.INCREMENTAL,
         max_pages: int = 20,
+        fetch_workers: int = 1,
     ) -> None:
+        if fetch_workers < 1:
+            raise ValueError("fetch_workers 必須大於 0。")
         self.timeout_seconds = timeout_seconds
         self.user_agent = user_agent
         self.collection_mode = collection_mode
         self.max_pages = max_pages
+        self.fetch_workers = fetch_workers
         self.diagnostic = CollectorDiagnostic()
 
     def collect(self) -> list[Scholarship]:
@@ -64,37 +70,84 @@ class TunProgramWatchCollector(BaseCollector):
         crawls: list[tuple[str, ListingCrawlResult]] = []
         successful_programs = len(core_covered)
         raw_matches = 0
-        fallback_used = False
+        fetcher = _ProgramPageFetcher(
+            self.timeout_seconds,
+            self.user_agent,
+            self.fetch_workers,
+        )
 
-        with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
-            for official_url, programs in groups.items():
-                crawl = crawl_listing_pages(
-                    official_url,
-                    self.collection_mode,
-                    self.max_pages,
-                    lambda url: _fetch_text_with_retry(client, url),
+        for official_url, programs in groups.items():
+            crawl = crawl_listing_pages(
+                official_url,
+                self.collection_mode,
+                self.max_pages,
+                fetcher.fetch_one,
+                fetcher.fetch_many,
+            )
+            crawls.append((official_url, crawl))
+            if crawl.pages:
+                successful_programs += len(programs)
+            for page in crawl.pages:
+                found, matched = _extract_program_notices(
+                    page.html,
+                    page.url,
+                    programs,
                 )
-                crawls.append((official_url, crawl))
-                if crawl.pages:
-                    successful_programs += len(programs)
-                for page in crawl.pages:
-                    found, matched = _extract_program_notices(
-                        page.html,
-                        page.url,
-                        programs,
-                    )
-                    raw_matches += matched
-                    _append_unique(records, seen_records, found)
-            fallback_used = bool(client.fallback_hosts)
+                raw_matches += matched
+                _append_unique(records, seen_records, found)
 
         self.diagnostic = _build_diagnostic(
             crawls,
             len(records),
             raw_matches,
             successful_programs,
-            fallback_used,
+            fetcher.fallback_used,
         )
         return records
+
+
+class _ProgramPageFetcher:
+    """每個執行緒建立獨立 HTTP client，避免共享非同步安全連線狀態。"""
+
+    def __init__(self, timeout_seconds: float, user_agent: str, workers: int) -> None:
+        self.timeout_seconds = timeout_seconds
+        self.user_agent = user_agent
+        self.workers = workers
+        self.fallback_used = False
+        self._fallback_lock = Lock()
+
+    # 單頁下載同樣使用獨立 client，適用入口頁與 next-only 列表。
+    def fetch_one(self, url: str) -> str:
+        with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
+            html = _fetch_text_with_retry(client, url)
+            self._record_fallback(client)
+            return html
+
+    # 已知頁碼清單以固定工作數並行，結果依輸入 URL 順序回傳。
+    def fetch_many(
+        self,
+        urls: tuple[str, ...],
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        pages: dict[str, str] = {}
+        errors: dict[str, str] = {}
+        with ThreadPoolExecutor(max_workers=min(self.workers, len(urls))) as executor:
+            futures = {executor.submit(self.fetch_one, url): url for url in urls}
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    pages[url] = future.result()
+                except Exception as error:
+                    errors[url] = _error_text(error)
+        return (
+            {url: pages[url] for url in urls if url in pages},
+            {url: errors[url] for url in urls if url in errors},
+        )
+
+    def _record_fallback(self, client: DetailSafeHttpClient) -> None:
+        if not client.fallback_hosts:
+            return
+        with self._fallback_lock:
+            self.fallback_used = True
 
 
 # 彙整所有入口分頁結果，完整模式若任一網站缺頁即標示 partial。
@@ -180,6 +233,10 @@ def _fetch_text_with_retry(client: DetailSafeHttpClient, url: str) -> str:
                 time.sleep(0.5)
     assert last_error is not None
     raise last_error
+
+
+def _error_text(error: Exception) -> str:
+    return " ".join(str(error).split())[:120] or type(error).__name__
 
 
 def _group_programs_by_url(

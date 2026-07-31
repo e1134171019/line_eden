@@ -55,6 +55,7 @@ NOTIFY_REVIEW_ITEMS = _env_bool("NOTIFY_REVIEW_ITEMS", False)
 HTTP_TIMEOUT_SECONDS = 10.0
 HTTP_USER_AGENT = "ScholarshipAgent/3.2 (+https://www.lhu.edu.tw/)"
 SOURCE_MAX_PAGES = _env_int("SOURCE_MAX_PAGES", 200)
+SOURCE_FETCH_WORKERS = _env_int("SOURCE_FETCH_WORKERS", 6)
 MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
@@ -120,6 +121,7 @@ def validate_gemini_settings() -> None:
         ("GEMINI_MAX_ATTEMPTS", GEMINI_MAX_ATTEMPTS),
         ("GEMINI_RETRY_BASE_SECONDS", GEMINI_RETRY_BASE_SECONDS),
         ("SOURCE_MAX_PAGES", SOURCE_MAX_PAGES),
+        ("SOURCE_FETCH_WORKERS", SOURCE_FETCH_WORKERS),
     )
     invalid = [name for name, value in budgets if value < 1]
     if invalid:

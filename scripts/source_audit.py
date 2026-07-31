@@ -4,6 +4,7 @@ from config import (
     HTTP_TIMEOUT_SECONDS,
     HTTP_USER_AGENT,
     LHU_SCHOLARSHIP_URL,
+    SOURCE_FETCH_WORKERS,
     SOURCE_MAX_PAGES,
 )
 from src.collectors.collection_diagnostics import CollectionMode
@@ -16,12 +17,18 @@ EXPECTED_PROGRAM_WATCH_COUNT = 38
 
 def main() -> None:
     """完整抓取六個核心來源及 38 方案監測群組，只輸出來源診斷。"""
+    print(
+        f"開始完整來源稽核：每站最多 {SOURCE_MAX_PAGES} 頁，"
+        f"分頁工作數 {SOURCE_FETCH_WORKERS}。",
+        flush=True,
+    )
     collector = ExpandedScholarshipCollector(
         LHU_SCHOLARSHIP_URL,
         HTTP_TIMEOUT_SECONDS,
         HTTP_USER_AGENT,
         CollectionMode.FULL_AUDIT,
         SOURCE_MAX_PAGES,
+        SOURCE_FETCH_WORKERS,
     )
     records = collector.collect()
     diagnostics = collector.multi_source.diagnostics if collector.multi_source else []
