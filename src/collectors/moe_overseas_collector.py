@@ -39,7 +39,7 @@ OVERSEAS_CHILD_SOURCES = (
     OverseasChildSource(
         "moe-studyabroad",
         "公費留學考試",
-        "https://scholarship.moe.gov.tw/studyabroad/exam",
+        "https://www.scholarship.moe.gov.tw/studyabroad/exam",
     ),
     OverseasChildSource(
         "moe-top100",
@@ -189,7 +189,7 @@ class MoeOverseasCollector(BaseCollector):
         if next_url and next_url not in visited and next_url not in queue:
             queue.append(next_url)
 
-    # 解析具有日期的公告標題，避免導覽與登入區塊混入。
+    # 依子站結構解析公告；公費留學新版頁使用簡章與公告欄專用規則。
     def _parse_page(
         self,
         html: str,
@@ -197,6 +197,57 @@ class MoeOverseasCollector(BaseCollector):
         page_url: str,
     ) -> tuple[list[Scholarship], int]:
         soup = BeautifulSoup(html, "html.parser")
+        if child.source_name == "moe-studyabroad":
+            records, count = self._parse_studyabroad_page(soup, child, page_url)
+            if count:
+                return records, count
+        return self._parse_dated_heading_page(soup, child, page_url)
+
+    # 解析新版公費留學頁的簡章下載與公告欄；頁面未提供發布日則保持空白。
+    def _parse_studyabroad_page(
+        self,
+        soup: BeautifulSoup,
+        child: OverseasChildSource,
+        page_url: str,
+    ) -> tuple[list[Scholarship], int]:
+        records: list[Scholarship] = []
+        seen: set[tuple[str, str]] = set()
+        for link in soup.select("a.brochure-dropdown__item"):
+            title = " ".join(link.get_text(" ", strip=True).split())
+            href = str(link.get("href", "")).strip()
+            url = urljoin(page_url, href) if href else page_url
+            self._append_studyabroad_record(records, seen, child, title, url)
+        for index, item in enumerate(soup.select(".announce-item"), start=1):
+            heading = item.select_one(".announce-title")
+            if heading is None:
+                continue
+            title = " ".join(heading.get_text(" ", strip=True).split())
+            url = f"{page_url}#announcement-{index}"
+            self._append_studyabroad_record(records, seen, child, title, url)
+        return records, len(records)
+
+    # 加入公費留學記錄並依標題與 URL 去重。
+    def _append_studyabroad_record(
+        self,
+        records: list[Scholarship],
+        seen: set[tuple[str, str]],
+        child: OverseasChildSource,
+        title: str,
+        url: str,
+    ) -> None:
+        key = (title, url)
+        if not title or key in seen:
+            return
+        seen.add(key)
+        records.append(Scholarship.from_raw(child.source_name, title, "", url))
+
+    # 解析標題節點與同一區塊中的發布日期。
+    def _parse_dated_heading_page(
+        self,
+        soup: BeautifulSoup,
+        child: OverseasChildSource,
+        page_url: str,
+    ) -> tuple[list[Scholarship], int]:
         records: list[Scholarship] = []
         candidate_count = 0
         seen: set[tuple[str, str, str]] = set()
