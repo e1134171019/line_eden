@@ -13,9 +13,9 @@ from config import (
 )
 from main import build_service
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
-from src.evaluators.eligibility_evaluator import ELIGIBLE
+from src.evaluators.eligibility_evaluator import ELIGIBLE, INELIGIBLE, REVIEW
 from src.evaluators.notice_classifier import APPLICATION
-from src.evaluators.runtime_safety import classify_application_period
+from src.evaluators.runtime_safety import EXPIRED, classify_application_period
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
 from src.services.scholarship_service import AuditRecord, AuditResult
@@ -24,18 +24,15 @@ MAX_LINE_TEXT_LENGTH = 4800
 MAX_ELIGIBLE_ITEMS = 5
 
 
-# 將五個官方來源的真實稽核與 shadow 統計整理成 LINE 報告。
+# 將六個官方來源的真實稽核與 shadow 統計整理成 LINE 報告。
 def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
 ) -> str:
     lines = [
         "獎學金真實檢查報告",
-        f"原始公告：{len(result.records)}",
+        f"本次稽核公告：{len(result.records)}",
         *_scope_lines(result.records),
-        f"明確適合：{result.eligible_count}",
-        f"資格待確認：{result.review_count}（不推播）",
-        f"明確不符合：{result.ineligible_count}",
         f"Gemini 生成呼叫：{result.gemini_calls}",
         f"Gemini 快取命中：{result.gemini_cache_hits}",
         "",
@@ -51,17 +48,23 @@ def build_report_message(
     return "\n".join(lines)[:MAX_LINE_TEXT_LENGTH]
 
 
-# 建立公告性質、獎助類別與申請期間統計。
+# 建立公告性質、獎助類別、申請期間與真正資格統計。
 def _scope_lines(records: list[AuditRecord]) -> list[str]:
     notice_counts = Counter(record.item.notice_kind for record in records)
     category_counts = Counter(record.item.category for record in records)
     applications = [
         record for record in records if record.item.notice_kind == APPLICATION
     ]
-    period_counts = Counter(_period_status(record) for record in applications)
+    periods = {id(record): _period_status(record) for record in applications}
+    period_counts = Counter(periods[id(record)] for record in applications)
+    actionable = [record for record in applications if periods[id(record)] != EXPIRED]
+    eligibility_counts = Counter(
+        record.item.eligibility_status for record in actionable
+    )
+    non_application = len(records) - notice_counts[APPLICATION]
     return [
         f"申請型公告：{len(applications)}",
-        f"非申請型公告：{len(records) - len(applications)}",
+        f"非申請型公告：{non_application}",
         (
             "公告類別："
             f"獎學金 {category_counts['scholarship']}／"
@@ -77,16 +80,25 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
             f"已截止 {period_counts['expired']}／"
             f"期限未知 {period_counts['deadline_unknown']}"
         ),
-        f"其他公告類型：{len(records) - notice_counts[APPLICATION]}",
+        (
+            "個人資格（未截止與期限未知）："
+            f"符合 {eligibility_counts[ELIGIBLE]}／"
+            f"待確認 {eligibility_counts[REVIEW]}／"
+            f"硬性不符 {eligibility_counts[INELIGIBLE]}"
+        ),
+        f"已截止未列為個人資格不符：{period_counts['expired']}",
+        f"非申請公告未列入個人資格：{non_application}",
     ]
 
 
-# 建立明確符合公告清單。
+# 建立目前仍具申請可能且明確符合的公告清單。
 def _eligible_lines(result: AuditResult) -> list[str]:
     eligible = [
         record.item
         for record in result.records
-        if record.item.eligibility_status == ELIGIBLE
+        if record.item.notice_kind == APPLICATION
+        and record.item.eligibility_status == ELIGIBLE
+        and _period_status(record) != EXPIRED
     ]
     if not eligible:
         return ["目前沒有明確符合你背景且仍可申請的公告。"]
@@ -110,7 +122,7 @@ def _period_status(record: AuditRecord) -> str:
 
 
 def main() -> None:
-    """重新稽核五個官方來源並傳送 LINE，不修改 baseline 或 notified_at。"""
+    """重新稽核六個官方來源並傳送 LINE，不修改 baseline 或 notified_at。"""
     validate_settings()
     validate_gemini_settings()
     service = build_service(mode=RunMode.AUDIT, use_gemini=True)
