@@ -10,6 +10,7 @@ LEGACY_CERTIFICATE_DOMAINS = frozenset({
     "www.edu.tw",
     "www.scholarship.moe.gov.tw",
     "scholarship.moe.gov.tw",
+    "xinzhuangawards.ntpc.gov.tw",
 })
 _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
