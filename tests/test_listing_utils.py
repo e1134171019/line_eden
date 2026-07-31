@@ -50,6 +50,43 @@ def test_dyna_javascript_pagination_is_generated() -> None:
     assert numbered_page_urls(html, base_url) == []
 
 
+# HTTPS 入口遇到同站 HTTP urlPrefix 時，後續頁面必須保持 HTTPS。
+def test_dyna_same_host_pages_keep_https() -> None:
+    base_url = "https://student.example.edu/p/403-1000-20-2.php"
+    html = """
+    <p>共3頁</p>
+    <script>
+    var option = {
+      urlPrefix: 'http://student.example.edu/p/403-1000-20-PAGE.php',
+      totalPage: 3
+    };
+    </script>
+    """
+
+    assert dyna_page_urls(html, base_url) == [
+        (2, "https://student.example.edu/p/403-1000-20-2.php"),
+        (3, "https://student.example.edu/p/403-1000-20-3.php"),
+    ]
+
+
+# 不同網域的 HTTP URL 不得因 HTTPS 入口而被改寫。
+def test_dyna_external_host_keeps_declared_scheme() -> None:
+    base_url = "https://student.example.edu/list"
+    html = """
+    <p>共2頁</p>
+    <script>
+    var option = {
+      urlPrefix: 'http://archive.example.net/page/PAGE',
+      totalPage: 2
+    };
+    </script>
+    """
+
+    assert dyna_page_urls(html, base_url) == [
+        (2, "http://archive.example.net/page/2"),
+    ]
+
+
 # 頁面明示 143 頁時，不得把 DYNA 的資料總筆數 1308 當成頁數。
 def test_explicit_page_count_overrides_dyna_record_count() -> None:
     base_url = "https://student.example/p/403-list.php"
