@@ -13,6 +13,7 @@ from src.collectors.http_client import SafeHttpClient
 from src.collectors.indigenous_grant_collector import IndigenousGrantCollector
 from src.collectors.listing_utils import (
     detect_total_pages,
+    dyna_page_urls,
     next_page_url,
     numbered_page_urls,
 )
@@ -121,7 +122,7 @@ class LhuCollector(BaseCollector):
                 for item in new_records:
                     seen_records.add(item.source_url)
                 records.extend(new_records)
-                detected = max(detected, detect_total_pages(html))
+                detected = max(detected, detect_total_pages(html), len(visited))
                 if self.collection_mode is CollectionMode.INCREMENTAL:
                     stop_reason = "incremental_first_page"
                     break
@@ -152,7 +153,7 @@ class LhuCollector(BaseCollector):
             raise RuntimeError(error)
         return records
 
-    # 將數字頁碼與下一頁加入待抓佇列。
+    # 先使用 DYNA script 的 urlPrefix，再補一般數字頁碼與 next 連結。
     def _enqueue_lhu_pages(
         self,
         queue: deque[str],
@@ -160,7 +161,11 @@ class LhuCollector(BaseCollector):
         html: str,
         current_url: str,
     ) -> None:
-        for _, url in numbered_page_urls(html, current_url):
+        candidates = [
+            *dyna_page_urls(html, current_url),
+            *numbered_page_urls(html, current_url),
+        ]
+        for _, url in candidates:
             if url not in visited and url not in queue:
                 queue.append(url)
         next_url = next_page_url(html, current_url)
