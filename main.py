@@ -28,12 +28,14 @@ from config import (
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
+    SOURCE_MAX_PAGES,
     validate_gemini_settings,
     validate_settings,
 )
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtractor
 from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtractor
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
+from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.evidence_detail_fetcher import EvidenceDetailFetcher
 from src.collectors.lhu_collector import LhuCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
@@ -135,7 +137,7 @@ def build_service(
     profile = load_student_profile(PROFILE_PATH)
     gemini_fallback, gemini_text_analysis = _build_gemini_services(use_gemini)
     return ScholarshipService(
-        _build_collector(),
+        _build_collector(mode),
         _build_repository(),
         build_notifier(mode),
         include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
@@ -153,17 +155,27 @@ def build_service(
 def build_baseline_service() -> BaselineService:
     """建立不含 profile、evaluator、Gemini 與 notifier 的基準服務。"""
     return BaselineService(
-        _build_collector(),
+        _build_collector(RunMode.INITIALIZE_BASELINE),
         _build_repository(),
         SCHOLARSHIP_FILTER_KEYWORDS,
     )
 
 
-def _build_collector() -> LhuCollector:
+# 稽核與基準抓完整分頁；每日、正式與 dry-run 僅抓最新入口頁。
+def _collection_mode(mode: RunMode) -> CollectionMode:
+    if mode in {RunMode.AUDIT, RunMode.INITIALIZE_BASELINE}:
+        return CollectionMode.FULL_AUDIT
+    return CollectionMode.INCREMENTAL
+
+
+# 建立五來源 collector 並注入一致的分頁安全上限。
+def _build_collector(mode: RunMode) -> LhuCollector:
     return LhuCollector(
         LHU_SCHOLARSHIP_URL,
         HTTP_TIMEOUT_SECONDS,
         HTTP_USER_AGENT,
+        _collection_mode(mode),
+        SOURCE_MAX_PAGES,
     )
 
 
