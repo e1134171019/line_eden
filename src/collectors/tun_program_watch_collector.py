@@ -131,7 +131,7 @@ def _extract_program_notices(
                 continue
             source_url = _candidate_url(node, official_url)
             title = _candidate_title(node, program)
-            key = f"{program.program_id}|{published_date}|{source_url}|{title}"
+            key = f"{program.program_id}|{published_date}|{source_url}"
             if key in seen:
                 continue
             seen.add(key)
