@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 
+from typing import cast
+
 import httpx
+from pytest import MonkeyPatch
 
 from src.catalogs.tun_2025_program_catalog import ScholarshipProgramWatch
+from src.collectors.http_client import DetailSafeHttpClient
 from src.collectors.tun_program_watch_collector import (
     _extract_program_notices,
     _fetch_text_with_retry,
@@ -54,11 +58,17 @@ def test_groups_programs_by_shared_official_url() -> None:
 
 
 # 暫時性 timeout 只重試一次，成功後不得繼續請求。
-def test_fetch_retries_one_transient_timeout(monkeypatch: object) -> None:
+def test_fetch_retries_one_transient_timeout(monkeypatch: MonkeyPatch) -> None:
     client = _TimeoutThenSuccessClient()
-    monkeypatch.setattr("src.collectors.tun_program_watch_collector.time.sleep", lambda _: None)  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        "src.collectors.tun_program_watch_collector.time.sleep",
+        lambda _: None,
+    )
 
-    result = _fetch_text_with_retry(client, "https://foundation.example/news")  # type: ignore[arg-type]
+    result = _fetch_text_with_retry(
+        cast(DetailSafeHttpClient, client),
+        "https://foundation.example/news",
+    )
 
     assert result == "<html>ok</html>"
     assert client.calls == 2
