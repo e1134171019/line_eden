@@ -62,7 +62,10 @@ def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
     soup = BeautifulSoup(html, "html.parser")
     explicit = _explicit_page_count(soup)
     total = explicit if explicit is not None else int(total_match.group("count"))
-    prefix = urljoin(base_url, prefix_match.group("prefix"))
+    prefix = _prefer_base_https(
+        base_url,
+        urljoin(base_url, prefix_match.group("prefix")),
+    )
     return [(page, prefix.replace("PAGE", str(page))) for page in range(2, total + 1)]
 
 
@@ -75,7 +78,7 @@ def numbered_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
         href = str(link.get("href", "")).strip()
         if number is None or not href or href.casefold().startswith("javascript:"):
             continue
-        url = urljoin(base_url, href)
+        url = _prefer_base_https(base_url, urljoin(base_url, href))
         if _same_listing_host_and_path(base_url, url):
             result[number] = url
     return sorted(result.items())
@@ -92,10 +95,23 @@ def next_page_url(html: str, base_url: str) -> str | None:
         href = str(link.get("href", "")).strip()
         if not href or href.casefold().startswith("javascript:"):
             continue
-        url = urljoin(base_url, href)
+        url = _prefer_base_https(base_url, urljoin(base_url, href))
         if _same_listing_host_and_path(base_url, url):
             return url
     return None
+
+
+# HTTPS 入口頁不得因站內舊式絕對網址降級成 HTTP。
+def _prefer_base_https(base_url: str, candidate_url: str) -> str:
+    base = urlparse(base_url)
+    candidate = urlparse(candidate_url)
+    if (
+        base.scheme.casefold() == "https"
+        and candidate.scheme.casefold() == "http"
+        and base.hostname == candidate.hostname
+    ):
+        return candidate._replace(scheme="https").geturl()
+    return candidate_url
 
 
 # 正規化 BeautifulSoup 的 rel 屬性。
