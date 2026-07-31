@@ -2,7 +2,7 @@
 
 from datetime import date
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -19,6 +19,7 @@ _DYNA_URL_PREFIX_PATTERN = re.compile(
 )
 _DYNA_TOTAL_PAGE_PATTERN = re.compile(r"totalPage\s*:\s*(?P<count>\d+)")
 _NEXT_LABELS = frozenset({"下一頁", "下頁", "next", ">", "»"})
+_PAGE_QUERY_KEYS = frozenset({"page", "pageno", "page_no", "pageindex", "page_index"})
 
 
 # 從文字抽取西元或民國日期並統一成 ISO 格式。
@@ -37,31 +38,31 @@ def extract_date(text: str) -> str:
     return ""
 
 
-# 從頁面文字、數字頁碼連結及 DYNA script 推導總頁數。
-def detect_total_pages(html: str) -> int:
+# 明確「共 N 頁」優先；否則只採同列表頁碼與可信 DYNA 設定。
+def detect_total_pages(html: str, base_url: str = "") -> int:
     soup = BeautifulSoup(html, "html.parser")
-    text_match = _PAGE_COUNT_PATTERN.search(soup.get_text(" ", strip=True))
+    explicit = _explicit_page_count(soup)
+    if explicit is not None:
+        return explicit
     numbers = [1]
-    for link in soup.find_all("a", href=True):
-        number = _page_number(link)
-        if number is not None:
-            numbers.append(number)
-    if text_match:
-        numbers.append(int(text_match.group("count")))
-    dyna = dyna_page_urls(html, "")
+    if base_url:
+        numbers.extend(number for number, _ in numbered_page_urls(html, base_url))
+    dyna = dyna_page_urls(html, base_url)
     if dyna:
         numbers.append(dyna[-1][0])
     return max(numbers)
 
 
-# 解析 DYNA CMS 的 urlPrefix 與 totalPage，生成實際第 2 頁以後網址。
+# 解析 DYNA CMS；頁面明示總頁數時不得誤用資料總筆數。
 def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
     prefix_match = _DYNA_URL_PREFIX_PATTERN.search(html)
     total_match = _DYNA_TOTAL_PAGE_PATTERN.search(html)
     if prefix_match is None or total_match is None:
         return []
+    soup = BeautifulSoup(html, "html.parser")
+    explicit = _explicit_page_count(soup)
+    total = explicit if explicit is not None else int(total_match.group("count"))
     prefix = urljoin(base_url, prefix_match.group("prefix"))
-    total = int(total_match.group("count"))
     return [(page, prefix.replace("PAGE", str(page))) for page in range(2, total + 1)]
 
 
@@ -107,14 +108,29 @@ def _rel_values(link: Tag) -> set[str]:
     return {str(part).casefold() for part in value}
 
 
-# 從連結文字或 /page/N 路徑取得頁碼。
+# 只把 /page/N 或明確 page query 的數字連結視為頁碼。
 def _page_number(link: Tag) -> int | None:
-    label = " ".join(link.get_text(" ", strip=True).split())
-    if label.isdigit():
-        return int(label)
     href = str(link.get("href", ""))
-    match = _PAGE_PATH_PATTERN.search(urlparse(href).path)
-    return int(match.group("number")) if match else None
+    parsed = urlparse(href)
+    path_match = _PAGE_PATH_PATTERN.search(parsed.path)
+    if path_match:
+        return int(path_match.group("number"))
+    label = " ".join(link.get_text(" ", strip=True).split())
+    if not label.isdigit() or not _has_page_query(parsed.query):
+        return None
+    return int(label)
+
+
+# 判斷 query string 是否包含明確分頁參數。
+def _has_page_query(query: str) -> bool:
+    keys = {key.casefold() for key in parse_qs(query, keep_blank_values=True)}
+    return bool(keys & _PAGE_QUERY_KEYS)
+
+
+# 取得頁面正文中明確宣告的總頁數。
+def _explicit_page_count(soup: BeautifulSoup) -> int | None:
+    match = _PAGE_COUNT_PATTERN.search(soup.get_text(" ", strip=True))
+    return int(match.group("count")) if match else None
 
 
 # 限制翻頁不得離開同一主機與同一列表路徑族群。
