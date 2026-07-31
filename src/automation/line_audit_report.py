@@ -22,6 +22,10 @@ from src.services.scholarship_service import AuditRecord, AuditResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 MAX_ELIGIBLE_ITEMS = 5
+MAX_SHADOW_CHANGED_ITEMS = 10
+MAX_SHADOW_ERROR_ITEMS = 8
+MAX_DETAIL_TITLE_LENGTH = 34
+MAX_DETAIL_REASON_LENGTH = 82
 
 
 # 將六個官方來源的真實稽核與 shadow 統計整理成 LINE 報告。
@@ -41,6 +45,7 @@ def build_report_message(
         f"- 與 legacy 分歧：{result.structured_changed_count}",
         f"- 預算延後：{result.structured_deferred_count}",
         f"- 抽取錯誤：{result.structured_error_count}",
+        *_structured_detail_lines(result.records),
     ]
     if source_lines:
         lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
@@ -89,6 +94,51 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
         f"已截止未列為個人資格不符：{period_counts['expired']}",
         f"非申請公告未列入個人資格：{non_application}",
     ]
+
+
+# 列出每筆 structured 分歧與抽取錯誤，避免摘要只剩數量。
+def _structured_detail_lines(records: list[AuditRecord]) -> list[str]:
+    changed = [record for record in records if _is_changed(record)]
+    errors = [record for record in records if _is_shadow_error(record)]
+    lines: list[str] = []
+    if changed:
+        lines.extend(["", "Structured 分歧明細："])
+        lines.extend(_changed_line(record) for record in changed[:MAX_SHADOW_CHANGED_ITEMS])
+    if errors:
+        lines.extend(["", "Structured 抽取錯誤："])
+        lines.extend(_error_line(record) for record in errors[:MAX_SHADOW_ERROR_ITEMS])
+    return lines
+
+
+def _is_changed(record: AuditRecord) -> bool:
+    shadow = getattr(record, "structured_shadow", None)
+    return bool(shadow and shadow.changed)
+
+
+def _is_shadow_error(record: AuditRecord) -> bool:
+    return getattr(record, "shadow_status", "") in {"text_error", "text_cached_error"}
+
+
+# 將一筆 legacy／structured 差異壓縮成單行 LINE 文字。
+def _changed_line(record: AuditRecord) -> str:
+    shadow = record.structured_shadow
+    assert shadow is not None
+    title = _short(record.item.title, MAX_DETAIL_TITLE_LENGTH)
+    reason = _short(shadow.structured_reason, MAX_DETAIL_REASON_LENGTH)
+    return f"- {title}：{shadow.legacy_status}→{shadow.structured_status}；{reason}"
+
+
+# 將一筆 Gemini 錯誤壓縮成單行，保留實際例外訊息。
+def _error_line(record: AuditRecord) -> str:
+    diagnostic = record.structured_gemini_diagnostic
+    title = _short(record.item.title, MAX_DETAIL_TITLE_LENGTH)
+    message = diagnostic.message if diagnostic else "未提供錯誤診斷"
+    return f"- {title}：{_short(message, MAX_DETAIL_REASON_LENGTH)}"
+
+
+def _short(text: str, limit: int) -> str:
+    normalized = " ".join(text.split())
+    return normalized if len(normalized) <= limit else f"{normalized[: limit - 1]}…"
 
 
 # 建立目前仍具申請可能且明確符合的公告清單。
