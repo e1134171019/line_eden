@@ -45,7 +45,7 @@ def _result(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
-def test_report_lists_only_eligible_items() -> None:
+def test_report_lists_only_current_eligible_items() -> None:
     result = _result(
         records=[
             _record("eligible", "符合資格的獎學金"),
@@ -60,22 +60,40 @@ def test_report_lists_only_eligible_items() -> None:
     message = build_report_message(
         result,
         [
-            "來源健康：降級；設定 5，有資料 2，空結果 2，失敗 1",
-            "龍華科技大學：讀取 80 筆，保留 80 筆",
+            "來源網站：設定 6，成功產生資料 6，空結果 0，部分完成 0，失敗 0",
+            "龍華科技大學：完整；頁面 5/5",
         ],
     )
 
-    assert "原始公告：3" in message
+    assert "本次稽核公告：3" in message
     assert "申請型公告：2" in message
     assert "公告類別：獎學金 2／助學金 1" in message
     assert "申請狀態：開放 2" in message
-    assert "來源健康：降級" in message
-    assert "龍華科技大學：讀取 80 筆" in message
-    assert "明確適合：1" in message
-    assert "資格待確認：1（不推播）" in message
+    assert "個人資格（未截止與期限未知）：符合 1／待確認 1／硬性不符 0" in message
+    assert "非申請公告未列入個人資格：1" in message
+    assert "來源網站：設定 6" in message
+    assert "龍華科技大學：完整" in message
     assert "符合資格的獎學金" in message
     assert "待確認公告" not in message
     assert "不符合公告" not in message
+
+
+def test_expired_notice_is_not_counted_as_personal_ineligibility() -> None:
+    result = _result(
+        records=[
+            _record(
+                "ineligible",
+                "過期獎學金",
+                text="申請截止日期為2025/09/30。",
+            )
+        ],
+        ineligible_count=1,
+    )
+
+    message = build_report_message(result)
+
+    assert "個人資格（未截止與期限未知）：符合 0／待確認 0／硬性不符 0" in message
+    assert "已截止未列為個人資格不符：1" in message
 
 
 def test_report_explains_when_no_eligible_items() -> None:
@@ -87,6 +105,6 @@ def test_report_explains_when_no_eligible_items() -> None:
 
     message = build_report_message(result)
 
-    assert "原始公告：1" in message
+    assert "本次稽核公告：1" in message
     assert "目前沒有明確符合你背景且仍可申請的公告。" in message
     assert "LINE Messaging API 測試成功" not in message
