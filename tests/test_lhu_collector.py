@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,30 @@ def test_lhu_full_audit_collects_all_detected_pages(monkeypatch: Any) -> None:
     assert collector.lhu_diagnostic.completeness == "complete"
     assert collector.lhu_diagnostic.pages_detected == 3
     assert collector.lhu_diagnostic.pages_succeeded == 3
+
+
+# 龍華後續 DYNA 頁面產生的第 1 頁別名不得重新加入佇列。
+def test_lhu_skips_dyna_first_page_alias() -> None:
+    page_2 = "https://www.lhu.edu.tw/p/422-1000-4-2.php?Lang=zh-tw"
+    page_3 = "https://www.lhu.edu.tw/p/422-1000-4-3.php?Lang=zh-tw"
+    alias_page_1 = "https://www.lhu.edu.tw/p/422-1000-4-1.php?Lang=zh-tw"
+    html = """
+    <p>共3頁</p>
+    <script>
+    var option = {
+      currentPage: 2,
+      urlPrefix: 'https://www.lhu.edu.tw/p/422-1000-4-PAGE.php?Lang=zh-tw',
+      totalPage: 3
+    };
+    </script>
+    """
+    collector = LhuCollector(BASE_URL, 10.0, "test", CollectionMode.FULL_AUDIT, 10)
+    queue: deque[str] = deque()
+
+    collector._enqueue_lhu_pages(queue, {BASE_URL, page_2}, html, page_2)
+
+    assert alias_page_1 not in queue
+    assert list(queue) == [page_3]
 
 
 # 每日增量模式只讀最新入口頁，不回抓歷史頁。
