@@ -11,6 +11,10 @@ LEGACY_CERTIFICATE_DOMAINS = frozenset({
     "www.scholarship.moe.gov.tw",
     "scholarship.moe.gov.tw",
     "xinzhuangawards.ntpc.gov.tw",
+    "education.ylc.edu.tw",
+    "college.itri.org.tw",
+    "service.gov.taipei",
+    "service.taipower.com.tw",
 })
 _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
@@ -25,6 +29,15 @@ def build_legacy_compatible_ssl_context() -> ssl.SSLContext:
     if not context.check_hostname or context.verify_mode != ssl.CERT_REQUIRED:
         raise RuntimeError("舊憑證相容模式不得停用 hostname 或 CA 驗證")
     return context
+
+
+# 僅允許已知網域及明確 X.509 格式錯誤進入相容模式。
+def can_use_legacy_context(url: str, error: Exception) -> bool:
+    host = urlparse(url).hostname or ""
+    message = " ".join(str(error).lower().split())
+    return host in LEGACY_CERTIFICATE_DOMAINS and all(
+        marker in message for marker in _CERTIFICATE_ERROR_MARKERS
+    )
 
 
 class SafeHttpClient:
@@ -67,13 +80,9 @@ class SafeHttpClient:
         response.raise_for_status()
         return response.text
 
-    # 僅允許已知網域及明確 X.509 格式錯誤進入相容模式。
+    # 保留既有私有介面，統一委派給可測試的模組函式。
     def _can_use_legacy_context(self, url: str, error: Exception) -> bool:
-        host = urlparse(url).hostname or ""
-        message = " ".join(str(error).lower().split())
-        return host in LEGACY_CERTIFICATE_DOMAINS and all(
-            marker in message for marker in _CERTIFICATE_ERROR_MARKERS
-        )
+        return can_use_legacy_context(url, error)
 
     # 關閉連線池。
     def close(self) -> None:
