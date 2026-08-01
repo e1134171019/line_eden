@@ -4,6 +4,7 @@ from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
     REVIEW,
+    REVIEW_SOURCE_INCOMPLETE,
     EligibilityEvaluator,
 )
 from src.models.scholarship import Scholarship
@@ -97,7 +98,9 @@ def test_score_only_without_applicant_scope_stays_review() -> None:
     )
 
     assert decision.status == REVIEW
-    assert "適用對象" in decision.reason_text()
+    assert decision.review_kind == REVIEW_SOURCE_INCOMPLETE
+    assert "硬性條件" in decision.reason_text()
+    assert any("80" in item for item in decision.manual_checks)
 
 
 # 明確包含大學生且成績符合時，仍可通過完整性護欄。
@@ -109,3 +112,4 @@ def test_general_college_scope_and_score_can_be_eligible() -> None:
     )
 
     assert decision.status == ELIGIBLE
+    assert any("80" in item for item in decision.manual_checks)
