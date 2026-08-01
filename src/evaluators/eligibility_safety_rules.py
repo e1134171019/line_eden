@@ -87,6 +87,7 @@ def _has_general_college_context(text: str) -> bool:
         rf"(?:申請資格|申請對象|申請人|凡|限|僅限).{{0,30}}{terms}",
         rf"{terms}.{{0,20}}(?:均可申請|可申請|得申請|申請資格)",
         rf"{terms}.{{0,6}}(?:之|的).{{0,24}}(?:學業|操行|成績|排名)",
+        rf"{terms}.{{0,30}}(?:學業|平均成績|操行|排名)",
     )
     return any(re.search(pattern, text) for pattern in patterns)
 
