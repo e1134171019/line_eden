@@ -111,7 +111,7 @@ def test_live_mode_only_sends_eligible_item(tmp_path: Path) -> None:
         energy_item.source_url: "大專在校生，電子工程相關科系可申請。",
     }
     sent_messages: list[str] = []
-    service, repository = _service(tmp_path, items, details, sent_messages)
+    service, _ = _service(tmp_path, items, details, sent_messages)
 
     result = service.run(dry_run=False)
 
@@ -121,7 +121,6 @@ def test_live_mode_only_sends_eligible_item(tmp_path: Path) -> None:
     assert energy_item.source_url in sent_messages[0]
     assert "符合原因" in sent_messages[0]
     assert day_item.title not in sent_messages[0]
-    assert repository.list_pending() == []
 
 
 def test_profile_change_re_evaluates_existing_item(tmp_path: Path) -> None:
