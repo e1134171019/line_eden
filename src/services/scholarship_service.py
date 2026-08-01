@@ -451,6 +451,11 @@ class ScholarshipService:
                 notice_kind,
                 period.status,
             )
+        assert self.evaluator is not None
+        assert self.profile is not None
+        local_decision = self.evaluator.evaluate(item, evaluator_input, self.profile)
+        if local_decision.status == INELIGIBLE:
+            return local_decision, notice_kind, period.status or DEADLINE_UNKNOWN
         if evidence.status != VALID_APPLICATION_DETAIL:
             hits = "、".join(evidence.hits) or "無明確申請欄位"
             reason = (
@@ -461,16 +466,13 @@ class ScholarshipService:
                 EligibilityDecision(
                     REVIEW,
                     (reason,),
-                    tuple(),
+                    local_decision.manual_checks,
                     REVIEW_SOURCE_INCOMPLETE,
                 ),
                 notice_kind,
                 period.status or DEADLINE_UNKNOWN,
             )
-        assert self.evaluator is not None
-        assert self.profile is not None
-        decision = self.evaluator.evaluate(item, evaluator_input, self.profile)
-        return decision, notice_kind, period.status or DEADLINE_UNKNOWN
+        return local_decision, notice_kind, period.status or DEADLINE_UNKNOWN
 
     def _build_audit_record(self, item: Scholarship) -> AuditRecord:
         fetch_result = self._fetch_audit_result(item)
