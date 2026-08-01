@@ -147,3 +147,42 @@ def test_duplicate_page_content_stops_as_partial() -> None:
     assert result.pages_succeeded == 1
     assert result.completeness == "partial"
     assert result.stop_reason == "page_content_loop_detected"
+
+
+# LHU canonical 首頁必須避免由第 2 頁重新排入 DYNA 第 1 頁別名。
+def test_skip_dyna_page_one_avoids_canonical_alias_loop() -> None:
+    entry = "https://www.lhu.edu.tw/p/422-1000-4.php?Lang=zh-tw"
+    page_2 = "https://www.lhu.edu.tw/p/422-1000-4-2.php?Lang=zh-tw"
+    page_1_alias = "https://www.lhu.edu.tw/p/422-1000-4-1.php?Lang=zh-tw"
+    pages = {
+        entry: """
+        <p>首頁資料</p><p>共2頁</p>
+        <script>var option = {
+          currentPage: 1,
+          urlPrefix: '/p/422-1000-4-PAGE.php?Lang=zh-tw',
+          totalPage: 2
+        };</script>
+        """,
+        page_2: """
+        <p>第二頁資料</p><p>共2頁</p>
+        <script>var option = {
+          currentPage: 2,
+          urlPrefix: '/p/422-1000-4-PAGE.php?Lang=zh-tw',
+          totalPage: 2
+        };</script>
+        """,
+        page_1_alias: "<p>不應抓取的第一頁別名</p>",
+    }
+    requested: list[str] = []
+
+    result = crawl_listing_pages(
+        entry,
+        CollectionMode.FULL_AUDIT,
+        20,
+        lambda url: requested.append(url) or pages[url],
+        skip_dyna_page_one=True,
+    )
+
+    assert requested == [entry, page_2]
+    assert [page.url for page in result.pages] == [entry, page_2]
+    assert result.completeness == "complete"
