@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +29,7 @@ def test_lhu_collector_parse_fixture() -> None:
     assert records[1].published_date == "2026-07-16"
 
 
-# 完整稽核必須依頁面連結抓完所有偵測頁數。
+# 完整稽核必須透過共用 paginator 抓完所有偵測頁數。
 def test_lhu_full_audit_collects_all_detected_pages(monkeypatch: Any) -> None:
     page_2 = f"{BASE_URL}&page=2"
     page_3 = f"{BASE_URL}&page=3"
@@ -63,28 +62,31 @@ def test_lhu_full_audit_collects_all_detected_pages(monkeypatch: Any) -> None:
     assert collector.lhu_diagnostic.pages_succeeded == 3
 
 
-# 龍華後續 DYNA 頁面產生的第 1 頁別名不得重新加入佇列。
-def test_lhu_skips_dyna_first_page_alias() -> None:
+# LHU 使用 canonical 首頁時，共用 paginator 不得再抓 DYNA 第 1 頁別名。
+def test_lhu_shared_paginator_skips_dyna_first_page_alias(monkeypatch: Any) -> None:
     page_2 = "https://www.lhu.edu.tw/p/422-1000-4-2.php?Lang=zh-tw"
     page_3 = "https://www.lhu.edu.tw/p/422-1000-4-3.php?Lang=zh-tw"
     alias_page_1 = "https://www.lhu.edu.tw/p/422-1000-4-1.php?Lang=zh-tw"
-    html = """
-    <p>共3頁</p>
-    <script>
-    var option = {
-      currentPage: 2,
-      urlPrefix: 'https://www.lhu.edu.tw/p/422-1000-4-PAGE.php?Lang=zh-tw',
-      totalPage: 3
-    };
-    </script>
-    """
+    pages = {
+        BASE_URL: _dyna_page_html(1, "2026-07-30"),
+        page_2: _dyna_page_html(2, "2026-07-29"),
+        page_3: _dyna_page_html(3, "2026-07-28"),
+    }
+    calls: list[str] = []
+
+    def fake_get_text(_: SafeHttpClient, url: str) -> str:
+        calls.append(url)
+        return pages[url]
+
+    monkeypatch.setattr(SafeHttpClient, "get_text", fake_get_text)
     collector = LhuCollector(BASE_URL, 10.0, "test", CollectionMode.FULL_AUDIT, 10)
-    queue: deque[str] = deque()
 
-    collector._enqueue_lhu_pages(queue, {BASE_URL, page_2}, html, page_2)
+    records = collector._collect_lhu()
 
-    assert alias_page_1 not in queue
-    assert list(queue) == [page_3]
+    assert len(records) == 3
+    assert alias_page_1 not in calls
+    assert calls == [BASE_URL, page_2, page_3]
+    assert collector.lhu_diagnostic.completeness == "complete"
 
 
 # 每日增量模式只讀最新入口頁，不回抓歷史頁。
@@ -115,7 +117,7 @@ def test_lhu_incremental_collects_first_page_only(monkeypatch: Any) -> None:
     assert collector.lhu_diagnostic.pages_succeeded == 1
 
 
-# 建立含三頁導覽的最小 DYNA 列表 fixture。
+# 建立含三頁導覽的最小列表 fixture。
 def _page_html(page: int, published_date: str, page_2: str, page_3: str) -> str:
     return f"""
     <table>
@@ -131,4 +133,24 @@ def _page_html(page: int, published_date: str, page_2: str, page_3: str) -> str:
       <a href="{page_2}">&gt;</a>
     </nav>
     <p>共3頁</p>
+    """
+
+
+# 建立會在後續頁產生第 1 頁別名的 DYNA fixture。
+def _dyna_page_html(page: int, published_date: str) -> str:
+    return f"""
+    <table>
+      <tr>
+        <td>{published_date}</td>
+        <td><a href="/notice/dyna-{page}">第{page}頁獎學金</a></td>
+      </tr>
+    </table>
+    <p>共3頁</p>
+    <script>
+    var option = {{
+      currentPage: {page},
+      urlPrefix: 'https://www.lhu.edu.tw/p/422-1000-4-PAGE.php?Lang=zh-tw',
+      totalPage: 3
+    }};
+    </script>
     """
