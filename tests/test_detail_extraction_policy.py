@@ -35,7 +35,11 @@ def test_auden_policy_extracts_full_application_content_without_navigation() -> 
 
 
 def test_unknown_site_uses_versioned_default_policy() -> None:
-    html = "<main><h1>獎學金公告</h1><p>申請資格與申請方式如下。</p></main>"
+    html = (
+        "<main><h1>獎學金公告</h1>"
+        "<p>申請資格為國內大專院校在校生，申請方式採線上報名並檢附文件。</p>"
+        "</main>"
+    )
 
     result = extract_announcement_content(
         html,
