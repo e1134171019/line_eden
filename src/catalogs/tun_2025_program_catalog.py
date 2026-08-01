@@ -272,11 +272,17 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
     ),
     ScholarshipProgramWatch(
         "auden-university-talent",
-        "耀登炳南大專校院優秀人才獎學金",
+        "耀登炳南大專院校優秀人才獎學金",
         "耀登炳南教育基金會",
-        ("耀登炳南大專校院優秀人才獎學金", "大專校院優秀人才獎學金"),
-        "https://www.auden.com.tw/news-4/",
+        (
+            "耀登炳南大專院校優秀人才獎學金",
+            "大專院校優秀人才獎學金",
+            "耀登炳南大專校院優秀人才獎學金",
+            "大專校院優秀人才獎學金",
+        ),
+        "https://www.auden.com.tw/2026scholarship/",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "harmony-stability",
