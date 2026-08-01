@@ -17,6 +17,7 @@ from src.collectors.tun_program_watch_collector import (
     _extract_program_notices,
     _fetch_text_with_retry,
     _group_programs_by_url,
+    _matches_program,
 )
 
 
@@ -31,6 +32,21 @@ def _program(
         "測試基金會",
         (title,),
         url,
+        "verified",
+    )
+
+
+def _program_with_aliases(
+    program_id: str,
+    title: str,
+    aliases: tuple[str, ...],
+) -> ScholarshipProgramWatch:
+    return ScholarshipProgramWatch(
+        program_id,
+        title,
+        "測試基金會",
+        aliases,
+        "https://foundation.example/news",
         "verified",
     )
 
@@ -192,6 +208,36 @@ def test_watch_diagnostic_aggregates_complete_and_partial_crawls() -> None:
     assert "parallel_fetch_errors" in diagnostic.error
     assert "page/2" in diagnostic.error
     assert "timeout" in diagnostic.error
+
+
+# 正規化後少於四字的別名不得參與比對，避免短字串誤觸。
+def test_short_alias_is_ignored() -> None:
+    program = _program_with_aliases("ai", "人工智慧獎學金", ("AI", "人工智慧獎學金"))
+
+    assert _matches_program("2026 AI 人才活動", program) is False
+    assert _matches_program("2026 人工智慧獎學金開始申請", program) is True
+
+
+# 有實質連結標題時，不得因同一容器旁文出現方案名稱而誤判該連結。
+def test_substantive_link_title_ignores_container_noise() -> None:
+    program = _program("aid", "長期助學金")
+    html = """
+    <ul>
+      <li>
+        <span>2026/09/15 長期助學金相關說明</span>
+        <a href="/news/activity">一般活動公告</a>
+      </li>
+    </ul>
+    """
+
+    records, matched = _extract_program_notices(
+        html,
+        "https://foundation.example/news",
+        (program,),
+    )
+
+    assert matched == 0
+    assert records == []
 
 
 # 官方公告列的西元日期應轉成 Scholarship 標準日期。
