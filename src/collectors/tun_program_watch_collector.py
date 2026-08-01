@@ -36,6 +36,8 @@ _ROC_DATE = re.compile(
 )
 _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
 _FETCH_ATTEMPTS = 3
+_MIN_ALIAS_MATCH_LENGTH = 4
+_MIN_TITLE_CONTEXT_LENGTH = 6
 
 
 class TunProgramWatchCollector(BaseCollector):
@@ -285,11 +287,12 @@ def _extract_program_notices(
         context = _candidate_context(node)
         if not context:
             continue
+        date_context = _candidate_date_context(node)
         for program in programs:
             if not _matches_program(context, program):
                 continue
             matched_count += 1
-            published_date = _extract_date(node, context)
+            published_date = _extract_date(node, date_context)
             if published_date is None:
                 continue
             source_url = _candidate_url(node, official_url)
@@ -309,7 +312,18 @@ def _extract_program_notices(
     return records, matched_count
 
 
+# 有實質連結標題時只用標題做方案比對，避免整個容器文字造成誤觸。
 def _candidate_context(node: Tag) -> str:
+    link = _primary_link(node)
+    if isinstance(link, Tag):
+        title_text = " ".join(link.get_text(" ", strip=True).split())
+        if len(title_text) >= _MIN_TITLE_CONTEXT_LENGTH:
+            return title_text[:400]
+    return _candidate_date_context(node)
+
+
+# 日期仍使用完整公告列／文章容器，避免標題優先後遺失旁邊日期。
+def _candidate_date_context(node: Tag) -> str:
     if node.name == "a":
         container = node.find_parent(("article", "li", "tr")) or node.parent or node
     else:
@@ -317,16 +331,25 @@ def _candidate_context(node: Tag) -> str:
     return " ".join(container.get_text(" ", strip=True).split())[:1200]
 
 
-def _candidate_title(node: Tag, program: ScholarshipProgramWatch) -> str:
+# 取得節點自身或其第一個公告連結。
+def _primary_link(node: Tag) -> Tag | None:
     if node.name == "a":
-        text = " ".join(node.get_text(" ", strip=True).split())
+        return node
+    link = node.find("a", href=True)
+    return link if isinstance(link, Tag) else None
+
+
+def _candidate_title(node: Tag, program: ScholarshipProgramWatch) -> str:
+    link = _primary_link(node)
+    if isinstance(link, Tag):
+        text = " ".join(link.get_text(" ", strip=True).split())
         if len(text) >= 4:
             return text[:220]
     return program.title
 
 
 def _candidate_url(node: Tag, official_url: str) -> str:
-    link = node if node.name == "a" else node.find("a", href=True)
+    link = _primary_link(node)
     if isinstance(link, Tag):
         href = str(link.get("href", "")).strip()
         if href and not href.lower().startswith(("javascript:", "mailto:", "tel:")):
@@ -336,7 +359,11 @@ def _candidate_url(node: Tag, official_url: str) -> str:
 
 def _matches_program(text: str, program: ScholarshipProgramWatch) -> bool:
     normalized = _normalize(text)
-    return any(_normalize(alias) in normalized for alias in program.aliases)
+    aliases = (_normalize(alias) for alias in program.aliases)
+    return any(
+        len(alias) >= _MIN_ALIAS_MATCH_LENGTH and alias in normalized
+        for alias in aliases
+    )
 
 
 def _normalize(text: str) -> str:
