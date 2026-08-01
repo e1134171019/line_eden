@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import date
 import re
 import time
-import unicodedata
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
@@ -26,6 +25,7 @@ from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode, CollectorDiagnostic
 from src.collectors.http_client import DetailSafeHttpClient
 from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
+from src.matchers.program_name_matcher import ProgramMatchResult, match_program
 from src.models.scholarship import Scholarship
 
 _GREGORIAN_DATE = re.compile(
@@ -38,19 +38,12 @@ _ROC_DATE = re.compile(
 )
 _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
 _FETCH_ATTEMPTS = 3
-_MIN_ALIAS_MATCH_LENGTH = 4
 _MIN_TITLE_CONTEXT_LENGTH = 6
-_EQUIVALENT_TERMS = (
-    ("大專院校", "大專校院"),
-    ("臺北", "台北"),
-    ("獎助金", "獎助學金"),
-    ("獎勵學金", "獎學金"),
-)
 
 
 @dataclass(frozen=True)
 class ProgramSourceState:
-    """單一 TUN 方案在本次執行中的來源與候選狀態。"""
+    """單一 TUN 方案在本次執行中的來源與唯一候選狀態。"""
 
     program_id: str
     title: str
@@ -91,7 +84,7 @@ class TunProgramWatchCollector(BaseCollector):
         seen_records: set[str] = set()
         crawls: list[tuple[str, ListingCrawlResult]] = []
         successful_programs = len(core_covered)
-        raw_matches = 0
+        raw_node_matches = 0
         states = {item.program_id: item for item in _initial_program_states()}
         fetcher = _ProgramPageFetcher(
             self.timeout_seconds,
@@ -110,34 +103,33 @@ class TunProgramWatchCollector(BaseCollector):
             crawls.append((official_url, crawl))
             if crawl.pages:
                 successful_programs += len(programs)
-            match_counts: dict[str, int] = defaultdict(int)
+            unique_counts: dict[str, int] = defaultdict(int)
             for page in crawl.pages:
-                found, matched, page_counts = _extract_program_notices_with_counts(
+                found, raw_matched, page_counts = _extract_program_notices_with_counts(
                     page.html,
                     page.url,
                     official_url,
                     programs,
                 )
-                raw_matches += matched
+                raw_node_matches += raw_matched
                 for program_id, count in page_counts.items():
-                    match_counts[program_id] += count
+                    unique_counts[program_id] += count
                 _append_unique(records, seen_records, found)
-            _update_program_states(states, programs, crawl, match_counts)
+            _update_program_states(states, programs, crawl, unique_counts)
 
         self.program_states = tuple(states[item.program_id] for item in resolved_programs())
         self.diagnostic = _build_diagnostic(
             crawls,
             len(records),
-            raw_matches,
+            raw_node_matches,
             successful_programs,
             fetcher.fallback_used,
         )
         return records
 
-    # 逐方案輸出狀態，確保 38 項都有明確結果而不是只看群組總數。
     def program_status_lines(self) -> list[str]:
         return [
-            f"TUN方案 {item.program_id}：{item.status}；候選 {item.candidate_count}；"
+            f"TUN方案 {item.program_id}：{item.status}；唯一候選 {item.candidate_count}；"
             f"入口 {item.entry_url or '由核心來源涵蓋'}"
             + (f"；{item.reason}" if item.reason else "")
             for item in self.program_states
@@ -153,14 +145,12 @@ class _ProgramPageFetcher:
         self.workers = workers
         self.fallback_used = False
 
-    # 入口頁及 next-only 頁面維持單頁下載。
     def fetch_one(self, url: str) -> str:
         with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
             html = _fetch_text_with_retry(client, url)
             self.fallback_used = self.fallback_used or bool(client.fallback_hosts)
             return html
 
-    # URL 分塊後平行處理；每塊內循序並共用同一個 HTTP client。
     def fetch_many(
         self,
         urls: tuple[str, ...],
@@ -180,7 +170,6 @@ class _ProgramPageFetcher:
             {url: errors[url] for url in urls if url in errors},
         )
 
-    # 單一工作執行緒只建立一次 client，逐頁重用 keep-alive 連線。
     def _fetch_chunk(
         self,
         urls: tuple[str, ...],
@@ -197,13 +186,11 @@ class _ProgramPageFetcher:
         return pages, errors, fallback_used
 
 
-# 以輪詢方式分配 URL，讓前後頁平均散佈於各工作執行緒。
 def _chunk_urls(urls: tuple[str, ...], workers: int) -> tuple[tuple[str, ...], ...]:
     worker_count = min(workers, len(urls))
     return tuple(tuple(urls[index::worker_count]) for index in range(worker_count))
 
 
-# 建立 38 項方案的初始狀態。
 def _initial_program_states() -> tuple[ProgramSourceState, ...]:
     core_ids = {item.program_id for item in core_covered_programs()}
     pending_ids = {item.program_id for item in unresolved_programs()}
@@ -231,21 +218,20 @@ def _initial_program_states() -> tuple[ProgramSourceState, ...]:
     return tuple(states)
 
 
-# 依入口抓取與匹配結果更新同一網址下的所有方案狀態。
 def _update_program_states(
     states: dict[str, ProgramSourceState],
     programs: tuple[ScholarshipProgramWatch, ...],
     crawl: ListingCrawlResult,
-    match_counts: dict[str, int],
+    unique_counts: dict[str, int],
 ) -> None:
     for program in programs:
-        count = match_counts.get(program.program_id, 0)
+        count = unique_counts.get(program.program_id, 0)
         if not crawl.pages:
             status = "fetch_failed"
             reason = "；".join(crawl.errors) or "入口頁未成功下載。"
         elif count:
             status = "candidate_found"
-            reason = "已找到方案候選，將進入正文與公告分類。"
+            reason = "已找到唯一方案候選，將進入正文與公告分類。"
         else:
             status = "no_candidate"
             reason = "入口可讀，但本次未找到匹配候選。"
@@ -261,7 +247,6 @@ def _update_program_states(
         )
 
 
-# 彙整所有入口分頁結果，完整模式若任一網站缺頁即標示 partial。
 def _build_diagnostic(
     crawls: list[tuple[str, ListingCrawlResult]],
     parsed_rows: int,
@@ -292,7 +277,6 @@ def _build_diagnostic(
     )
 
 
-# 建立 partial 的網址、停止原因與前三筆實際失敗頁。
 def _diagnostic_error(
     unresolved_count: int,
     partial: list[tuple[str, ListingCrawlResult]],
@@ -312,7 +296,6 @@ def _diagnostic_error(
     return "；".join(parts)
 
 
-# 將 partial 原因及最多三個錯誤壓縮成單站診斷。
 def _partial_detail(url: str, item: ListingCrawlResult) -> str:
     errors = "；".join(item.errors[:3])
     suffix = f"；{errors}" if errors else ""
@@ -327,7 +310,6 @@ def _watch_stop_reason(completeness: str) -> str:
     return "program_watch_partial"
 
 
-# 依內容雜湊合併跨頁重複公告。
 def _append_unique(
     records: list[Scholarship],
     seen_records: set[str],
@@ -341,7 +323,7 @@ def _append_unique(
 
 
 def _fetch_text_with_retry(client: DetailSafeHttpClient, url: str) -> str:
-    """只對 timeout／transport error 進行兩次有限重試。"""
+    """只對 timeout／transport error 進行有限重試。"""
 
     last_error: Exception | None = None
     for attempt in range(_FETCH_ATTEMPTS):
@@ -368,7 +350,6 @@ def _group_programs_by_url(
     return {url: tuple(items) for url, items in grouped.items()}
 
 
-# 保留既有測試介面，同時由內部版本回報各 program 的匹配數。
 def _extract_program_notices(
     html: str,
     official_url: str,
@@ -394,7 +375,7 @@ def _extract_program_notices_with_counts(
         unwanted.decompose()
 
     records: list[Scholarship] = []
-    matched_count = 0
+    raw_node_matches = 0
     program_counts: dict[str, int] = defaultdict(int)
     seen: set[str] = set()
     for node in soup.select(_CANDIDATE_SELECTORS):
@@ -403,10 +384,10 @@ def _extract_program_notices_with_counts(
             continue
         date_context = _candidate_date_context(node)
         for program in programs:
-            if not _matches_program(context, program):
+            match = match_program(context, program)
+            if not match.matched:
                 continue
-            matched_count += 1
-            program_counts[program.program_id] += 1
+            raw_node_matches += 1
             source_url = _candidate_url(node, page_url)
             published_date = _extract_date(node, date_context) or ""
             if not published_date and source_url == page_url:
@@ -416,21 +397,33 @@ def _extract_program_notices_with_counts(
             if key in seen:
                 continue
             seen.add(key)
-            records.append(
-                Scholarship.from_raw(
-                    f"tun-program-{program.program_id}",
-                    title,
-                    published_date,
-                    source_url,
-                    program_id=program.program_id,
-                    entry_url=entry_url,
-                    detail_url=source_url,
-                )
-            )
-    return records, matched_count, dict(program_counts)
+            program_counts[program.program_id] += 1
+            records.append(_build_scholarship(program, title, published_date, source_url, entry_url, match))
+    return records, raw_node_matches, dict(program_counts)
 
 
-# 有實質連結標題時只用標題做方案比對，避免整個容器文字造成誤觸。
+def _build_scholarship(
+    program: ScholarshipProgramWatch,
+    title: str,
+    published_date: str,
+    source_url: str,
+    entry_url: str,
+    match: ProgramMatchResult,
+) -> Scholarship:
+    return Scholarship.from_raw(
+        f"tun-program-{program.program_id}",
+        title,
+        published_date,
+        source_url,
+        program_id=program.program_id,
+        entry_url=entry_url,
+        detail_url=source_url,
+        match_method=match.method,
+        match_score=match.score,
+        matched_alias=match.matched_alias,
+    )
+
+
 def _candidate_context(node: Tag) -> str:
     link = _primary_link(node)
     if isinstance(link, Tag):
@@ -440,7 +433,6 @@ def _candidate_context(node: Tag) -> str:
     return _candidate_date_context(node)
 
 
-# 日期仍使用完整公告列／文章容器，避免標題優先後遺失旁邊日期。
 def _candidate_date_context(node: Tag) -> str:
     if node.name == "a":
         container = node.find_parent(("article", "li", "tr")) or node.parent or node
@@ -449,7 +441,6 @@ def _candidate_date_context(node: Tag) -> str:
     return " ".join(container.get_text(" ", strip=True).split())[:1200]
 
 
-# 取得節點自身或其第一個公告連結。
 def _primary_link(node: Tag) -> Tag | None:
     if node.name == "a":
         return node
@@ -476,20 +467,9 @@ def _candidate_url(node: Tag, official_url: str) -> str:
 
 
 def _matches_program(text: str, program: ScholarshipProgramWatch) -> bool:
-    normalized = _normalize(text)
-    aliases = (_normalize(alias) for alias in program.aliases)
-    return any(
-        len(alias) >= _MIN_ALIAS_MATCH_LENGTH and alias in normalized
-        for alias in aliases
-    )
+    """保留既有測試介面；正式流程使用可解釋 match_program。"""
 
-
-# 只使用受控等價詞，避免任意模糊比對造成不同方案誤合併。
-def _normalize(text: str) -> str:
-    value = unicodedata.normalize("NFKC", text).casefold()
-    for source, target in _EQUIVALENT_TERMS:
-        value = value.replace(source, target)
-    return re.sub(r"[\W_]+", "", value)
+    return match_program(text, program).matched
 
 
 def _extract_date(node: Tag, context: str) -> str | None:

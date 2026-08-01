@@ -11,6 +11,12 @@ from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_RESOLVED,
     RULES_STATUS_UNKNOWN,
 )
+from src.evaluators.application_evidence_scorer import (
+    SOURCE_ERROR,
+    VALID_APPLICATION_DETAIL,
+    ApplicationEvidence,
+    score_application_evidence,
+)
 from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
@@ -25,6 +31,7 @@ from src.evaluators.runtime_safety import (
     DEADLINE_UNKNOWN,
     EXPIRED,
     NOT_APPLICABLE,
+    STALE_UNKNOWN,
     classify_application_period,
 )
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
@@ -58,7 +65,7 @@ FILTER_REASON = "標題未命中通用獎助關鍵字，且不是已知方案。
 
 @dataclass(frozen=True)
 class ExclusionRecord:
-    """公告在進入正文判斷前被排除時的可稽核原因。"""
+    """公告在指定管線階段被排除時的可稽核原因。"""
 
     item: Scholarship
     stage: str
@@ -67,7 +74,7 @@ class ExclusionRecord:
 
 @dataclass(frozen=True)
 class PipelineCounts:
-    """單次執行各階段數量；至少保證相關性過濾可對帳。"""
+    """單次執行各階段數量，保證來源到通知可對帳。"""
 
     raw_collected: int = 0
     relevance_accepted: int = 0
@@ -105,7 +112,7 @@ class ServiceResult:
 
 @dataclass(frozen=True)
 class AuditRecord:
-    """單筆歷史公告的 legacy 結果、structured shadow 與擷取診斷。"""
+    """單筆公告的資格結果、正文診斷與 structured shadow。"""
 
     item: Scholarship
     detail_excerpt: str
@@ -118,7 +125,7 @@ class AuditRecord:
 
 @dataclass(frozen=True)
 class AuditResult:
-    """不修改獎學金狀態的歷史公告稽核結果。"""
+    """不修改通知狀態的全來源稽核結果。"""
 
     records: list[AuditRecord]
     eligible_count: int
@@ -137,8 +144,20 @@ class AuditResult:
     pipeline_counts: PipelineCounts = field(default_factory=PipelineCounts)
 
 
+@dataclass(frozen=True)
+class EvaluationOutcome:
+    """正文抓取後的完整管線結果。"""
+
+    decision: EligibilityDecision
+    notice_kind: str
+    application_status: str
+    detail_text: str
+    gemini_diagnostic: GeminiAnalysisDiagnostic | None
+    evidence: ApplicationEvidence
+
+
 class ScholarshipService:
-    """協調蒐集、公告分類、資格判斷與 LINE 通知流程。"""
+    """協調蒐集、正文證據、公告分類、資格判斷與 LINE 通知。"""
 
     def __init__(
         self,
@@ -200,6 +219,7 @@ class ScholarshipService:
         application_count = sum(
             record.item.notice_kind == APPLICATION for record in records
         )
+        non_actionable_periods = {EXPIRED, STALE_UNKNOWN}
         pipeline = PipelineCounts(
             raw_collected=len(raw),
             relevance_accepted=len(collected),
@@ -210,15 +230,15 @@ class ScholarshipService:
             non_application=len(records) - application_count,
             notifiable=sum(
                 record.item.notice_kind == APPLICATION
-                and record.item.application_status != EXPIRED
+                and record.item.application_status not in non_actionable_periods
                 and record.item.eligibility_status in {ELIGIBLE, REVIEW}
                 for record in records
             ),
         )
         pipeline.validate()
-        message = f"已稽核 {len(records)} 筆公告，不會傳送 LINE 或修改獎學金狀態。"
+        message = f"已稽核 {len(records)} 筆公告，不會修改通知或基準狀態。"
         if self.gemini_fallback or self.gemini_text_analysis:
-            message += " Gemini 結果只會寫入獨立文件快取與 shadow artifact。"
+            message += " Gemini 結果只寫入文件快取與 shadow artifact。"
         return AuditResult(
             records,
             eligible,
@@ -293,34 +313,27 @@ class ScholarshipService:
 
     def _evaluate_pending(self, profile_hash: str) -> None:
         for item in self.repository.list_for_evaluation(profile_hash):
-            decision, notice_kind, application_status, _, _ = self._evaluate_item(item)
+            outcome = self._evaluate_item(item)
             excluded = (
-                decision.reason_text()
-                if decision.status == ELIGIBILITY_NOT_APPLICABLE
+                outcome.decision.reason_text()
+                if outcome.decision.status == ELIGIBILITY_NOT_APPLICABLE
                 else ""
             )
             self.repository.mark_eligibility(
                 item.content_hash,
-                decision.status,
-                decision.reason_text(),
+                outcome.decision.status,
+                outcome.decision.reason_text(),
                 profile_hash,
-                notice_kind,
-                application_status,
+                outcome.notice_kind,
+                outcome.application_status,
                 excluded,
-                decision.manual_checks,
-                decision.review_kind,
+                outcome.decision.manual_checks,
+                outcome.decision.review_kind,
+                outcome.evidence.score,
+                outcome.evidence.status,
             )
 
-    def _evaluate_item(
-        self,
-        item: Scholarship,
-    ) -> tuple[
-        EligibilityDecision,
-        str,
-        str,
-        str,
-        GeminiAnalysisDiagnostic | None,
-    ]:
+    def _evaluate_item(self, item: Scholarship) -> EvaluationOutcome:
         fetch_result = self._fetch_audit_result(item)
         return self._evaluate_fetch_result(item, fetch_result)
 
@@ -328,41 +341,60 @@ class ScholarshipService:
         self,
         item: Scholarship,
         fetch_result: DetailFetchResult,
-    ) -> tuple[
-        EligibilityDecision,
-        str,
-        str,
-        str,
-        GeminiAnalysisDiagnostic | None,
-    ]:
-        if fetch_result.source.status == "error":
+    ) -> EvaluationOutcome:
+        source_error = fetch_result.source.status == "error"
+        detail_text = fetch_result.eligibility_text()
+        evidence = score_application_evidence(detail_text, source_error=source_error)
+        if source_error:
             decision = EligibilityDecision(
                 REVIEW,
                 ("公告正文讀取失敗，暫不推播。",),
                 tuple(),
                 REVIEW_SOURCE_INCOMPLETE,
             )
-            return decision, UNKNOWN, NOT_APPLICABLE, "", None
+            return EvaluationOutcome(
+                decision,
+                UNKNOWN,
+                NOT_APPLICABLE,
+                "",
+                None,
+                evidence,
+            )
 
         base_input = build_evaluator_input(fetch_result)
-        detail_text = fetch_result.eligibility_text()
         decision, notice_kind, application_status = self._evaluate_detail(
             item,
             detail_text,
             base_input,
+            evidence,
         )
+        non_actionable = application_status in {EXPIRED, STALE_UNKNOWN}
         if (
             notice_kind != APPLICATION
-            or application_status == EXPIRED
+            or non_actionable
             or decision.status != REVIEW
             or not self.gemini_fallback
         ):
-            return decision, notice_kind, application_status, detail_text, None
+            return EvaluationOutcome(
+                decision,
+                notice_kind,
+                application_status,
+                detail_text,
+                None,
+                evidence,
+            )
 
         fallback = self.gemini_fallback.analyze(item.title, fetch_result)
         if fallback is None or not fallback.rule_text:
             diagnostic = fallback.diagnostic if fallback else None
-            return decision, notice_kind, application_status, detail_text, diagnostic
+            return EvaluationOutcome(
+                decision,
+                notice_kind,
+                application_status,
+                detail_text,
+                diagnostic,
+                evidence,
+            )
 
         scope = _gemini_rule_scope(fallback.diagnostic.status)
         effective_rules_status = (
@@ -379,13 +411,21 @@ class ScholarshipService:
         assert self.evaluator is not None
         assert self.profile is not None
         decision = self.evaluator.evaluate(item, evaluator_input, self.profile)
-        return decision, notice_kind, application_status, detail_text, fallback.diagnostic
+        return EvaluationOutcome(
+            decision,
+            notice_kind,
+            application_status,
+            detail_text,
+            fallback.diagnostic,
+            evidence,
+        )
 
     def _evaluate_detail(
         self,
         item: Scholarship,
         detail_text: str,
         evaluator_input: EvaluatorInput,
+        evidence: ApplicationEvidence,
     ) -> tuple[EligibilityDecision, str, str]:
         notice_kind = classify_notice(item.title, detail_text)
         if notice_kind != APPLICATION:
@@ -395,10 +435,7 @@ class ScholarshipService:
                 notice_kind,
                 NOT_APPLICABLE,
             )
-        period = classify_application_period(
-            detail_text,
-            item.published_date,
-        )
+        period = classify_application_period(detail_text, item.published_date)
         if period.status == EXPIRED:
             deadline = period.deadline.isoformat() if period.deadline else "未知"
             reason = f"申請截止日 {deadline} 已過，不進入個人資格判斷。"
@@ -407,42 +444,68 @@ class ScholarshipService:
                 notice_kind,
                 period.status,
             )
+        if period.status == STALE_UNKNOWN:
+            reason = "公告發布時間已久且無當年度申請證據，列為歷史期限未知。"
+            return (
+                EligibilityDecision(ELIGIBILITY_NOT_APPLICABLE, (reason,)),
+                notice_kind,
+                period.status,
+            )
         assert self.evaluator is not None
         assert self.profile is not None
-        decision = self.evaluator.evaluate(item, evaluator_input, self.profile)
-        return decision, notice_kind, period.status or DEADLINE_UNKNOWN
+        local_decision = self.evaluator.evaluate(item, evaluator_input, self.profile)
+        if local_decision.status == INELIGIBLE:
+            return local_decision, notice_kind, period.status or DEADLINE_UNKNOWN
+        if evidence.status != VALID_APPLICATION_DETAIL:
+            hits = "、".join(evidence.hits) or "無明確申請欄位"
+            reason = (
+                f"申請正文證據不足（分數 {evidence.score}；{hits}），"
+                "暫列來源不完整。"
+            )
+            return (
+                EligibilityDecision(
+                    REVIEW,
+                    (reason,),
+                    local_decision.manual_checks,
+                    REVIEW_SOURCE_INCOMPLETE,
+                ),
+                notice_kind,
+                period.status or DEADLINE_UNKNOWN,
+            )
+        return local_decision, notice_kind, period.status or DEADLINE_UNKNOWN
 
     def _build_audit_record(self, item: Scholarship) -> AuditRecord:
         fetch_result = self._fetch_audit_result(item)
-        decision, notice_kind, application_status, detail_text, gemini = (
-            self._evaluate_fetch_result(item, fetch_result)
-        )
+        outcome = self._evaluate_fetch_result(item, fetch_result)
         shadow, shadow_status, shadow_gemini = self._build_structured_shadow(
             item,
-            decision,
-            notice_kind,
+            outcome.decision,
+            outcome.notice_kind,
+            outcome.application_status,
             fetch_result,
         )
         exclusion_reason = (
-            decision.reason_text()
-            if decision.status == ELIGIBILITY_NOT_APPLICABLE
+            outcome.decision.reason_text()
+            if outcome.decision.status == ELIGIBILITY_NOT_APPLICABLE
             else ""
         )
         evaluated = replace(
             item,
-            notice_kind=notice_kind,
-            application_status=application_status,
-            eligibility_status=decision.status,
-            eligibility_reason=decision.reason_text(),
-            manual_checks=decision.manual_checks,
-            review_kind=decision.review_kind,
+            detail_evidence_score=outcome.evidence.score,
+            resolution_status=outcome.evidence.status,
+            notice_kind=outcome.notice_kind,
+            application_status=outcome.application_status,
+            eligibility_status=outcome.decision.status,
+            eligibility_reason=outcome.decision.reason_text(),
+            manual_checks=outcome.decision.manual_checks,
+            review_kind=outcome.decision.review_kind,
             exclusion_reason=exclusion_reason,
         )
         return AuditRecord(
             evaluated,
-            self._excerpt(detail_text),
+            self._excerpt(outcome.detail_text),
             fetch_result,
-            gemini,
+            outcome.gemini_diagnostic,
             shadow,
             shadow_status,
             shadow_gemini,
@@ -453,6 +516,7 @@ class ScholarshipService:
         item: Scholarship,
         legacy: EligibilityDecision,
         notice_kind: str,
+        application_status: str,
         fetch_result: DetailFetchResult,
     ) -> tuple[
         StructuredShadowComparison | None,
@@ -463,10 +527,12 @@ class ScholarshipService:
             return None, "disabled", None
         if notice_kind != APPLICATION:
             return None, "not_application", None
+        if application_status in {EXPIRED, STALE_UNKNOWN}:
+            return None, "non_actionable_period", None
         if legacy.status in {INELIGIBLE, ELIGIBILITY_NOT_APPLICABLE}:
             return None, "legacy_not_evaluable", None
         if fetch_result.source.status == "error":
-            return None, "source_error", None
+            return None, SOURCE_ERROR, None
         if not (fetch_result.body_text.strip() or fetch_result.extracted_attachments):
             return None, "no_evidence", None
         analysis = self.gemini_text_analysis.analyze(item.title, fetch_result)

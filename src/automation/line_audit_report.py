@@ -15,7 +15,11 @@ from main import build_service
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.evaluators.eligibility_evaluator import ELIGIBLE, INELIGIBLE, REVIEW
 from src.evaluators.notice_classifier import APPLICATION
-from src.evaluators.runtime_safety import EXPIRED, classify_application_period
+from src.evaluators.runtime_safety import (
+    EXPIRED,
+    STALE_UNKNOWN,
+    classify_application_period,
+)
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
 from src.services.scholarship_service import AuditRecord, AuditResult
@@ -35,13 +39,15 @@ _REVIEW_LABELS = {
     "profile_missing": "個人資料缺值",
     "semantic_ambiguous": "語意待確認",
 }
+_NON_ACTIONABLE_PERIODS = {EXPIRED, STALE_UNKNOWN}
 
 
-# 將七個 collector 群組的真實稽核與 shadow 統計整理成 LINE 報告。
 def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
 ) -> str:
+    """建立可行動公告優先、來源狀態壓縮的 LINE 稽核報告。"""
+
     lines = [
         "獎學金真實檢查報告",
         f"本次稽核公告：{len(result.records)}",
@@ -64,7 +70,6 @@ def build_report_message(
     return "\n".join(lines)[:MAX_LINE_TEXT_LENGTH]
 
 
-# 在 LINE 報告中加入可對帳的主要管線數字。
 def _pipeline_lines(result: AuditResult) -> list[str]:
     counts = getattr(result, "pipeline_counts", None)
     if counts is None:
@@ -82,8 +87,9 @@ def _pipeline_lines(result: AuditResult) -> list[str]:
     ]
 
 
-# 建立公告性質、獎助類別、申請期間與硬性資格統計。
 def _scope_lines(records: list[AuditRecord]) -> list[str]:
+    """建立公告分類、申請期間、正文證據與硬性資格統計。"""
+
     notice_counts = Counter(record.item.notice_kind for record in records)
     category_counts = Counter(record.item.category for record in records)
     applications = [
@@ -91,7 +97,11 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
     ]
     periods = {id(record): _period_status(record) for record in applications}
     period_counts = Counter(periods[id(record)] for record in applications)
-    actionable = [record for record in applications if periods[id(record)] != EXPIRED]
+    actionable = [
+        record
+        for record in applications
+        if periods[id(record)] not in _NON_ACTIONABLE_PERIODS
+    ]
     eligibility_counts = Counter(
         record.item.eligibility_status for record in actionable
     )
@@ -99,6 +109,9 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
         record.item.review_kind
         for record in actionable
         if record.item.eligibility_status == REVIEW and record.item.review_kind
+    )
+    evidence_counts = Counter(
+        record.item.resolution_status or "unknown" for record in applications
     )
     non_application = len(records) - notice_counts[APPLICATION]
     lines = [
@@ -116,16 +129,26 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
             "申請狀態："
             f"開放 {period_counts['open']}／"
             f"尚未開始 {period_counts['upcoming']}／"
+            f"常年 {period_counts['evergreen']}／"
             f"已截止 {period_counts['expired']}／"
-            f"期限未知 {period_counts['deadline_unknown']}"
+            f"近期未知 {period_counts['deadline_unknown']}／"
+            f"歷史未知 {period_counts['stale_unknown']}"
         ),
         (
-            "硬性資格（未截止與期限未知）："
+            "正文證據："
+            f"完整 {evidence_counts['valid_application_detail']}／"
+            f"不足 {evidence_counts['insufficient_evidence']}／"
+            f"錯頁 {evidence_counts['navigation_or_wrong_page']}／"
+            f"來源錯誤 {evidence_counts['source_error']}"
+        ),
+        (
+            "硬性資格（可行動期間）："
             f"符合 {eligibility_counts[ELIGIBLE]}／"
             f"待確認 {eligibility_counts[REVIEW]}／"
             f"不符 {eligibility_counts[INELIGIBLE]}"
         ),
         f"已截止未列為個人資格不符：{period_counts['expired']}",
+        f"歷史期限未知未列入可申請：{period_counts['stale_unknown']}",
         f"非申請公告未列入個人資格：{non_application}",
     ]
     if review_counts:
@@ -139,7 +162,6 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
     return lines
 
 
-# LINE 最優先列出未截止的硬性條件符合與待確認公告。
 def _actionable_lines(result: AuditResult) -> list[str]:
     eligible = _records_with_status(result.records, ELIGIBLE)
     review = _records_with_status(result.records, REVIEW)
@@ -161,7 +183,6 @@ def _actionable_lines(result: AuditResult) -> list[str]:
     return lines
 
 
-# 篩出仍可申請且符合指定資格狀態的稽核紀錄。
 def _records_with_status(
     records: list[AuditRecord],
     status: str,
@@ -171,16 +192,15 @@ def _records_with_status(
         for record in records
         if record.item.notice_kind == APPLICATION
         and record.item.eligibility_status == status
-        and _period_status(record) != EXPIRED
+        and _period_status(record) not in _NON_ACTIONABLE_PERIODS
     ]
 
 
-# 將一筆公告壓縮成 LINE 文字，保留硬性理由、人工確認與正文 URL。
 def _item_lines(record: AuditRecord) -> str:
     item = record.item
     title = _short(item.title, MAX_DETAIL_TITLE_LENGTH)
     reason = _short(item.eligibility_reason, MAX_DETAIL_REASON_LENGTH)
-    url = getattr(item, "detail_url", "") or item.source_url
+    url = item.detail_url or item.source_url
     published = item.published_date or "日期未知"
     lines = [f"- {published}｜{title}", f"  {reason}"]
     if item.review_kind:
@@ -191,11 +211,13 @@ def _item_lines(record: AuditRecord) -> str:
             for value in item.manual_checks[:MAX_MANUAL_CHECKS_PER_ITEM]
         ]
         lines.append("  自行確認：" + "；".join(checks))
+    lines.append(
+        f"  正文證據：{item.detail_evidence_score}｜{item.resolution_status or 'unknown'}"
+    )
     lines.append(f"  {url}")
     return "\n".join(lines)
 
 
-# 列出每筆 structured 分歧與抽取錯誤，避免摘要只剩數量。
 def _structured_detail_lines(records: list[AuditRecord]) -> list[str]:
     changed = [record for record in records if _is_changed(record)]
     errors = [record for record in records if _is_shadow_error(record)]
@@ -210,15 +232,14 @@ def _structured_detail_lines(records: list[AuditRecord]) -> list[str]:
 
 
 def _is_changed(record: AuditRecord) -> bool:
-    shadow = getattr(record, "structured_shadow", None)
+    shadow = record.structured_shadow
     return bool(shadow and shadow.changed)
 
 
 def _is_shadow_error(record: AuditRecord) -> bool:
-    return getattr(record, "shadow_status", "") in {"text_error", "text_cached_error"}
+    return record.shadow_status in {"text_error", "text_cached_error"}
 
 
-# 將一筆 legacy／structured 差異壓縮成單行 LINE 文字。
 def _changed_line(record: AuditRecord) -> str:
     shadow = record.structured_shadow
     assert shadow is not None
@@ -227,7 +248,6 @@ def _changed_line(record: AuditRecord) -> str:
     return f"- {title}：{shadow.legacy_status}→{shadow.structured_status}；{reason}"
 
 
-# 將一筆 Gemini 錯誤壓縮成單行，保留實際例外訊息。
 def _error_line(record: AuditRecord) -> str:
     diagnostic = record.structured_gemini_diagnostic
     title = _short(record.item.title, MAX_DETAIL_TITLE_LENGTH)
@@ -245,7 +265,6 @@ def _strip_manual_prefix(value: str) -> str:
     return value[len(prefix):].strip() if value.startswith(prefix) else value
 
 
-# 一般來源保留原摘要；TUN 38 項在 LINE 中壓縮為狀態統計與異常明細。
 def _compact_source_lines(source_lines: Sequence[str]) -> list[str]:
     regular = [line for line in source_lines if not line.startswith("TUN方案 ")]
     tun_lines = [line for line in source_lines if line.startswith("TUN方案 ")]
@@ -269,16 +288,14 @@ def _compact_source_lines(source_lines: Sequence[str]) -> list[str]:
     return lines
 
 
-# 從逐方案摘要中擷取固定狀態欄位。
 def _tun_status(line: str) -> str:
     if "：" not in line:
         return "unknown"
     return line.split("：", 1)[1].split("；", 1)[0].strip() or "unknown"
 
 
-# 優先使用服務已保存的申請狀態，兼容舊稽核資料時才重新推導。
 def _period_status(record: AuditRecord) -> str:
-    saved = getattr(record.item, "application_status", "")
+    saved = record.item.application_status
     if saved and saved != "not_applicable":
         return saved
     text = record.fetch_result.eligibility_text()
@@ -287,6 +304,7 @@ def _period_status(record: AuditRecord) -> str:
 
 def main() -> None:
     """重新稽核七個 collector 群組並傳送 LINE，不修改通知狀態。"""
+
     validate_settings()
     validate_gemini_settings()
     service = build_service(mode=RunMode.AUDIT, use_gemini=True)

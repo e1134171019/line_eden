@@ -12,6 +12,11 @@ SCHEMA_COLUMNS = {
     "program_id": "TEXT NOT NULL DEFAULT ''",
     "entry_url": "TEXT NOT NULL DEFAULT ''",
     "detail_url": "TEXT NOT NULL DEFAULT ''",
+    "match_method": "TEXT NOT NULL DEFAULT ''",
+    "match_score": "INTEGER NOT NULL DEFAULT 0",
+    "matched_alias": "TEXT NOT NULL DEFAULT ''",
+    "detail_evidence_score": "INTEGER NOT NULL DEFAULT 0",
+    "resolution_status": "TEXT NOT NULL DEFAULT ''",
     "notice_kind": "TEXT NOT NULL DEFAULT 'unknown'",
     "application_status": "TEXT NOT NULL DEFAULT 'not_applicable'",
     "discovered_at": "TEXT",
@@ -26,20 +31,23 @@ SCHEMA_COLUMNS = {
     "evaluated_at": "TEXT",
 }
 
-NOTIFIABLE_APPLICATION_STATUSES = ("open", "upcoming", "deadline_unknown")
+NOTIFIABLE_APPLICATION_STATUSES = (
+    "open",
+    "upcoming",
+    "deadline_unknown",
+    "evergreen",
+)
 
 
 class ScholarshipRepository:
     """Scholarship 的 SQLite 存取層。"""
 
-    # 初始化資料庫路徑並建立資料表。
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._create_table()
         self._migrate_schema()
 
-    # 建立完整資料表與唯一索引。
     def _create_table(self) -> None:
         query = """
         CREATE TABLE IF NOT EXISTS scholarships (
@@ -52,6 +60,11 @@ class ScholarshipRepository:
             program_id TEXT NOT NULL DEFAULT '',
             entry_url TEXT NOT NULL DEFAULT '',
             detail_url TEXT NOT NULL DEFAULT '',
+            match_method TEXT NOT NULL DEFAULT '',
+            match_score INTEGER NOT NULL DEFAULT 0,
+            matched_alias TEXT NOT NULL DEFAULT '',
+            detail_evidence_score INTEGER NOT NULL DEFAULT 0,
+            resolution_status TEXT NOT NULL DEFAULT '',
             notice_kind TEXT NOT NULL DEFAULT 'unknown',
             application_status TEXT NOT NULL DEFAULT 'not_applicable',
             content_hash TEXT NOT NULL UNIQUE,
@@ -71,7 +84,6 @@ class ScholarshipRepository:
             conn.execute(query)
             conn.commit()
 
-    # 補齊舊版資料表缺少的狀態欄位。
     def _migrate_schema(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             existing = self._column_names(conn)
@@ -82,19 +94,16 @@ class ScholarshipRepository:
             self._fill_source_urls(conn)
             conn.commit()
 
-    # 讀取目前資料表欄位名稱。
     def _column_names(self, conn: sqlite3.Connection) -> set[str]:
         rows = conn.execute("PRAGMA table_info(scholarships)").fetchall()
         return {row[1] for row in rows}
 
-    # 補齊舊資料的 discovered_at。
     def _fill_discovered_at(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE scholarships SET discovered_at = ? WHERE discovered_at IS NULL",
             [self._now_iso()],
         )
 
-    # 舊資料只有 source_url，migration 後將它作為入口與正文 URL。
     def _fill_source_urls(self, conn: sqlite3.Connection) -> None:
         conn.execute(
             "UPDATE scholarships SET entry_url = source_url "
@@ -105,17 +114,14 @@ class ScholarshipRepository:
             "WHERE detail_url IS NULL OR detail_url = ''"
         )
 
-    # 產生 UTC ISO 時間字串。
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    # 取得資料庫目前是否無任何公告資料。
     def is_empty(self) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute("SELECT COUNT(1) FROM scholarships").fetchone()
         return bool(row and row[0] == 0)
 
-    # 回傳輸入 content_hash 中已存在資料庫的集合。
     def get_existing_hashes(self, content_hashes: list[str]) -> set[str]:
         if not content_hashes:
             return set()
@@ -125,7 +131,6 @@ class ScholarshipRepository:
             rows = conn.execute(query, content_hashes).fetchall()
         return {row[0] for row in rows}
 
-    # 新增已蒐集公告，重複資料將被忽略。
     def discover(self, scholarships: list[Scholarship]) -> int:
         if not scholarships:
             return 0
@@ -133,17 +138,18 @@ class ScholarshipRepository:
         query = """
         INSERT OR IGNORE INTO scholarships (
             source, title, published_date, source_url, category,
-            program_id, entry_url, detail_url, notice_kind, application_status,
-            content_hash, discovered_at, exclusion_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            program_id, entry_url, detail_url, match_method, match_score,
+            matched_alias, detail_evidence_score, resolution_status,
+            notice_kind, application_status, content_hash, discovered_at,
+            exclusion_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
             conn.commit()
         return max(cursor.rowcount, 0)
 
-    # 建立單筆公告寫入資料。
-    def _discovery_row(self, item: Scholarship) -> tuple[str, ...]:
+    def _discovery_row(self, item: Scholarship) -> tuple[object, ...]:
         return (
             item.source,
             item.title,
@@ -153,6 +159,11 @@ class ScholarshipRepository:
             item.program_id,
             item.entry_url or item.source_url,
             item.detail_url or item.source_url,
+            item.match_method,
+            item.match_score,
+            item.matched_alias,
+            item.detail_evidence_score,
+            item.resolution_status,
             item.notice_kind,
             item.application_status,
             item.content_hash,
@@ -160,12 +171,10 @@ class ScholarshipRepository:
             item.exclusion_reason,
         )
 
-    # 取出目前所有尚未基準化或通知的公告。
     def list_pending(self) -> list[Scholarship]:
         query = self._select_query("notified_at IS NULL AND baseline_at IS NULL")
         return self._query_scholarships(query, [])
 
-    # 取出尚未用目前背景設定完成評估的公告。
     def list_for_evaluation(self, profile_hash: str) -> list[Scholarship]:
         condition = (
             "notified_at IS NULL AND baseline_at IS NULL "
@@ -173,7 +182,6 @@ class ScholarshipRepository:
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
 
-    # 取出符合推播狀態、屬於申請型且尚可處理的公告。
     def list_notifiable(
         self,
         profile_hash: str,
@@ -191,12 +199,14 @@ class ScholarshipRepository:
         params = [profile_hash, *NOTIFIABLE_APPLICATION_STATUSES, *statuses]
         return self._query_scholarships(self._select_query(condition), params)
 
-    # 建立讀取 Scholarship 所需的統一查詢。
     def _select_query(self, condition: str) -> str:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
                COALESCE(program_id, ''), COALESCE(entry_url, source_url),
-               COALESCE(detail_url, source_url), COALESCE(notice_kind, 'unknown'),
+               COALESCE(detail_url, source_url), COALESCE(match_method, ''),
+               COALESCE(match_score, 0), COALESCE(matched_alias, ''),
+               COALESCE(detail_evidence_score, 0), COALESCE(resolution_status, ''),
+               COALESCE(notice_kind, 'unknown'),
                COALESCE(application_status, 'not_applicable'),
                COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, ''),
                COALESCE(manual_checks, '[]'), COALESCE(review_kind, ''),
@@ -206,7 +216,6 @@ class ScholarshipRepository:
         ORDER BY published_date DESC, id DESC
         """
 
-    # 執行查詢並轉換成 Scholarship 清單。
     def _query_scholarships(
         self,
         query: str,
@@ -216,28 +225,31 @@ class ScholarshipRepository:
             rows = conn.execute(query, params).fetchall()
         return [self._to_scholarship(row) for row in rows]
 
-    # 將 SQLite 資料列轉換為 Scholarship。
-    def _to_scholarship(self, row: tuple[str, ...]) -> Scholarship:
+    def _to_scholarship(self, row: tuple[object, ...]) -> Scholarship:
         return Scholarship(
-            source=row[0],
-            title=row[1],
-            published_date=row[2],
-            source_url=row[3],
-            category=row[4],
-            content_hash=row[5],
-            program_id=row[6],
-            entry_url=row[7],
-            detail_url=row[8],
-            notice_kind=row[9],
-            application_status=row[10],
-            eligibility_status=row[11],
-            eligibility_reason=row[12],
-            manual_checks=_decode_manual_checks(row[13]),
-            review_kind=row[14],
-            exclusion_reason=row[15],
+            source=str(row[0]),
+            title=str(row[1]),
+            published_date=str(row[2]),
+            source_url=str(row[3]),
+            category=str(row[4]),
+            content_hash=str(row[5]),
+            program_id=str(row[6]),
+            entry_url=str(row[7]),
+            detail_url=str(row[8]),
+            match_method=str(row[9]),
+            match_score=int(row[10]),
+            matched_alias=str(row[11]),
+            detail_evidence_score=int(row[12]),
+            resolution_status=str(row[13]),
+            notice_kind=str(row[14]),
+            application_status=str(row[15]),
+            eligibility_status=str(row[16]),
+            eligibility_reason=str(row[17]),
+            manual_checks=_decode_manual_checks(str(row[18])),
+            review_kind=str(row[19]),
+            exclusion_reason=str(row[20]),
         )
 
-    # 保存公告用途、申請期間與個人資格判斷。
     def mark_eligibility(
         self,
         content_hash: str,
@@ -249,11 +261,14 @@ class ScholarshipRepository:
         exclusion_reason: str = "",
         manual_checks: tuple[str, ...] = tuple(),
         review_kind: str = "",
+        detail_evidence_score: int = 0,
+        resolution_status: str = "",
     ) -> int:
         query = """
         UPDATE scholarships
         SET notice_kind = ?, application_status = ?, eligibility_status = ?,
             eligibility_reason = ?, manual_checks = ?, review_kind = ?,
+            detail_evidence_score = ?, resolution_status = ?,
             exclusion_reason = ?, profile_hash = ?, evaluated_at = ?
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
@@ -264,6 +279,8 @@ class ScholarshipRepository:
             reason,
             _encode_manual_checks(manual_checks),
             review_kind,
+            max(detail_evidence_score, 0),
+            resolution_status,
             exclusion_reason,
             profile_hash,
             self._now_iso(),
@@ -274,7 +291,6 @@ class ScholarshipRepository:
             conn.commit()
         return max(cursor.rowcount, 0)
 
-    # 統計指定背景設定下的資格判斷數量。
     def count_eligibility(self, profile_hash: str, status: str) -> int:
         query = """
         SELECT COUNT(1) FROM scholarships
@@ -285,15 +301,12 @@ class ScholarshipRepository:
             row = conn.execute(query, [profile_hash, status]).fetchone()
         return int(row[0]) if row else 0
 
-    # 將指定公告標記為歷史基準，不再推播。
     def mark_baseline(self, content_hashes: list[str]) -> int:
         return self._mark_time("baseline_at", content_hashes)
 
-    # 將指定公告標記為已通知。
     def mark_notified(self, content_hashes: list[str]) -> int:
         return self._mark_time("notified_at", content_hashes)
 
-    # 寫入指定時間欄位。
     def _mark_time(self, column: str, content_hashes: list[str]) -> int:
         if not content_hashes:
             return 0

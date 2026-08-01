@@ -77,6 +77,16 @@ ADMINISTRATIVE_MARKERS = (
     "核定日期",
 )
 FULL_TIME_TERMS = ("全職學生", "全時學生", "全日制學生")
+EVERGREEN_MARKERS = (
+    "全年受理",
+    "常年受理",
+    "全年皆可申請",
+    "隨時申請",
+    "隨到隨審",
+    "長期受理",
+    "無申請期限",
+)
+STALE_UNKNOWN_DAYS = 180
 DATE_PATTERN = re.compile(
     r"(?:(?P<year_value>20\d{2}|\d{3})(?:年|[\-/.]))?"
     r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
@@ -99,6 +109,8 @@ UPCOMING = "upcoming"
 OPEN = "open"
 EXPIRED = "expired"
 DEADLINE_UNKNOWN = "deadline_unknown"
+STALE_UNKNOWN = "stale_unknown"
+EVERGREEN = "evergreen"
 NOT_APPLICABLE = "not_applicable"
 
 
@@ -156,7 +168,7 @@ def extract_application_start(text: str, published_date: str) -> date | None:
     return min(starts) if starts else None
 
 
-# 將申請起訖日轉為 upcoming、open、expired 或 deadline_unknown。
+# 將申請起訖日轉為 upcoming、open、expired、evergreen 或未知類型。
 def classify_application_period(
     text: str,
     published_date: str,
@@ -171,7 +183,25 @@ def classify_application_period(
         return ApplicationPeriod(start, deadline, UPCOMING)
     if deadline is not None:
         return ApplicationPeriod(start, deadline, OPEN)
-    return ApplicationPeriod(start, deadline, DEADLINE_UNKNOWN)
+    if any(marker in text for marker in EVERGREEN_MARKERS):
+        return ApplicationPeriod(start, None, EVERGREEN)
+    if _is_stale_unknown(text, published_date, current):
+        return ApplicationPeriod(start, None, STALE_UNKNOWN)
+    return ApplicationPeriod(start, None, DEADLINE_UNKNOWN)
+
+
+# 發布時間已久且正文沒有當年度訊號時，避免當成目前可申請的期限未知公告。
+def _is_stale_unknown(text: str, published_date: str, current: date) -> bool:
+    published = _parse_iso_date(published_date)
+    if published is None or (current - published).days <= STALE_UNKNOWN_DAYS:
+        return False
+    current_roc_year = current.year - 1911
+    year_markers = (
+        str(current.year),
+        f"{current_roc_year}年",
+        f"{current_roc_year}學年度",
+    )
+    return not any(marker in text for marker in year_markers)
 
 
 # 申請期限已過時直接排除，避免歷史公告再次進入推播候選。
@@ -183,6 +213,8 @@ def find_deadline_exclusions(
     period = classify_application_period(text, scholarship.published_date, today)
     if period.status == EXPIRED and period.deadline is not None:
         return [f"申請截止日 {period.deadline.isoformat()} 已過，不推播。"]
+    if period.status == STALE_UNKNOWN:
+        return ["公告發布時間已久且無當年度申請證據，列為歷史期限未知。"]
     return []
 
 

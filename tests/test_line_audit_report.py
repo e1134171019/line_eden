@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from src.automation.line_audit_report import build_report_message
 
 
-# 建立可供報表統計的簡化稽核紀錄。
 def _record(
     status: str,
     title: str,
@@ -16,6 +15,8 @@ def _record(
     application_status: str = "",
     manual_checks: tuple[str, ...] = tuple(),
     review_kind: str = "",
+    resolution_status: str = "valid_application_detail",
+    evidence_score: int = 4,
 ) -> SimpleNamespace:
     item = SimpleNamespace(
         eligibility_status=status,
@@ -29,12 +30,19 @@ def _record(
         application_status=application_status,
         manual_checks=manual_checks,
         review_kind=review_kind,
+        resolution_status=resolution_status,
+        detail_evidence_score=evidence_score,
     )
     fetch_result = SimpleNamespace(eligibility_text=lambda: text)
-    return SimpleNamespace(item=item, fetch_result=fetch_result)
+    return SimpleNamespace(
+        item=item,
+        fetch_result=fetch_result,
+        structured_shadow=None,
+        shadow_status="not_run",
+        structured_gemini_diagnostic=None,
+    )
 
 
-# 建立簡化稽核結果。
 def _result(**overrides: object) -> SimpleNamespace:
     values: dict[str, object] = {
         "records": [],
@@ -65,6 +73,8 @@ def test_report_lists_current_eligible_and_review_items() -> None:
                 "待確認公告",
                 category="student_aid",
                 review_kind="source_incomplete",
+                resolution_status="insufficient_evidence",
+                evidence_score=2,
             ),
             _record("ineligible", "不符合公告", notice_kind="result"),
         ],
@@ -85,7 +95,8 @@ def test_report_lists_current_eligible_and_review_items() -> None:
     assert "申請型公告：2" in message
     assert "公告類別：獎學金 2／助學金 1" in message
     assert "申請狀態：開放 2" in message
-    assert "硬性資格（未截止與期限未知）：符合 1／待確認 1／不符 0" in message
+    assert "正文證據：完整 1／不足 1" in message
+    assert "硬性資格（可行動期間）：符合 1／待確認 1／不符 0" in message
     assert "待確認原因：來源不完整 1" in message
     assert "非申請公告未列入個人資格：1" in message
     assert "來源網站：設定 7" in message
@@ -94,6 +105,7 @@ def test_report_lists_current_eligible_and_review_items() -> None:
     assert "硬性條件待確認公告：" in message
     assert "待確認公告" in message
     assert "自行確認：平均成績須達 85 分門檻" in message
+    assert "正文證據：4｜valid_application_detail" in message
     assert "不符合公告" not in message
 
 
@@ -111,9 +123,28 @@ def test_expired_notice_is_not_counted_as_personal_ineligibility() -> None:
 
     message = build_report_message(result)
 
-    assert "硬性資格（未截止與期限未知）：符合 0／待確認 0／不符 0" in message
+    assert "硬性資格（可行動期間）：符合 0／待確認 0／不符 0" in message
     assert "已截止未列為個人資格不符：1" in message
     assert "過期獎學金" not in message
+
+
+def test_stale_unknown_notice_is_not_actionable() -> None:
+    result = _result(
+        records=[
+            _record(
+                "review",
+                "舊年度期限未知公告",
+                application_status="stale_unknown",
+            )
+        ],
+        review_count=1,
+    )
+
+    message = build_report_message(result)
+
+    assert "歷史未知 1" in message
+    assert "歷史期限未知未列入可申請：1" in message
+    assert "舊年度期限未知公告" not in message
 
 
 def test_report_lists_review_when_no_eligible_items() -> None:
@@ -151,11 +182,11 @@ def test_actionable_items_appear_before_compact_tun_status() -> None:
         "來源網站：設定 7，成功產生資料 7，空結果 0，部分完成 0，失敗 0"
     ]
     source_lines.extend(
-        f"TUN方案 program-{index}：candidate_found；候選 1；入口 https://example.test/{index}"
+        f"TUN方案 program-{index}：candidate_found；唯一候選 1；入口 https://example.test/{index}"
         for index in range(35)
     )
     source_lines.extend(
-        f"TUN方案 pending-{index}：pending_source；候選 0；入口 由核心來源涵蓋"
+        f"TUN方案 pending-{index}：pending_source；唯一候選 0；入口 由核心來源涵蓋"
         for index in range(3)
     )
 

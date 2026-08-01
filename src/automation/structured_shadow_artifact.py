@@ -14,7 +14,8 @@ def write_structured_shadow_artifacts(
     result: AuditResult,
     output_dir: Path = Path("artifacts"),
 ) -> tuple[Path, Path]:
-    """輸出不含 profile 原始內容的 shadow 比較明細。"""
+    """輸出不含 profile 原始內容的來源、正文與 shadow 比較明細。"""
+
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / CSV_NAME
     json_path = output_dir / JSON_NAME
@@ -28,6 +29,8 @@ def write_structured_shadow_artifacts(
             "ineligible": result.ineligible_count,
         },
         "review_kinds": _review_kind_counts(result.records),
+        "resolution_statuses": _resolution_counts(result.records),
+        "application_statuses": _application_status_counts(result.records),
         "structured": {
             "evaluated": result.structured_evaluated_count,
             "changed": result.structured_changed_count,
@@ -47,9 +50,24 @@ def _review_kind_counts(records: list[AuditRecord]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in records:
         kind = record.item.review_kind
-        if not kind:
-            continue
-        counts[kind] = counts.get(kind, 0) + 1
+        if kind:
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
+
+def _resolution_counts(records: list[AuditRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        status = record.item.resolution_status or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def _application_status_counts(records: list[AuditRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        status = record.item.application_status or "unknown"
+        counts[status] = counts.get(status, 0) + 1
     return counts
 
 
@@ -67,21 +85,27 @@ def _record_payload(record: AuditRecord) -> dict[str, object]:
             }
             for item in shadow.conditions
         ]
+    item = record.item
     return {
-        "published_date": record.item.published_date,
-        "title": record.item.title,
-        "source": record.item.source,
-        "source_url": record.item.source_url,
-        "entry_url": record.item.entry_url,
-        "detail_url": record.item.detail_url,
-        "program_id": record.item.program_id,
-        "notice_kind": record.item.notice_kind,
-        "application_status": record.item.application_status,
+        "published_date": item.published_date,
+        "title": item.title,
+        "source": item.source,
+        "source_url": item.source_url,
+        "entry_url": item.entry_url,
+        "detail_url": item.detail_url,
+        "program_id": item.program_id,
+        "match_method": item.match_method,
+        "match_score": item.match_score,
+        "matched_alias": item.matched_alias,
+        "detail_evidence_score": item.detail_evidence_score,
+        "resolution_status": item.resolution_status,
+        "notice_kind": item.notice_kind,
+        "application_status": item.application_status,
         "rules_status": record.fetch_result.rules_status,
-        "legacy_status": record.item.eligibility_status,
-        "legacy_reason": record.item.eligibility_reason,
-        "legacy_manual_checks": list(record.item.manual_checks),
-        "legacy_review_kind": record.item.review_kind,
+        "legacy_status": item.eligibility_status,
+        "legacy_reason": item.eligibility_reason,
+        "legacy_manual_checks": list(item.manual_checks),
+        "legacy_review_kind": item.review_kind,
         "shadow_status": record.shadow_status,
         "structured_status": shadow.structured_status if shadow else "",
         "structured_reason": shadow.structured_reason if shadow else "",
@@ -106,6 +130,11 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         "entry_url",
         "detail_url",
         "program_id",
+        "match_method",
+        "match_score",
+        "matched_alias",
+        "detail_evidence_score",
+        "resolution_status",
         "notice_kind",
         "application_status",
         "rules_status",
