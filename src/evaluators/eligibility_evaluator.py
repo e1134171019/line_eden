@@ -36,6 +36,10 @@ from src.evaluators.extended_profile_rules import (
 from src.evaluators.extended_reason_normalizer import (
     filter_false_residence_exclusions,
 )
+from src.evaluators.manual_check_extractor import (
+    extract_manual_checks,
+    is_manual_reason,
+)
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
 from src.evaluators.special_status_aliases import find_alias_exclusions
@@ -54,6 +58,10 @@ from src.profiles.student_profile import StudentProfile
 ELIGIBLE = "eligible"
 REVIEW = "review"
 INELIGIBLE = "ineligible"
+
+REVIEW_SOURCE_INCOMPLETE = "source_incomplete"
+REVIEW_PROFILE_MISSING = "profile_missing"
+REVIEW_SEMANTIC_AMBIGUOUS = "semantic_ambiguous"
 
 _SAFE_RULES_STATUSES = {
     RULES_STATUS_NOT_REQUIRED,
@@ -159,19 +167,52 @@ def _trusted_unresolved_text(
     )
 
 
+def _without_manual_reasons(reasons: list[str]) -> list[str]:
+    """成績、排名與修課門檻只提供人工確認，不再改變硬性資格。"""
+
+    return [reason for reason in reasons if not is_manual_reason(reason)]
+
+
+def _review_kind(reasons: list[str]) -> str:
+    normalized = "｜".join(reasons)
+    if any(
+        marker in normalized
+        for marker in (
+            "正文讀取失敗",
+            "附件",
+            "辦法",
+            "證據",
+            "不完整",
+            "公告未提供足夠條件",
+        )
+    ):
+        return REVIEW_SOURCE_INCOMPLETE
+    if any(
+        marker in normalized
+        for marker in ("profile", "未填", "缺少戶籍", "缺少學籍", "缺少資料")
+    ):
+        return REVIEW_PROFILE_MISSING
+    return REVIEW_SEMANTIC_AMBIGUOUS
+
+
 @dataclass(frozen=True)
 class EligibilityDecision:
-    """單筆公告對指定學生背景的資格判斷結果。"""
+    """單筆公告對指定學生背景的硬性資格判斷結果。"""
 
     status: str
     reasons: tuple[str, ...]
+    manual_checks: tuple[str, ...] = tuple()
+    review_kind: str = ""
 
     def reason_text(self) -> str:
         return "；".join(self.reasons)
 
+    def manual_check_text(self) -> str:
+        return "；".join(self.manual_checks)
+
 
 class EligibilityEvaluator:
-    """協調資格規則並產生保守的適合度判斷。"""
+    """協調硬性資格規則；成績與排名只抽取為人工確認項。"""
 
     def evaluate(
         self,
@@ -186,6 +227,7 @@ class EligibilityEvaluator:
         detail_text = _assemble_evaluation_text(evaluator_input)
         title = _normalize_rule_text(scholarship.title)
         text = _normalize_rule_text(f"{title}。{detail_text}")
+        manual_checks = extract_manual_checks(text)
         exclusions = find_deadline_exclusions(scholarship, text)
         exclusions.extend(
             self._find_exclusions(
@@ -196,23 +238,51 @@ class EligibilityEvaluator:
                 effective_rules_status,
             )
         )
-        exclusions = _deduplicate_reasons(exclusions)
+        exclusions = _deduplicate_reasons(_without_manual_reasons(exclusions))
         if exclusions:
-            return EligibilityDecision(INELIGIBLE, tuple(exclusions))
-        unknowns = self._find_unknowns(text, profile, effective_rules_status)
+            return EligibilityDecision(
+                INELIGIBLE,
+                tuple(exclusions),
+                manual_checks,
+            )
+        unknowns = _without_manual_reasons(
+            self._find_unknowns(text, profile, effective_rules_status)
+        )
         if unknowns:
-            return EligibilityDecision(REVIEW, tuple(unknowns))
+            unique = list(dict.fromkeys(unknowns))
+            return EligibilityDecision(
+                REVIEW,
+                tuple(unique),
+                manual_checks,
+                _review_kind(unique),
+            )
         matches = find_matches(text, profile)
         matches.extend(find_extended_matches(text, profile))
         matches.extend(find_supplemental_matches(text, profile))
         matches = filter_contextual_matches(matches, title, detail_text, profile)
         matches = filter_general_college_matches(matches, text)
+        matches = _without_manual_reasons(matches)
         completeness = find_completeness_unknowns(matches)
         if completeness:
-            return EligibilityDecision(REVIEW, tuple(completeness))
+            return EligibilityDecision(
+                REVIEW,
+                tuple(completeness),
+                manual_checks,
+                REVIEW_SEMANTIC_AMBIGUOUS,
+            )
         if matches:
-            return EligibilityDecision(ELIGIBLE, tuple(dict.fromkeys(matches)))
-        return EligibilityDecision(REVIEW, ("公告未提供足夠條件，暫不推播。",))
+            return EligibilityDecision(
+                ELIGIBLE,
+                tuple(dict.fromkeys(matches)),
+                manual_checks,
+            )
+        reasons = ["公告未提供足夠硬性條件，暫列待確認。"]
+        return EligibilityDecision(
+            REVIEW,
+            tuple(reasons),
+            manual_checks,
+            REVIEW_SOURCE_INCOMPLETE,
+        )
 
     def _find_exclusions(
         self,
