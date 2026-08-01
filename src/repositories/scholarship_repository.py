@@ -5,10 +5,18 @@ import json
 from pathlib import Path
 import sqlite3
 
+from src.models.announcement_revision import build_announcement_id
 from src.models.scholarship import Scholarship
+
+REVISION_INITIALIZED = "initialized"
+REVISION_UNCHANGED = "unchanged"
+REVISION_CHANGED = "changed"
 
 SCHEMA_COLUMNS = {
     "category": "TEXT NOT NULL DEFAULT 'other'",
+    "announcement_id": "TEXT NOT NULL DEFAULT ''",
+    "revision_hash": "TEXT NOT NULL DEFAULT ''",
+    "revision_checked_at": "TEXT",
     "program_id": "TEXT NOT NULL DEFAULT ''",
     "entry_url": "TEXT NOT NULL DEFAULT ''",
     "detail_url": "TEXT NOT NULL DEFAULT ''",
@@ -40,7 +48,7 @@ NOTIFIABLE_APPLICATION_STATUSES = (
 
 
 class ScholarshipRepository:
-    """Scholarship 的 SQLite 存取層。"""
+    """Scholarship 的 SQLite 存取層與公告 revision lifecycle。"""
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
@@ -57,6 +65,9 @@ class ScholarshipRepository:
             published_date TEXT NOT NULL,
             source_url TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'other',
+            announcement_id TEXT NOT NULL DEFAULT '',
+            revision_hash TEXT NOT NULL DEFAULT '',
+            revision_checked_at TEXT,
             program_id TEXT NOT NULL DEFAULT '',
             entry_url TEXT NOT NULL DEFAULT '',
             detail_url TEXT NOT NULL DEFAULT '',
@@ -92,6 +103,11 @@ class ScholarshipRepository:
                     conn.execute(f"ALTER TABLE scholarships ADD COLUMN {name} {definition}")
             self._fill_discovered_at(conn)
             self._fill_source_urls(conn)
+            self._fill_announcement_ids(conn)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scholarships_announcement_id "
+                "ON scholarships(announcement_id)"
+            )
             conn.commit()
 
     def _column_names(self, conn: sqlite3.Connection) -> set[str]:
@@ -113,6 +129,17 @@ class ScholarshipRepository:
             "UPDATE scholarships SET detail_url = source_url "
             "WHERE detail_url IS NULL OR detail_url = ''"
         )
+
+    def _fill_announcement_ids(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT id, source, COALESCE(detail_url, source_url) FROM scholarships "
+            "WHERE announcement_id IS NULL OR announcement_id = ''"
+        ).fetchall()
+        for row_id, source, detail_url in rows:
+            conn.execute(
+                "UPDATE scholarships SET announcement_id = ? WHERE id = ?",
+                [build_announcement_id(str(source), str(detail_url)), row_id],
+            )
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -138,11 +165,11 @@ class ScholarshipRepository:
         query = """
         INSERT OR IGNORE INTO scholarships (
             source, title, published_date, source_url, category,
-            program_id, entry_url, detail_url, match_method, match_score,
-            matched_alias, detail_evidence_score, resolution_status,
-            notice_kind, application_status, content_hash, discovered_at,
-            exclusion_reason
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            announcement_id, revision_hash, program_id, entry_url, detail_url,
+            match_method, match_score, matched_alias, detail_evidence_score,
+            resolution_status, notice_kind, application_status, content_hash,
+            discovered_at, exclusion_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
@@ -156,6 +183,8 @@ class ScholarshipRepository:
             item.published_date,
             item.source_url,
             item.category,
+            item.announcement_id,
+            item.revision_hash,
             item.program_id,
             item.entry_url or item.source_url,
             item.detail_url or item.source_url,
@@ -172,8 +201,10 @@ class ScholarshipRepository:
         )
 
     def list_pending(self) -> list[Scholarship]:
-        query = self._select_query("notified_at IS NULL AND baseline_at IS NULL")
-        return self._query_scholarships(query, [])
+        return self._query_scholarships(
+            self._select_query("notified_at IS NULL AND baseline_at IS NULL"),
+            [],
+        )
 
     def list_for_evaluation(self, profile_hash: str) -> list[Scholarship]:
         condition = (
@@ -181,6 +212,71 @@ class ScholarshipRepository:
             "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ?)"
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
+
+    def list_by_hashes(self, content_hashes: list[str]) -> list[Scholarship]:
+        if not content_hashes:
+            return []
+        placeholders = ",".join(["?"] * len(content_hashes))
+        return self._query_scholarships(
+            self._select_query(f"content_hash IN ({placeholders})"),
+            content_hashes,
+        )
+
+    def needs_evaluation(self, content_hash: str, profile_hash: str) -> bool:
+        query = """
+        SELECT eligibility_status, profile_hash, notified_at, baseline_at
+        FROM scholarships WHERE content_hash = ?
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(query, [content_hash]).fetchone()
+        if row is None:
+            return False
+        status, stored_profile, notified_at, baseline_at = row
+        if notified_at is not None or baseline_at is not None:
+            return False
+        return not status or not stored_profile or stored_profile != profile_hash
+
+    def register_revision(self, content_hash: str, revision_hash: str) -> str:
+        """第一次只建立基準；實質變更時重開評估與通知生命週期。"""
+
+        query = "SELECT revision_hash FROM scholarships WHERE content_hash = ?"
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(query, [content_hash]).fetchone()
+            if row is None:
+                return REVISION_UNCHANGED
+            previous = str(row[0] or "")
+            now = self._now_iso()
+            if not previous:
+                conn.execute(
+                    "UPDATE scholarships SET revision_hash = ?, revision_checked_at = ? "
+                    "WHERE content_hash = ?",
+                    [revision_hash, now, content_hash],
+                )
+                conn.commit()
+                return REVISION_INITIALIZED
+            if previous == revision_hash:
+                conn.execute(
+                    "UPDATE scholarships SET revision_checked_at = ? WHERE content_hash = ?",
+                    [now, content_hash],
+                )
+                conn.commit()
+                return REVISION_UNCHANGED
+            conn.execute(
+                """
+                UPDATE scholarships
+                SET revision_hash = ?, revision_checked_at = ?,
+                    baseline_at = NULL, notified_at = NULL,
+                    eligibility_status = NULL, eligibility_reason = NULL,
+                    manual_checks = '[]', review_kind = '', exclusion_reason = '',
+                    profile_hash = NULL, evaluated_at = NULL,
+                    detail_evidence_score = 0, resolution_status = '',
+                    notice_kind = 'unknown', application_status = 'not_applicable'
+                WHERE content_hash = ?
+                """,
+                [revision_hash, now, content_hash],
+            )
+            conn.commit()
+            return REVISION_CHANGED
 
     def list_notifiable(
         self,
@@ -202,6 +298,7 @@ class ScholarshipRepository:
     def _select_query(self, condition: str) -> str:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
+               COALESCE(announcement_id, ''), COALESCE(revision_hash, ''),
                COALESCE(program_id, ''), COALESCE(entry_url, source_url),
                COALESCE(detail_url, source_url), COALESCE(match_method, ''),
                COALESCE(match_score, 0), COALESCE(matched_alias, ''),
@@ -233,21 +330,23 @@ class ScholarshipRepository:
             source_url=str(row[3]),
             category=str(row[4]),
             content_hash=str(row[5]),
-            program_id=str(row[6]),
-            entry_url=str(row[7]),
-            detail_url=str(row[8]),
-            match_method=str(row[9]),
-            match_score=int(row[10]),
-            matched_alias=str(row[11]),
-            detail_evidence_score=int(row[12]),
-            resolution_status=str(row[13]),
-            notice_kind=str(row[14]),
-            application_status=str(row[15]),
-            eligibility_status=str(row[16]),
-            eligibility_reason=str(row[17]),
-            manual_checks=_decode_manual_checks(str(row[18])),
-            review_kind=str(row[19]),
-            exclusion_reason=str(row[20]),
+            announcement_id=str(row[6]),
+            revision_hash=str(row[7]),
+            program_id=str(row[8]),
+            entry_url=str(row[9]),
+            detail_url=str(row[10]),
+            match_method=str(row[11]),
+            match_score=int(row[12]),
+            matched_alias=str(row[13]),
+            detail_evidence_score=int(row[14]),
+            resolution_status=str(row[15]),
+            notice_kind=str(row[16]),
+            application_status=str(row[17]),
+            eligibility_status=str(row[18]),
+            eligibility_reason=str(row[19]),
+            manual_checks=_decode_manual_checks(str(row[20])),
+            review_kind=str(row[21]),
+            exclusion_reason=str(row[22]),
         )
 
     def mark_eligibility(
