@@ -22,13 +22,15 @@ from src.services.scholarship_service import AuditRecord, AuditResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 MAX_ELIGIBLE_ITEMS = 5
+MAX_REVIEW_ITEMS = 5
 MAX_SHADOW_CHANGED_ITEMS = 10
 MAX_SHADOW_ERROR_ITEMS = 8
+MAX_SOURCE_ERROR_ITEMS = 8
 MAX_DETAIL_TITLE_LENGTH = 34
 MAX_DETAIL_REASON_LENGTH = 82
 
 
-# 將六個官方來源的真實稽核與 shadow 統計整理成 LINE 報告。
+# 將七個 collector 群組的真實稽核與 shadow 統計整理成 LINE 報告。
 def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
@@ -37,8 +39,11 @@ def build_report_message(
         "獎學金真實檢查報告",
         f"本次稽核公告：{len(result.records)}",
         *_scope_lines(result.records),
+        *_pipeline_lines(result),
         f"Gemini 生成呼叫：{result.gemini_calls}",
         f"Gemini 快取命中：{result.gemini_cache_hits}",
+        "",
+        *_actionable_lines(result),
         "",
         "Structured shadow：",
         f"- 已比較：{result.structured_evaluated_count}",
@@ -48,9 +53,26 @@ def build_report_message(
         *_structured_detail_lines(result.records),
     ]
     if source_lines:
-        lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
-    lines.extend(["", *_eligible_lines(result)])
+        lines.extend(["", "來源狀態：", *_compact_source_lines(source_lines)])
     return "\n".join(lines)[:MAX_LINE_TEXT_LENGTH]
+
+
+# 在 LINE 報告中加入可對帳的主要管線數字。
+def _pipeline_lines(result: AuditResult) -> list[str]:
+    counts = getattr(result, "pipeline_counts", None)
+    if counts is None:
+        return []
+    return [
+        (
+            "管線："
+            f"原始 {counts.raw_collected}／"
+            f"保留 {counts.relevance_accepted}／"
+            f"排除 {counts.relevance_excluded}／"
+            f"申請型 {counts.application}／"
+            f"非申請型 {counts.non_application}／"
+            f"可通知 {counts.notifiable}"
+        )
+    ]
 
 
 # 建立公告性質、獎助類別、申請期間與真正資格統計。
@@ -94,6 +116,52 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
         f"已截止未列為個人資格不符：{period_counts['expired']}",
         f"非申請公告未列入個人資格：{non_application}",
     ]
+
+
+# LINE 最優先列出未截止的明確符合與待確認公告。
+def _actionable_lines(result: AuditResult) -> list[str]:
+    eligible = _records_with_status(result.records, ELIGIBLE)
+    review = _records_with_status(result.records, REVIEW)
+    if not eligible and not review:
+        return ["目前沒有符合或待確認且仍可申請的公告。"]
+    lines: list[str] = []
+    if eligible:
+        lines.append("明確符合公告：")
+        lines.extend(_item_lines(record) for record in eligible[:MAX_ELIGIBLE_ITEMS])
+        remaining = len(eligible) - MAX_ELIGIBLE_ITEMS
+        if remaining > 0:
+            lines.append(f"另有 {remaining} 筆明確符合公告未列出。")
+    if review:
+        lines.append("資格待確認公告：")
+        lines.extend(_item_lines(record) for record in review[:MAX_REVIEW_ITEMS])
+        remaining = len(review) - MAX_REVIEW_ITEMS
+        if remaining > 0:
+            lines.append(f"另有 {remaining} 筆待確認公告未列出。")
+    return lines
+
+
+# 篩出仍可申請且符合指定資格狀態的稽核紀錄。
+def _records_with_status(
+    records: list[AuditRecord],
+    status: str,
+) -> list[AuditRecord]:
+    return [
+        record
+        for record in records
+        if record.item.notice_kind == APPLICATION
+        and record.item.eligibility_status == status
+        and _period_status(record) != EXPIRED
+    ]
+
+
+# 將一筆公告壓縮成 LINE 單行，保留理由與正文 URL。
+def _item_lines(record: AuditRecord) -> str:
+    item = record.item
+    title = _short(item.title, MAX_DETAIL_TITLE_LENGTH)
+    reason = _short(item.eligibility_reason, MAX_DETAIL_REASON_LENGTH)
+    url = getattr(item, "detail_url", "") or item.source_url
+    published = item.published_date or "日期未知"
+    return f"- {published}｜{title}\n  {reason}\n  {url}"
 
 
 # 列出每筆 structured 分歧與抽取錯誤，避免摘要只剩數量。
@@ -141,38 +209,48 @@ def _short(text: str, limit: int) -> str:
     return normalized if len(normalized) <= limit else f"{normalized[: limit - 1]}…"
 
 
-# 建立目前仍具申請可能且明確符合的公告清單。
-def _eligible_lines(result: AuditResult) -> list[str]:
-    eligible = [
-        record.item
-        for record in result.records
-        if record.item.notice_kind == APPLICATION
-        and record.item.eligibility_status == ELIGIBLE
-        and _period_status(record) != EXPIRED
+# 一般來源保留原摘要；TUN 38 項在 LINE 中壓縮為狀態統計與異常明細。
+def _compact_source_lines(source_lines: Sequence[str]) -> list[str]:
+    regular = [line for line in source_lines if not line.startswith("TUN方案 ")]
+    tun_lines = [line for line in source_lines if line.startswith("TUN方案 ")]
+    if not tun_lines:
+        return [f"- {line}" for line in regular]
+    statuses = Counter(_tun_status(line) for line in tun_lines)
+    status_text = "／".join(
+        f"{status} {count}" for status, count in sorted(statuses.items())
+    )
+    abnormal = [
+        line
+        for line in tun_lines
+        if _tun_status(line) in {"fetch_failed", "pending_source"}
     ]
-    if not eligible:
-        return ["目前沒有明確符合你背景且仍可申請的公告。"]
-    lines = ["明確符合公告："]
-    for item in eligible[:MAX_ELIGIBLE_ITEMS]:
-        lines.extend([
-            f"- {item.published_date}｜{item.title}",
-            f"  {item.eligibility_reason}",
-            f"  {item.source_url}",
-        ])
-    remaining = len(eligible) - MAX_ELIGIBLE_ITEMS
+    lines = [*(f"- {line}" for line in regular)]
+    lines.append(f"- TUN方案共 {len(tun_lines)}：{status_text}")
+    lines.extend(f"- {line}" for line in abnormal[:MAX_SOURCE_ERROR_ITEMS])
+    remaining = len(abnormal) - MAX_SOURCE_ERROR_ITEMS
     if remaining > 0:
-        lines.append(f"另有 {remaining} 筆明確符合公告未列出。")
+        lines.append(f"- 另有 {remaining} 項 TUN 異常狀態未列出。")
     return lines
 
 
-# 依完整正文與主要辦法推導申請期間狀態。
+# 從逐方案摘要中擷取固定狀態欄位。
+def _tun_status(line: str) -> str:
+    if "：" not in line:
+        return "unknown"
+    return line.split("：", 1)[1].split("；", 1)[0].strip() or "unknown"
+
+
+# 優先使用服務已保存的申請狀態，兼容舊稽核資料時才重新推導。
 def _period_status(record: AuditRecord) -> str:
+    saved = getattr(record.item, "application_status", "")
+    if saved and saved != "not_applicable":
+        return saved
     text = record.fetch_result.eligibility_text()
     return classify_application_period(text, record.item.published_date).status
 
 
 def main() -> None:
-    """重新稽核六個官方來源並傳送 LINE，不修改 baseline 或 notified_at。"""
+    """重新稽核七個 collector 群組並傳送 LINE，不修改通知狀態。"""
     validate_settings()
     validate_gemini_settings()
     service = build_service(mode=RunMode.AUDIT, use_gemini=True)
