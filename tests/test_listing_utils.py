@@ -89,6 +89,25 @@ def test_dyna_current_page_generates_all_other_pages() -> None:
     ]
 
 
+# 龍華已有 canonical 首頁時，後續 DYNA 頁不得再排入第 1 頁別名。
+def test_dyna_can_skip_page_one_alias() -> None:
+    base_url = "https://student.example.edu/p/403-1000-20-2.php"
+    html = """
+    <p>共3頁</p>
+    <script>
+    var option = {
+      currentPage: 2,
+      urlPrefix: 'https://student.example.edu/p/403-1000-20-PAGE.php',
+      totalPage: 3
+    };
+    </script>
+    """
+
+    assert dyna_page_urls(html, base_url, skip_page_one=True) == [
+        (3, "https://student.example.edu/p/403-1000-20-3.php"),
+    ]
+
+
 # 不同網域的 HTTP URL 不得因 HTTPS 入口而被改寫。
 def test_dyna_external_host_keeps_declared_scheme() -> None:
     base_url = "https://student.example.edu/list"
