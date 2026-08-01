@@ -43,6 +43,17 @@ def extract_announcement_text(
     return extract_announcement_content(html, title, source_url).text
 
 
+# 保留附件發現使用的公告 root 介面，與正文政策共用同一選取邏輯。
+def select_announcement_root(
+    soup: BeautifulSoup,
+    title: str = "",
+    source_url: str = "",
+) -> Tag | None:
+    effective = policy_for_url(source_url)
+    selected, _, _ = _select_with_policy(soup, title, effective)
+    return selected
+
+
 # 依政策 selectors、標題祖先與通用 heuristic 順序選取正文。
 def _select_with_policy(
     soup: BeautifulSoup,
