@@ -79,6 +79,32 @@ def test_repository_filters_notifiable_status(tmp_path: Path) -> None:
     assert default_items[0].eligibility_reason == "符合"
 
 
+# 本輪來源統計包含已通知公告，但不混入未出現在本輪的資料。
+def test_repository_counts_current_source_eligibility(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    eligible = _build_item("適合獎學金", "2026-07-01", "https://example.com/current-a")
+    review = _build_item("待確認獎學金", "2026-07-02", "https://example.com/current-b")
+    unrelated = _build_item("舊的不適合獎學金", "2026-06-01", "https://example.com/old")
+    unevaluated = _build_item("尚未評估獎學金", "2026-07-03", "https://example.com/current-c")
+    profile_hash = "profile-a"
+    repo.discover([eligible, review, unrelated, unevaluated])
+    repo.mark_eligibility(eligible.content_hash, "eligible", "符合", profile_hash)
+    repo.mark_eligibility(review.content_hash, "review", "待確認", profile_hash)
+    repo.mark_eligibility(unrelated.content_hash, "ineligible", "不符合", profile_hash)
+    repo.mark_notified([eligible.content_hash])
+
+    counts = repo.count_current_eligibility(
+        [
+            eligible.announcement_id,
+            review.announcement_id,
+            unevaluated.announcement_id,
+        ],
+        profile_hash,
+    )
+
+    assert counts == (1, 1, 0, 1)
+
+
 # 驗證個人背景變更後既有公告會重新進入評估清單。
 def test_repository_re_evaluates_when_profile_changes(tmp_path: Path) -> None:
     repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")

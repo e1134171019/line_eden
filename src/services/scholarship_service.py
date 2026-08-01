@@ -70,6 +70,10 @@ class ServiceResult:
     gemini_cache_hits: int = 0
     gemini_input_tokens: int = 0
     gemini_output_tokens: int = 0
+    current_eligible_count: int = 0
+    current_review_count: int = 0
+    current_ineligible_count: int = 0
+    current_unevaluated_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -168,10 +172,15 @@ class ScholarshipService:
 
     def run(self, dry_run: bool) -> ServiceResult:
         collected = self._collect_and_discover()
-        pending_items, counts = self._prepare_notifiable_items(collected)
+        pending_items, counts, current_counts = self._prepare_notifiable_items(collected)
         if dry_run:
-            return self._build_dry_run_result(collected, pending_items, counts)
-        return self._run_live_mode(collected, pending_items, counts)
+            return self._build_dry_run_result(
+                collected,
+                pending_items,
+                counts,
+                current_counts,
+            )
+        return self._run_live_mode(collected, pending_items, counts, current_counts)
 
     def audit(self) -> AuditResult:
         collected = self.collector.collect()
@@ -246,16 +255,24 @@ class ScholarshipService:
     def _prepare_notifiable_items(
         self,
         collected: list[Scholarship],
-    ) -> tuple[list[Scholarship], tuple[int, int, int]]:
+    ) -> tuple[
+        list[Scholarship],
+        tuple[int, int, int],
+        tuple[int, int, int, int],
+    ]:
         if not self._personalization_enabled():
             pending = self.repository.list_pending()
-            return pending, (len(pending), 0, 0)
+            return pending, (len(pending), 0, 0), (0, 0, 0, len(collected))
         assert self.profile is not None
         profile_hash = self.profile.fingerprint()
         self._evaluate_pending(profile_hash, collected)
         items = self.repository.list_notifiable(profile_hash, self.notify_review_items)
         counts = self._eligibility_counts(profile_hash)
-        return items, counts
+        current_counts = self.repository.count_current_eligibility(
+            [self._announcement_id(item) for item in collected],
+            profile_hash,
+        )
+        return items, counts, current_counts
 
     def _personalization_enabled(self) -> bool:
         return all((self.detail_fetcher, self.evaluator, self.profile))
@@ -514,6 +531,7 @@ class ScholarshipService:
         collected: list[Scholarship],
         pending_items: list[Scholarship],
         counts: tuple[int, int, int],
+        current_counts: tuple[int, int, int, int],
     ) -> ServiceResult:
         return ServiceResult(
             collected,
@@ -523,6 +541,7 @@ class ScholarshipService:
             "dry-run，不會傳送通知。",
             *counts,
             *self._gemini_usage(),
+            *current_counts,
         )
 
     def _run_live_mode(
@@ -530,6 +549,7 @@ class ScholarshipService:
         collected: list[Scholarship],
         pending_items: list[Scholarship],
         counts: tuple[int, int, int],
+        current_counts: tuple[int, int, int, int],
     ) -> ServiceResult:
         if not pending_items:
             return ServiceResult(
@@ -540,14 +560,16 @@ class ScholarshipService:
                 "沒有適合目前背景的待通知公告。",
                 *counts,
                 *self._gemini_usage(),
+                *current_counts,
             )
-        return self._notify_batches(collected, pending_items, counts)
+        return self._notify_batches(collected, pending_items, counts, current_counts)
 
     def _notify_batches(
         self,
         collected: list[Scholarship],
         pending_items: list[Scholarship],
         counts: tuple[int, int, int],
+        current_counts: tuple[int, int, int, int],
     ) -> ServiceResult:
         batches = split_scholarships(pending_items, self.summary_batch_size)
         notified_count = self._send_batches(batches)
@@ -560,6 +582,7 @@ class ScholarshipService:
             message,
             *counts,
             *self._gemini_usage(),
+            *current_counts,
         )
 
     def _send_batches(self, batches: list[list[Scholarship]]) -> int:

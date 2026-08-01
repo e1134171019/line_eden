@@ -422,6 +422,32 @@ class ScholarshipRepository:
             row = conn.execute(query, [profile_hash, status]).fetchone()
         return int(row[0]) if row else 0
 
+    # 統計本輪來源實際出現的公告；與尚未通知的資料庫累積量分開。
+    def count_current_eligibility(
+        self,
+        announcement_ids: list[str],
+        profile_hash: str,
+    ) -> tuple[int, int, int, int]:
+        unique_ids = list(dict.fromkeys(value for value in announcement_ids if value))
+        if not unique_ids:
+            return 0, 0, 0, 0
+        placeholders = ",".join("?" for _ in unique_ids)
+        query = f"""
+        SELECT COALESCE(eligibility_status, ''), COUNT(DISTINCT announcement_id)
+        FROM scholarships
+        WHERE announcement_id IN ({placeholders})
+          AND (profile_hash = ? OR eligibility_status IS NULL OR eligibility_status = '')
+        GROUP BY COALESCE(eligibility_status, '')
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(query, [*unique_ids, profile_hash]).fetchall()
+        counts = {str(status): int(amount) for status, amount in rows}
+        eligible = counts.get("eligible", 0)
+        review = counts.get("review", 0)
+        ineligible = counts.get("ineligible", 0)
+        unevaluated = len(unique_ids) - eligible - review - ineligible
+        return eligible, review, ineligible, max(unevaluated, 0)
+
     # 將指定公告標記為歷史基準，不再推播。
     def mark_baseline(self, content_hashes: list[str]) -> int:
         return self._mark_time("baseline_at", content_hashes)

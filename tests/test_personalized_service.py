@@ -110,6 +110,10 @@ def test_personalized_dry_run_only_returns_eligible(tmp_path: Path) -> None:
     assert result.eligible_count == 1
     assert result.review_count == 1
     assert result.ineligible_count == 1
+    assert result.current_eligible_count == 1
+    assert result.current_review_count == 1
+    assert result.current_ineligible_count == 1
+    assert result.current_unevaluated_count == 0
     assert sent_messages == []
 
 

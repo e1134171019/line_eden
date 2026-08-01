@@ -49,6 +49,10 @@ def _result(notified_count: int = 0) -> ServiceResult:
         gemini_cache_hits=0,
         gemini_input_tokens=0,
         gemini_output_tokens=0,
+        current_eligible_count=1,
+        current_review_count=1,
+        current_ineligible_count=0,
+        current_unevaluated_count=0,
     )
 
 
@@ -64,6 +68,8 @@ def test_daily_message_is_sent_even_without_eligible_items() -> None:
     assert "獎學金每日檢查完成" in message
     assert "時間：2026-07-28 07:30" in message
     assert "本次符合並通知：0" in message
+    assert "本輪來源實際判定：符合 1／待確認 1／不符合 0／未評估 0" in message
+    assert "通知前資料庫待處理：符合 0／待確認 3／不符合 7" in message
     assert "今天沒有新的明確符合公告。" in message
     assert "龍華科技大學：讀取 10 筆，保留 10 筆" in message
 

@@ -32,8 +32,19 @@ def build_daily_message(
         f"時間：{local_time:%Y-%m-%d %H:%M}",
         f"本次蒐集公告：{len(result.collected)}",
         f"本次符合並通知：{result.notified_count}",
-        f"資格待確認：{result.review_count}（不推播）",
-        f"明確不符合：{result.ineligible_count}",
+        (
+            "本輪來源實際判定："
+            f"符合 {result.current_eligible_count}／"
+            f"待確認 {result.current_review_count}／"
+            f"不符合 {result.current_ineligible_count}／"
+            f"未評估 {result.current_unevaluated_count}"
+        ),
+        (
+            "通知前資料庫待處理："
+            f"符合 {result.eligible_count}／"
+            f"待確認 {result.review_count}／"
+            f"不符合 {result.ineligible_count}"
+        ),
         f"Gemini 生成呼叫：{result.gemini_calls}",
         "",
         result.message,
