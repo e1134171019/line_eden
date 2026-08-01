@@ -32,7 +32,7 @@ def _build_item_lines(index: int, item: Scholarship) -> list[str]:
         item.title,
     ]
     if item.eligibility_reason:
-        label = "硬性條件符合" if item.eligibility_status == "eligible" else "待確認"
+        label = "符合原因（硬性條件）" if item.eligibility_status == "eligible" else "待確認"
         lines.append(f"{label}：{item.eligibility_reason}")
     if item.review_kind:
         lines.append(f"待確認類型：{item.review_kind}")
