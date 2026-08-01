@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
+import re
 
 VALID_APPLICATION_DETAIL = "valid_application_detail"
 INSUFFICIENT_EVIDENCE = "insufficient_evidence"
@@ -16,6 +17,11 @@ _EVIDENCE_RULES: tuple[tuple[tuple[str, ...], int, str], ...] = (
     (("申請表", "線上報名", "線上申請", "報名表"), 1, "申請表或線上申請"),
     (("獎助金額", "獎學金額", "補助金額", "每名核發"), 1, "獎助金額"),
 )
+_APPLICANT_SCOPE = re.compile(
+    r"(?:大專(?:院校|校院)?|大學|學士|研究所|高中職|在校生|學生|新生)"
+    r".{0,28}?(?:可申請|得申請|均可申請|提出申請|申請本)"
+)
+_APPLICATION_ACTION = re.compile(r"(?:可申請|得申請|提出申請|開放申請|受理申請)")
 
 
 @dataclass(frozen=True)
@@ -28,7 +34,7 @@ class ApplicationEvidence:
 
 
 def score_application_evidence(text: str, *, source_error: bool = False) -> ApplicationEvidence:
-    """依申請資格、期間、方式等正文證據評分，不使用模型猜測。"""
+    """依申請資格、期間、方式與明確適用對象評分。"""
 
     if source_error:
         return ApplicationEvidence(0, SOURCE_ERROR, tuple())
@@ -39,10 +45,18 @@ def score_application_evidence(text: str, *, source_error: bool = False) -> Appl
         if any(term in normalized for term in terms):
             score += weight
             hits.append(label)
-    if score >= 4:
+    has_scope = bool(_APPLICANT_SCOPE.search(normalized))
+    has_action = bool(_APPLICATION_ACTION.search(normalized))
+    if has_scope:
+        score += 2
+        hits.append("適用對象")
+    if has_action:
+        score += 1
+        hits.append("申請行動")
+    if score >= 4 or (has_scope and has_action):
         status = VALID_APPLICATION_DETAIL
     elif score >= 2:
         status = INSUFFICIENT_EVIDENCE
     else:
         status = NAVIGATION_OR_WRONG_PAGE
-    return ApplicationEvidence(score, status, tuple(hits))
+    return ApplicationEvidence(score, status, tuple(dict.fromkeys(hits)))
