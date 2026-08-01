@@ -28,8 +28,8 @@ from config import (
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
-    SOURCE_FETCH_WORKERS,
     SOURCE_MAX_PAGES,
+    TUN_FETCH_WORKERS,
     validate_gemini_settings,
     validate_settings,
 )
@@ -177,7 +177,7 @@ def _build_collector(mode: RunMode) -> ExpandedScholarshipCollector:
         HTTP_USER_AGENT,
         _collection_mode(mode),
         SOURCE_MAX_PAGES,
-        SOURCE_FETCH_WORKERS,
+        TUN_FETCH_WORKERS,
     )
 
 
