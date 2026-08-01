@@ -4,6 +4,7 @@ from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
     REVIEW,
+    REVIEW_SOURCE_INCOMPLETE,
     EligibilityEvaluator,
 )
 from src.models.scholarship import Scholarship
@@ -108,8 +109,8 @@ def test_special_status_preference_is_not_ineligible() -> None:
     assert decision.status == ELIGIBLE
 
 
-# 驗證電子電力領域且成績達標會判定適合。
-def test_matching_field_and_grade_is_eligible() -> None:
+# 驗證電子電力領域符合時可判硬性條件符合，成績另列人工確認。
+def test_matching_field_and_grade_is_eligible_with_manual_check() -> None:
     decision = EligibilityEvaluator().evaluate(
         _build_item("電力與能源工程優秀學生獎學金"),
         "大專院校在校生，學業平均 80 分以上，電子工程相關科系可申請。",
@@ -118,30 +119,45 @@ def test_matching_field_and_grade_is_eligible() -> None:
 
     assert decision.status == ELIGIBLE
     assert "電子" in decision.reason_text() or "電力" in decision.reason_text()
+    assert any("80" in item for item in decision.manual_checks)
 
 
-# 驗證成績低於公告門檻時不推播。
-def test_grade_below_threshold_is_ineligible() -> None:
+# 驗證成績低於公告門檻不再自動判定硬性不符。
+def test_grade_below_threshold_is_manual_check() -> None:
     decision = EligibilityEvaluator().evaluate(
         _build_item("高成就獎學金"),
         "申請人學業平均成績 95 分以上。",
         _build_profile(),
     )
 
-    assert decision.status == INELIGIBLE
-    assert "95" in decision.reason_text()
+    assert decision.status == REVIEW
+    assert decision.review_kind == REVIEW_SOURCE_INCOMPLETE
+    assert any("95" in item for item in decision.manual_checks)
+    assert "95" not in decision.reason_text()
 
 
-# 驗證「不得低於」文字也能解析成績門檻。
-def test_grade_not_lower_than_threshold_is_ineligible() -> None:
+# 驗證「不得低於」文字也只抽成自行確認門檻。
+def test_grade_not_lower_than_threshold_is_manual_check() -> None:
     decision = EligibilityEvaluator().evaluate(
         _build_item("高成就獎學金"),
-        "申請人平均成績不得低於 95 分。",
+        "大專院校在校生，申請人平均成績不得低於 95 分。",
         _build_profile(),
     )
 
-    assert decision.status == INELIGIBLE
-    assert "95" in decision.reason_text()
+    assert decision.status == ELIGIBLE
+    assert any("95" in item for item in decision.manual_checks)
+
+
+# 驗證排名門檻不再依 profile 自動判定。
+def test_rank_threshold_is_manual_check() -> None:
+    decision = EligibilityEvaluator().evaluate(
+        _build_item("大專學生排名獎學金"),
+        "大專院校在校生，班級排名須為前 5%。",
+        _build_profile(),
+    )
+
+    assert decision.status == ELIGIBLE
+    assert any("前 5%" in item for item in decision.manual_checks)
 
 
 # 驗證條件不足的公告採保守待確認且預設不推播。
@@ -153,3 +169,4 @@ def test_insufficient_information_requires_review() -> None:
     )
 
     assert decision.status == REVIEW
+    assert decision.review_kind == REVIEW_SOURCE_INCOMPLETE
