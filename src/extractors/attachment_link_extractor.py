@@ -1,15 +1,26 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
+import re
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup, Tag
 
 from config import ATTACHMENT_SCOPE_MAX_DEPTH
 from src.extractors.announcement_content_extractor import select_announcement_root
 
-SUPPORTED_SUFFIXES = (".pdf", ".docx")
-DOCUMENT_LABELS = ("附件", "附檔", "下載", "辦法", "簡章", "資格", "評選", "推薦書")
+SUPPORTED_SUFFIXES = (".pdf", ".doc", ".docx", ".odt")
+DOCUMENT_LABELS = (
+    "附件",
+    "附檔",
+    "下載",
+    "辦法",
+    "簡章",
+    "資格",
+    "評選",
+    "推薦書",
+    "申請須知",
+)
 HIGH_VALUE_LABELS = ("辦法", "資格", "簡章", "評選", "規定", "要點", "申請須知")
 FORM_LABELS = ("申請表", "推薦書", "報名表")
 SUPPORTING_LABELS = ("證明書", "同意書", "切結書", "聲明書", "名冊")
@@ -19,6 +30,10 @@ GENERIC_ATTACHMENT = "generic_attachment"
 APPLICATION_FORM = "application_form"
 SUPPORTING_DOCUMENT = "supporting_document"
 UNRELATED = "unrelated"
+_SCRIPT_URL = re.compile(
+    r"(?:window\.open|location(?:\.href)?)\s*\(?\s*['\"]([^'\"]+)['\"]"
+)
+_DRIVE_FILE_ID = re.compile(r"/(?:file|document)/d/([^/]+)")
 
 
 @dataclass(frozen=True)
@@ -103,10 +118,12 @@ def _collect_links(root: Tag | None, base_url: str) -> list[tuple[int, str, str,
         return []
     seen: set[str] = set()
     records: list[tuple[int, str, str, str]] = []
-    for link in root.select("a[href]"):
-        url = urljoin(base_url, link.get("href", "").strip())
+    selectors = "a[href], a[data-url], a[data-href], button[data-url], button[onclick]"
+    for link in root.select(selectors):
+        target = _link_target(link)
+        url = _normalize_download_url(urljoin(base_url, target))
         label = " ".join(link.get_text(" ", strip=True).split())
-        if url in seen or not _is_supported_document(url, label):
+        if not target or url in seen or not _is_supported_document(url, label):
             continue
         seen.add(url)
         role = classify_attachment_role(label)
@@ -127,12 +144,48 @@ def classify_attachment_role(label: str) -> str:
 
 
 def _is_supported_document(url: str, label: str) -> bool:
-    path = urlparse(url).path.lower()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    path = parsed.path.lower()
     if path.endswith(SUPPORTED_SUFFIXES):
         return True
     normalized_label = label.lower().rstrip("。．. ")
     has_suffix = normalized_label.endswith(SUPPORTED_SUFFIXES)
-    return has_suffix and any(marker in label for marker in DOCUMENT_LABELS)
+    has_document_label = any(marker in label for marker in DOCUMENT_LABELS)
+    return has_document_label and (has_suffix or bool(parsed.path or parsed.query))
+
+
+def _link_target(link: Tag) -> str:
+    """純函式：取得一般連結、資料屬性或簡單 JavaScript 下載網址。"""
+
+    for attribute in ("href", "data-url", "data-href", "data-download-url"):
+        value = str(link.get(attribute, "")).strip()
+        if value and not value.casefold().startswith("javascript:"):
+            return value
+    script = str(link.get("onclick", ""))
+    match = _SCRIPT_URL.search(script)
+    return match.group(1).strip() if match else ""
+
+
+def _normalize_download_url(url: str) -> str:
+    """純函式：將公開 Google Drive／Docs 檢視頁轉成可下載資源。"""
+
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").casefold()
+    file_match = _DRIVE_FILE_ID.search(parsed.path)
+    if host == "drive.google.com" and file_match:
+        query = urlencode({"export": "download", "id": file_match.group(1)})
+        return urlunparse(("https", "drive.google.com", "/uc", "", query, ""))
+    if host == "docs.google.com" and file_match:
+        path = f"/document/d/{file_match.group(1)}/export"
+        return urlunparse(("https", host, path, "", "format=pdf", ""))
+    if host == "drive.google.com" and parsed.path == "/open":
+        file_ids = parse_qs(parsed.query).get("id", [])
+        if file_ids:
+            query = urlencode({"export": "download", "id": file_ids[0]})
+            return urlunparse(("https", host, "/uc", "", query, ""))
+    return url
 
 
 def _attachment_score(url: str, label: str, role: str) -> int:

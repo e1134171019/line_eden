@@ -2,13 +2,26 @@
 
 from collections import deque
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
+import hashlib
+from urllib.parse import (
+    parse_qsl,
+    urlencode,
+    urljoin,
+    urlparse,
+    urlsplit,
+    urlunsplit,
+)
 
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from src.collectors.base_collector import BaseCollector
-from src.collectors.collection_diagnostics import CollectionMode, CollectorDiagnostic
+from src.collectors.collection_diagnostics import (
+    CollectionMode,
+    CollectorDiagnostic,
+    SourceAccessMode,
+    SourceTargetDiagnostic,
+)
 from src.collectors.http_client import SafeHttpClient
 from src.collectors.listing_utils import (
     detect_total_pages,
@@ -26,6 +39,7 @@ _GENERIC_HEADINGS = frozenset({
     "教育部",
     "ministry of education 教育部",
 })
+_SYNTHETIC_NOTICE_QUERY = "line_eden_notice"
 
 
 @dataclass(frozen=True)
@@ -81,6 +95,7 @@ class MoeOverseasCollector(BaseCollector):
     def collect(self) -> list[Scholarship]:
         records: list[Scholarship] = []
         diagnostics: list[CollectorDiagnostic] = []
+        target_diagnostics: list[SourceTargetDiagnostic] = []
         errors: list[str] = []
         fallback_used = False
         with SafeHttpClient(self.timeout_seconds, self.user_agent) as client:
@@ -88,13 +103,17 @@ class MoeOverseasCollector(BaseCollector):
                 try:
                     child_records, child_diagnostic = self._collect_child(client, child)
                 except Exception as error:
-                    errors.append(f"{child.display_name}: {' '.join(str(error).split())[:180]}")
+                    message = " ".join(str(error).split())[:180]
+                    errors.append(f"{child.display_name}: {message}")
+                    target_diagnostics.append(_failed_target(child, message))
                     continue
                 if child_diagnostic.completeness == "failed":
                     errors.append(f"{child.display_name}: {child_diagnostic.error or '抓取失敗'}")
+                    target_diagnostics.append(_child_target(child, child_diagnostic))
                     continue
                 records.extend(child_records)
                 diagnostics.append(child_diagnostic)
+                target_diagnostics.append(_child_target(child, child_diagnostic))
             fallback_used = bool(client.fallback_hosts)
         unique = self._deduplicate(records)
         succeeded = len(diagnostics)
@@ -105,9 +124,12 @@ class MoeOverseasCollector(BaseCollector):
                 child_sources_detected=len(OVERSEAS_CHILD_SOURCES),
                 child_sources_succeeded=0,
                 ssl_compatibility_fallback=fallback_used,
+                target_diagnostics=tuple(target_diagnostics),
             )
             raise RuntimeError(f"教育部留學四個子站全部失敗：{'; '.join(errors)}")
         completeness = self._overall_completeness(diagnostics, succeeded)
+        duplicate_rows = sum(item.duplicate_rows for item in diagnostics)
+        duplicate_rows += max(len(records) - len(unique), 0)
         self.diagnostic = CollectorDiagnostic(
             completeness=completeness,
             pages_detected=sum(item.pages_detected or 0 for item in diagnostics),
@@ -116,11 +138,13 @@ class MoeOverseasCollector(BaseCollector):
             raw_rows=sum(item.raw_rows for item in diagnostics),
             parsed_rows=len(unique),
             rejected_rows=sum(item.rejected_rows for item in diagnostics),
+            duplicate_rows=duplicate_rows,
             stop_reason=self._overall_stop_reason(completeness),
             error="; ".join(errors),
             ssl_compatibility_fallback=fallback_used,
             child_sources_detected=len(OVERSEAS_CHILD_SOURCES),
             child_sources_succeeded=succeeded,
+            target_diagnostics=tuple(target_diagnostics),
         )
         return unique
 
@@ -161,18 +185,20 @@ class MoeOverseasCollector(BaseCollector):
             error,
             len(records),
         )
+        unique_records = self._deduplicate(records)
         diagnostic = CollectorDiagnostic(
             completeness=completeness,
             pages_detected=detected,
             pages_requested=len(visited) + (1 if error else 0),
             pages_succeeded=len(visited),
             raw_rows=raw_rows,
-            parsed_rows=len(records),
+            parsed_rows=len(unique_records),
             rejected_rows=max(raw_rows - len(records), 0),
+            duplicate_rows=max(len(records) - len(unique_records), 0),
             stop_reason=self._child_stop_reason(completeness, len(records)),
             error=error,
         )
-        return self._deduplicate(records), diagnostic
+        return unique_records, diagnostic
 
     # 將頁面發現的數字分頁及下一頁加入佇列。
     def _enqueue_pages(
@@ -222,7 +248,7 @@ class MoeOverseasCollector(BaseCollector):
             if heading is None:
                 continue
             title = " ".join(heading.get_text(" ", strip=True).split())
-            url = f"{page_url}#announcement-{index}"
+            url = _synthetic_notice_url(page_url, title, str(index))
             self._append_studyabroad_record(records, seen, child, title, url)
         return records, len(records)
 
@@ -260,6 +286,8 @@ class MoeOverseasCollector(BaseCollector):
                 continue
             candidate_count += 1
             url = self._announcement_url(heading, container, page_url)
+            if url == page_url:
+                url = _synthetic_notice_url(page_url, title, published_date)
             key = (title, published_date, url)
             if key in seen:
                 continue
@@ -359,3 +387,59 @@ class MoeOverseasCollector(BaseCollector):
             seen.add(key)
             result.append(item)
         return result
+
+
+def _child_target(
+    child: OverseasChildSource,
+    diagnostic: CollectorDiagnostic,
+) -> SourceTargetDiagnostic:
+    """純函式：將教育部子站診斷轉為邏輯監測目標。"""
+
+    return SourceTargetDiagnostic(
+        target_id=child.source_name,
+        display_name=child.display_name,
+        access_mode=SourceAccessMode.DIRECT,
+        entry_url=child.list_url,
+        completeness=diagnostic.completeness,
+        pages_detected=diagnostic.pages_detected,
+        pages_requested=diagnostic.pages_requested,
+        pages_succeeded=diagnostic.pages_succeeded,
+        raw_rows=diagnostic.raw_rows,
+        parsed_rows=diagnostic.parsed_rows,
+        rejected_rows=diagnostic.rejected_rows,
+        duplicate_rows=diagnostic.duplicate_rows,
+        error=diagnostic.error,
+    )
+
+
+def _failed_target(
+    child: OverseasChildSource,
+    error: str,
+) -> SourceTargetDiagnostic:
+    """純函式：建立未成功下載的教育部子站診斷。"""
+
+    return SourceTargetDiagnostic(
+        target_id=child.source_name,
+        display_name=child.display_name,
+        access_mode=SourceAccessMode.DIRECT,
+        entry_url=child.list_url,
+        completeness="failed",
+        error=error,
+    )
+
+
+def _synthetic_notice_url(page_url: str, title: str, discriminator: str) -> str:
+    """純函式：為沒有 permalink 的公告建立可重現且可點擊的唯一 URL。"""
+
+    digest_source = f"{title}|{discriminator}".encode("utf-8")
+    digest = hashlib.sha256(digest_source).hexdigest()[:16]
+    parsed = urlsplit(page_url)
+    query_items = [
+        pair
+        for pair in parse_qsl(parsed.query, keep_blank_values=True)
+        if pair[0] != _SYNTHETIC_NOTICE_QUERY
+    ]
+    query_items.append((_SYNTHETIC_NOTICE_QUERY, digest))
+    return urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), "")
+    )

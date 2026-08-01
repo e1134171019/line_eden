@@ -60,7 +60,7 @@ def test_report_lists_only_current_eligible_items() -> None:
     message = build_report_message(
         result,
         [
-            "來源網站：設定 6，成功產生資料 6，空結果 0，部分完成 0，失敗 0",
+            "頂層來源群組：設定 7，成功產生資料 7，空結果 0，部分完成 0，失敗 0",
             "龍華科技大學：完整；頁面 5/5",
         ],
     )
@@ -71,7 +71,7 @@ def test_report_lists_only_current_eligible_items() -> None:
     assert "申請狀態：開放 2" in message
     assert "個人資格（未截止與期限未知）：符合 1／待確認 1／硬性不符 0" in message
     assert "非申請公告未列入個人資格：1" in message
-    assert "來源網站：設定 6" in message
+    assert "頂層來源群組：設定 7" in message
     assert "龍華科技大學：完整" in message
     assert "符合資格的獎學金" in message
     assert "待確認公告" not in message
@@ -107,6 +107,8 @@ def test_report_explains_when_no_eligible_items() -> None:
 
     assert "本次稽核公告：1" in message
     assert "目前沒有明確符合你背景且仍可申請的公告。" in message
+    assert "仍可人工確認公告：" in message
+    assert "待確認公告" in message
     assert "LINE Messaging API 測試成功" not in message
 
 

@@ -104,7 +104,6 @@ def _service(
         FakeCollector(item),
         ScholarshipRepository(tmp_path / "scholarships.db"),
         NotificationFanout(tuple()),
-        include_keywords=("獎學金",),
         summary_batch_size=5,
         detail_fetcher=FakeDiagnosticFetcher(),
         evaluator=EligibilityEvaluator(),

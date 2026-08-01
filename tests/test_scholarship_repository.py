@@ -135,6 +135,31 @@ def test_repository_changed_revision_reopens_lifecycle(tmp_path: Path) -> None:
     assert [record.content_hash for record in reopened] == [item.content_hash]
 
 
+# 歷史基準仍要建立 revision，內容改變後必須重新開啟生命週期。
+def test_repository_changed_baseline_revision_becomes_pending(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    item = _build_item("歷史能源獎學金", "2026-07-01", "https://example.com/baseline")
+    repo.discover([item])
+    repo.mark_baseline_announcements([item.announcement_id])
+
+    candidates = repo.list_revision_candidates([item.announcement_id])
+    initial = repo.observe_revision(
+        AnnouncementRevision(item.announcement_id, "revision-a", "policy-a")
+    )
+    unchanged_pending = repo.list_pending()
+    changed = repo.observe_revision(
+        AnnouncementRevision(item.announcement_id, "revision-b", "policy-a")
+    )
+
+    assert [record.announcement_id for record in candidates] == [item.announcement_id]
+    assert initial.status is RevisionObservationStatus.INITIALIZED
+    assert unchanged_pending == []
+    assert changed.status is RevisionObservationStatus.CHANGED
+    assert [record.announcement_id for record in repo.list_pending()] == [
+        item.announcement_id
+    ]
+
+
 # 舊 schema 啟動時會相容補齊 identity 與 revision 欄位。
 def test_repository_migrates_legacy_schema(tmp_path: Path) -> None:
     db_path = tmp_path / "legacy.db"

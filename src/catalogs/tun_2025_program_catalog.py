@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 TUN_DISCOVERY_URL = (
     "https://university.1111.com.tw/zone/university/"
@@ -9,6 +10,15 @@ TUN_DISCOVERY_URL = (
 
 OFFICIAL_VERIFIED = "verified"
 OFFICIAL_PENDING = "pending"
+
+
+class ProgramSourceType(StrEnum):
+    """區分方案入口需要的抓取策略。"""
+
+    LISTING = "listing"
+    FIXED_PAGE = "fixed_page"
+    DYNAMIC_PAGE = "dynamic_page"
+    CORE_COVERED = "core_covered"
 
 
 @dataclass(frozen=True)
@@ -21,33 +31,28 @@ class ScholarshipProgramWatch:
     aliases: tuple[str, ...]
     official_url: str
     official_status: str
+    source_type: ProgramSourceType = ProgramSourceType.LISTING
 
 
 # TUN 僅用於發現名稱；資格、期限與公告正文必須回到官方入口。
 TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
     ScholarshipProgramWatch(
-        "tf4dr-aid",
-        "賑災基金會助學金",
-        "財團法人賑災基金會",
-        ("賑災基金會助學金", "賑災基金會獎助學金"),
-        "https://www.tf4dr.org/posts",
-        OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
         "foxconn-scholarship-whale",
         "鴻海獎學鯨",
         "鴻海教育基金會",
         ("鴻海獎學鯨", "獎學鯨"),
-        "https://www.foxconnfoundation.org/",
+        "https://www.foxconnfoundation.org/plan/scholar/university",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "avc-talented-student",
         "奇鋐教育基金會資優學生獎學金",
         "奇鋐教育基金會",
         ("奇鋐教育基金會資優學生獎學金", "奇鋐資優學生獎學金"),
-        "https://www.avcgroup.org/",
+        "https://www.avcgroup.org/Scholar",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "cfh-graduate",
@@ -66,28 +71,13 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
-        "kumota-flying",
-        "雲田乘風飛揚獎助學金",
-        "雲田教育基金會",
-        ("雲田乘風飛揚獎助學金", "乘風飛揚獎助學金"),
-        "https://www.kumota.org/",
-        OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
-        "lijin-taoyuan",
-        "桃園市利晉工程清寒助學金",
-        "利晉工程文教基金會",
-        ("桃園市利晉工程清寒助學金", "利晉工程清寒助學金"),
-        "https://www.lijin.com.tw/Extend/Foundation/About",
-        OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
         "tcb-foundation",
         "台中商業銀行文教基金會獎學金",
         "台中商業銀行文教基金會",
         ("台中商業銀行文教基金會獎學金", "台中商銀獎學金"),
-        "",
-        OFFICIAL_PENDING,
+        "https://www.tcbbank.com.tw/Intro/B_37_08.html",
+        OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "tainan-kaiji",
@@ -104,13 +94,14 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         ("台灣松樑教育公益促進協會助學金", "松樑助學金"),
         "https://www.slceas.org.tw/index.php/scholarship",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "wang-yun-wu-self-study",
         "王雲五先生自學獎學金",
         "王雲五基金會",
         ("王雲五先生自學獎學金", "王雲五自學獎學金"),
-        "https://yunwu.org.tw/y/about-us",
+        "https://yunwu.org.tw/y/news/category/6",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -118,23 +109,15 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "台北市熱河同鄉會獎助金",
         "台北市熱河同鄉會",
         ("台北市熱河同鄉會獎助金", "熱河同鄉會獎助金"),
-        "",
-        OFFICIAL_PENDING,
+        "https://zhao.org.tw/news",
+        OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
         "wisdomshare-service-learning",
         "青力親為●千萬祝福服務學習獎勵計畫",
         "天河教育基金會",
         ("青力親為", "千萬祝福服務學習獎勵計畫"),
-        "https://www.wisdomshare.com.tw/",
-        OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
-        "hsinrong-emergency-aid",
-        "欣榮圖書館急難救助學生助學金",
-        "欣榮紀念圖書館暨玉蘭文化會館",
-        ("欣榮圖書館急難救助學生助學金", "欣榮急難救助助學金"),
-        "https://www.hsinrong.org/",
+        "https://www.wisdomshare.com.tw/index.php?action=news&cid=1",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -142,7 +125,7 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "資訊人社會關懷獎學金",
         "中華民國電腦學會",
         ("資訊人社會關懷獎學金",),
-        "https://itss.csroc.org.tw/",
+        "https://www.csroc.org.tw/news.jsp",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -150,7 +133,7 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "大手拉小手助學計畫",
         "普仁青年關懷基金會",
         ("大手拉小手助學計畫", "大手拉小手"),
-        "https://you-care.oen.tw/",
+        "https://www.you-care.org.tw/List.aspx?mid=34",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -174,40 +157,27 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "永齡銘日希望獎助學金",
         "永齡教育慈善基金會",
         ("永齡銘日希望獎助學金", "永齡希望獎助學金", "銘日希望獎助學金"),
-        "https://www.yonglin.org.tw/project/education/detail/28",
+        "https://edu.yonglin.org.tw/scholarship/",
         OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
-        "cdf-vocational",
-        "中華開發技藝職能獎學金",
-        "中華開發文教基金會",
-        ("中華開發技藝職能獎學金", "技藝職能獎學金"),
-        "https://www.cdffoundation.org/",
-        OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
-        "ht-emergency",
-        "行天宮急難濟助",
-        "行天宮五大志業",
-        ("行天宮急難濟助", "急難濟助"),
-        "https://www.ht.org.tw/",
-        OFFICIAL_VERIFIED,
+        ProgramSourceType.DYNAMIC_PAGE,
     ),
     ScholarshipProgramWatch(
         "ht-talented-long-term",
         "行天宮資優學生長期獎助學金",
         "行天宮五大志業",
         ("行天宮資優學生長期獎助學金", "資優學生長期獎助學金"),
-        "https://www.ht.org.tw/",
+        "https://www.ht.org.tw/religion177.htm",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "ht-student-aid",
         "行天宮助學金",
         "行天宮五大志業",
         ("行天宮助學金",),
-        "https://www.ht.org.tw/",
+        "https://www.ht.org.tw/religion153.htm",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "cht-fang-hsien-chi",
@@ -216,21 +186,22 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         ("中華電信方賢齊先生獎學金", "方賢齊先生獎學金"),
         "https://www.chtf.org.tw/project/693",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "heart-child",
         "心臟病童獎勵學金",
         "心臟病童相關公益組織",
         ("心臟病童獎勵學金",),
-        "",
-        OFFICIAL_PENDING,
+        "https://www.ccft.org.tw/List.aspx?tid=128",
+        OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
         "sunshine-scholarship",
         "陽光獎學金",
         "陽光社會福利基金會",
         ("陽光獎學金",),
-        "https://www.sunshine.org.tw/",
+        "https://scholarship.sunshine.org.tw/?cat=1",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -238,7 +209,7 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "萬足燒傷勞工子女大專生獎助學金",
         "陽光社會福利基金會",
         ("萬足燒傷勞工子女大專生獎助學金", "萬足獎助學金"),
-        "https://www.sunshine.org.tw/",
+        "https://scholarship.sunshine.org.tw/?cat=1",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -247,14 +218,6 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "鄭豐喜文化教育基金會",
         ("鄭豐喜肢障者家庭子女獎學金", "肢障者家庭子女獎學金"),
         "https://www.cfh.org.tw/?cat=9",
-        OFFICIAL_VERIFIED,
-    ),
-    ScholarshipProgramWatch(
-        "lovepeace-disadvantaged",
-        "祥和文教基金會優秀清寒獎學金",
-        "祥和文教基金會",
-        ("祥和文教基金會優秀清寒獎學金", "祥和優秀清寒獎學金"),
-        "https://www.lovepeace.org.tw/",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -278,8 +241,9 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "昌益慈善基金會獎助學金",
         "昌益慈善基金會",
         ("昌益慈善基金會獎助學金", "昌益獎助學金"),
-        "http://www.cy-arch.com.tw/",
+        "https://www.cy-arch.com.tw/foundation/scholarship",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "lihpao-fullon",
@@ -288,6 +252,7 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         ("麗寶福容獎助學金",),
         "https://www.lihpao.org.tw/active_detail.php?no=95",
         OFFICIAL_VERIFIED,
+        ProgramSourceType.FIXED_PAGE,
     ),
     ScholarshipProgramWatch(
         "gfc-scholarship",
@@ -302,7 +267,7 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "耀登炳南創新研究獎",
         "耀登炳南教育基金會",
         ("耀登炳南創新研究獎", "炳南創新研究獎"),
-        "https://www.auden.com.tw/2025scholarship/",
+        "https://www.auden.com.tw/news-4/",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -310,7 +275,7 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         "耀登炳南大專校院優秀人才獎學金",
         "耀登炳南教育基金會",
         ("耀登炳南大專校院優秀人才獎學金", "大專校院優秀人才獎學金"),
-        "https://www.auden.com.tw/2025scholarship/",
+        "https://www.auden.com.tw/news-4/",
         OFFICIAL_VERIFIED,
     ),
     ScholarshipProgramWatch(
@@ -320,14 +285,6 @@ TUN_2025_PROGRAMS: tuple[ScholarshipProgramWatch, ...] = (
         ("和諧安定獎學金",),
         "",
         OFFICIAL_PENDING,
-    ),
-    ScholarshipProgramWatch(
-        "taishin-youth-volunteer",
-        "台新青少年志工菁英獎獎助學金",
-        "台新公益慈善基金會",
-        ("台新青少年志工菁英獎", "青少年志工菁英獎獎助學金"),
-        "https://www.taishincharity.org.tw/",
-        OFFICIAL_VERIFIED,
     ),
 )
 
@@ -349,10 +306,10 @@ def pending_programs() -> tuple[ScholarshipProgramWatch, ...]:
 
 
 def validate_catalog() -> None:
-    """在測試與啟動時驗證 38 項目錄的最低資料契約。"""
+    """在測試與啟動時驗證 30 項目錄的最低資料契約。"""
 
-    if len(TUN_2025_PROGRAMS) != 38:
-        raise ValueError("TUN 方案目錄必須固定為 38 項。")
+    if len(TUN_2025_PROGRAMS) != 30:
+        raise ValueError("TUN 方案目錄必須固定為 30 項。")
     ids = [item.program_id for item in TUN_2025_PROGRAMS]
     if len(ids) != len(set(ids)):
         raise ValueError("TUN 方案 program_id 不得重複。")

@@ -97,3 +97,45 @@ def test_source_failure_diagnostic(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.source.requested_url == "https://reurl.cc/example"
     assert "HTTPStatusError" in result.source.error
     assert "404" in result.source.error
+
+
+# 公告詳情連到辦法中介頁時，必須再追蹤到第二層 PDF。
+def test_attachment_graph_follows_intermediate_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notice_html = """
+    <article><h1>能源獎學金</h1><p>申請資格請見申請辦法。</p>
+    <a href="/rules">申請辦法</a></article>
+    """
+    rules_html = """
+    <main><h2>能源獎學金申請辦法</h2>
+    <p>本辦法適用於符合資格之大專院校電子相關科系學生。</p>
+    <a href="/files/rules.pdf">資格辦法 PDF</a></main>
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/rules":
+            return httpx.Response(200, headers={"Content-Type": "text/html"}, text=rules_html)
+        if request.url.path == "/files/rules.pdf":
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "application/pdf"},
+                content=b"pdf",
+            )
+        return httpx.Response(200, headers={"Content-Type": "text/html"}, text=notice_html)
+
+    _patch_client(monkeypatch, handler)
+    monkeypatch.setattr(
+        fetcher_module,
+        "extract_document_text",
+        lambda *_: "能源獎學金申請資格：平均成績八十分。",
+    )
+
+    result = _fetcher().fetch_with_diagnostics(
+        _item("https://activity.lhu.edu.tw/news/graph")
+    )
+
+    assert result.discovered_attachment_count == 2
+    assert len(result.attachments) == 2
+    assert result.attachments[1].final_url.endswith("/files/rules.pdf")
+    assert "平均成績八十分" in result.text

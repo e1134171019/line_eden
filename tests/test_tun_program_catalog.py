@@ -3,10 +3,10 @@
 from src.catalogs.tun_2025_program_catalog import (
     TUN_2025_PROGRAMS,
     TUN_DISCOVERY_URL,
+    ProgramSourceType,
 )
 from src.catalogs.tun_program_sources import (
     SOURCE_CORE,
-    SOURCE_RELAY,
     core_covered_programs,
     monitorable_programs,
     resolved_programs,
@@ -14,19 +14,19 @@ from src.catalogs.tun_program_sources import (
 )
 
 
-# 方案目錄必須完整保留文章列出的 38 項，且 program_id 不重複。
-def test_tun_catalog_contains_exactly_38_unique_programs() -> None:
-    assert len(TUN_2025_PROGRAMS) == 38
-    assert len({item.program_id for item in TUN_2025_PROGRAMS}) == 38
+# 方案目錄必須保留人工核對後的 30 項，且 program_id 不重複。
+def test_tun_catalog_contains_exactly_30_unique_programs() -> None:
+    assert len(TUN_2025_PROGRAMS) == 30
+    assert len({item.program_id for item in TUN_2025_PROGRAMS}) == 30
 
 
-# 經官方頁替換與正式轉載補強後，38 項都必須有明確監測路徑。
-def test_resolved_sources_cover_all_38_programs() -> None:
+# 經官方頁替換與正式轉載補強後，30 項都必須有明確監測路徑。
+def test_resolved_sources_cover_all_30_programs() -> None:
     programs = resolved_programs()
 
-    assert len(programs) == 38
-    assert len(monitorable_programs()) == 36
-    assert len(core_covered_programs()) == 2
+    assert len(programs) == 30
+    assert len(monitorable_programs()) == 25
+    assert len(core_covered_programs()) == 5
     assert unresolved_programs() == tuple()
     assert all(item.official_status != "pending" for item in programs)
 
@@ -40,44 +40,62 @@ def test_tun_page_is_discovery_reference_only() -> None:
     )
 
 
-# 正式轉載與核心來源覆蓋必須明確標記，不能冒充主辦單位官網。
+# 官方入口與核心來源覆蓋必須明確標記，不能把舊年度轉載當成永久入口。
 def test_source_kinds_are_explicit() -> None:
     by_id = {item.program_id: item for item in resolved_programs()}
 
-    assert by_id["tcb-foundation"].official_status == SOURCE_RELAY
-    assert "nutc.edu.tw" in by_id["tcb-foundation"].official_url
-    assert by_id["it-social-care"].official_status == SOURCE_RELAY
-    assert "yzu.edu.tw" in by_id["it-social-care"].official_url
-    assert by_id["yonglin-hope"].official_status == SOURCE_CORE
-    assert by_id["yonglin-hope"].official_url == ""
+    assert by_id["tcb-foundation"].source_type is ProgramSourceType.FIXED_PAGE
+    assert "tcbbank.com.tw" in by_id["tcb-foundation"].official_url
+    assert by_id["it-social-care"].source_type is ProgramSourceType.LISTING
+    assert "csroc.org.tw" in by_id["it-social-care"].official_url
+    assert by_id["yonglin-hope"].source_type is ProgramSourceType.DYNAMIC_PAGE
+    assert "edu.yonglin.org.tw" in by_id["yonglin-hope"].official_url
     assert by_id["hndasset-wenxiang"].official_status == SOURCE_CORE
     assert by_id["hndasset-wenxiang"].official_url == ""
+    assert by_id["hndasset-wenxiang"].source_type is ProgramSourceType.CORE_COVERED
 
 
-# 真實 smoke 發現的逾時、憑證與 404 入口必須改用新頁面。
-def test_failed_official_entries_are_replaced() -> None:
+# 人工核對的方案入口不得退回首頁、錯誤分類或單一舊年度轉載。
+def test_verified_entries_use_precise_current_routes() -> None:
     by_id = {item.program_id: item for item in resolved_programs()}
 
-    assert by_id["it-social-care"].official_url == (
-        "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01"
+    assert by_id["foxconn-scholarship-whale"].official_url == (
+        "https://www.foxconnfoundation.org/plan/scholar/university"
     )
-    assert by_id["sunshine-scholarship"].official_url == (
-        "https://scls.sunshine.org.tw/"
+    assert by_id["wang-yun-wu-self-study"].official_url == (
+        "https://yunwu.org.tw/y/news/category/6"
     )
-    assert by_id["harmony-stability"].official_url == (
-        "https://www.hk.edu.tw/remote/HKlf_1238963/"
+    assert by_id["heart-child"].official_url == (
+        "https://www.ccft.org.tw/List.aspx?tid=128"
     )
     assert by_id["auden-innovation-research"].official_url == (
         "https://www.auden.com.tw/news-4/"
     )
 
 
-# 同一主辦單位的多個方案應共用一次官方網站請求。
+# 同一入口的多個方案應共用請求；不同辦法頁則必須保持分離。
 def test_shared_organizers_reuse_official_entry() -> None:
     by_id = {item.program_id: item for item in resolved_programs()}
 
-    assert by_id["ht-emergency"].official_url == by_id["ht-student-aid"].official_url
+    assert by_id["ht-talented-long-term"].official_url != by_id["ht-student-aid"].official_url
     assert by_id["cfh-graduate"].official_url == by_id["cfh-disabled-family"].official_url
     assert by_id["auden-innovation-research"].official_url == by_id[
         "auden-university-talent"
     ].official_url
+
+
+# 人工確認不採用的方案不得重新進入監測目錄。
+def test_removed_programs_are_not_monitored() -> None:
+    program_ids = {item.program_id for item in resolved_programs()}
+    removed_program_ids = {
+        "tf4dr-aid",
+        "kumota-flying",
+        "lijin-taoyuan",
+        "hsinrong-emergency-aid",
+        "cdf-vocational",
+        "ht-emergency",
+        "lovepeace-disadvantaged",
+        "taishin-youth-volunteer",
+    }
+
+    assert program_ids.isdisjoint(removed_program_ids)

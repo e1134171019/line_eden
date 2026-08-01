@@ -68,7 +68,6 @@ def test_audit_record_keeps_source_diagnostic(tmp_path: Path) -> None:
     repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     service = ScholarshipService(
         FakeCollector(item), repository, NotificationFanout(tuple()),
-        include_keywords=("獎學金", "助學金"),
         summary_batch_size=5,
         detail_fetcher=FailedDiagnosticFetcher(),
         evaluator=EligibilityEvaluator(),

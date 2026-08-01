@@ -1,14 +1,20 @@
 # -*- coding: utf-8 -*-
 
-from abc import ABC, abstractmethod
+from typing import Protocol, runtime_checkable
 
 from src.models.scholarship import Scholarship
 
 
-class BaseCollector(ABC):
-    """公告蒐集器抽象基底。"""
+@runtime_checkable
+class BaseCollector(Protocol):
+    """以結構化型別定義可插拔公告來源介面。"""
 
     # 定義統一的公告蒐集介面。
-    @abstractmethod
-    def collect(self) -> list[Scholarship]:
-        raise NotImplementedError
+    def collect(self) -> list[Scholarship]: ...
+
+
+@runtime_checkable
+class CoreEvidenceAwareCollector(Protocol):
+    """需要前序核心來源公告來驗證涵蓋方案的 Collector。"""
+
+    def load_core_evidence(self, notices: tuple[Scholarship, ...]) -> None: ...

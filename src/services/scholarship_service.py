@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass, replace
-from typing import Callable, cast
+from typing import Callable, Protocol, cast, runtime_checkable
 
 from src.collectors.base_collector import BaseCollector
 from src.collectors.detail_fetcher import DetailFetcher
@@ -104,6 +104,34 @@ class AuditResult:
     structured_error_count: int = 0
 
 
+@dataclass(frozen=True)
+class DiscoveryResult:
+    """保存 Collector 輸出到 Repository 入庫的守恆帳本。"""
+
+    input_count: int
+    unique_count: int
+    inserted_count: int
+
+    @property
+    def duplicate_input_count(self) -> int:
+        """純函式：回傳同批輸入內使用相同公告 identity 的筆數。"""
+
+        return self.input_count - self.unique_count
+
+    @property
+    def existing_count(self) -> int:
+        """純函式：回傳已存在而只更新 listing metadata 的公告數。"""
+
+        return self.unique_count - self.inserted_count
+
+
+@runtime_checkable
+class SourceSummaryProvider(Protocol):
+    """定義可提供來源診斷摘要的 collector 介面。"""
+
+    def source_summary_lines(self) -> list[str]: ...
+
+
 class ScholarshipService:
     """協調蒐集、公告分類、資格判斷與多管道通知流程。"""
 
@@ -112,7 +140,6 @@ class ScholarshipService:
         collector: BaseCollector,
         repository: ScholarshipRepository,
         notifier: NotificationDispatcher,
-        include_keywords: tuple[str, ...] | None,
         summary_batch_size: int,
         message_renderer: SummaryMessageRenderer | None = None,
         detail_fetcher: DetailFetcher | None = None,
@@ -126,7 +153,6 @@ class ScholarshipService:
         self.collector = collector
         self.repository = repository
         self.notifier = notifier
-        self.include_keywords = include_keywords or tuple()
         self.summary_batch_size = summary_batch_size
         self.message_renderer = message_renderer or load_summary_message_renderer(
             DEFAULT_SUMMARY_TEMPLATE_NAME
@@ -138,6 +164,7 @@ class ScholarshipService:
         self.gemini_fallback = gemini_fallback
         self.gemini_text_analysis = gemini_text_analysis
         self.structured_evaluator = structured_evaluator
+        self.discovery_result: DiscoveryResult | None = None
 
     def run(self, dry_run: bool) -> ServiceResult:
         collected = self._collect_and_discover()
@@ -147,7 +174,7 @@ class ScholarshipService:
         return self._run_live_mode(collected, pending_items, counts)
 
     def audit(self) -> AuditResult:
-        collected = self._filter_collected(self.collector.collect())
+        collected = self.collector.collect()
         records = [self._build_audit_record(item) for item in collected]
         eligible = self._count_audit_status(records, ELIGIBLE)
         review = self._count_audit_status(records, REVIEW)
@@ -194,18 +221,27 @@ class ScholarshipService:
         )
 
     def _collect_and_discover(self) -> list[Scholarship]:
-        collected = self._filter_collected(self.collector.collect())
-        self.repository.discover(collected)
+        collected = self.collector.collect()
+        inserted_count = self.repository.discover(collected)
+        self.discovery_result = build_discovery_result(collected, inserted_count)
         return collected
 
-    def _filter_collected(self, collected: list[Scholarship]) -> list[Scholarship]:
-        if not self.include_keywords:
-            return collected
-        return [
-            item
-            for item in collected
-            if any(keyword in item.title for keyword in self.include_keywords)
-        ]
+    def source_summary_lines(self) -> list[str]:
+        """讀取 collector 摘要並附加入庫資料守恆。"""
+
+        lines = (
+            self.collector.source_summary_lines()
+            if isinstance(self.collector, SourceSummaryProvider)
+            else []
+        )
+        if self.discovery_result is not None:
+            outcome = self.discovery_result
+            lines.append(
+                f"入庫資料守恆：輸入 {outcome.input_count} = 唯一公告 "
+                f"{outcome.unique_count} + 輸入內重複 {outcome.duplicate_input_count}；"
+                f"唯一公告 = 新增 {outcome.inserted_count} + 既有更新 {outcome.existing_count}"
+            )
+        return lines
 
     def _prepare_notifiable_items(
         self,
@@ -274,6 +310,7 @@ class ScholarshipService:
             decision.reason_text(),
             profile_hash,
             notice_kind,
+            retry_required=fetch_result.source.status == "error",
         )
 
     # 兼容外部直接建立但未填 announcement_id 的 Scholarship。
@@ -574,6 +611,24 @@ class ScholarshipService:
             for notice in notices
             if notice.content_hash in undelivered_hashes
         ]
+
+
+def build_discovery_result(
+    scholarships: list[Scholarship],
+    inserted_count: int,
+) -> DiscoveryResult:
+    """純函式：依公告 identity 建立入庫前後數量帳本。"""
+
+    announcement_ids = {
+        scholarship.announcement_id
+        or build_announcement_id(scholarship.source, scholarship.source_url)
+        for scholarship in scholarships
+    }
+    return DiscoveryResult(
+        input_count=len(scholarships),
+        unique_count=len(announcement_ids),
+        inserted_count=inserted_count,
+    )
 
 
 def _gemini_rule_scope(status: str) -> GeminiRuleScope:

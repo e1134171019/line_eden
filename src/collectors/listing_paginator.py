@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
 
+from config import INCREMENTAL_CATCHUP_PAGES
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.listing_utils import (
     detect_total_pages,
@@ -59,13 +60,11 @@ def crawl_listing_pages(
     entry_page = ListingPage(entry_url, entry_html)
     detected = detect_total_pages(entry_html, entry_url)
     if collection_mode is CollectionMode.INCREMENTAL:
-        return _result(
-            (entry_page,),
+        return _crawl_incremental_pages(
+            entry_page,
             detected,
-            1,
-            tuple(),
-            "incremental_first_page",
-            collection_mode,
+            fetch_text,
+            skip_dyna_page_one,
         )
 
     known_urls = _known_page_urls(
@@ -91,6 +90,41 @@ def crawl_listing_pages(
         max_pages,
         fetch_text,
         skip_dyna_page_one,
+    )
+
+
+def _crawl_incremental_pages(
+    entry_page: ListingPage,
+    detected: int,
+    fetch_text: Callable[[str], str],
+    skip_dyna_page_one: bool,
+) -> ListingCrawlResult:
+    """副作用函式：每日補抓入口後一頁，避免停跑一天就漏掉快速下沉公告。"""
+
+    page_limit = max(INCREMENTAL_CATCHUP_PAGES, 1)
+    known_urls = _known_page_urls(
+        entry_page.html,
+        entry_page.url,
+        page_limit,
+        skip_dyna_page_one,
+    )
+    pages = [entry_page]
+    errors: list[str] = []
+    for url in known_urls[: page_limit - 1]:
+        try:
+            pages.append(ListingPage(url, fetch_text(url)))
+        except Exception as error:
+            errors.append(f"{url}（{_error_text(error)}）")
+    stop_reason = (
+        "incremental_catchup_with_errors" if errors else "incremental_catchup_pages"
+    )
+    return _result(
+        tuple(pages),
+        detected,
+        1 + len(known_urls[: page_limit - 1]),
+        tuple(errors),
+        stop_reason,
+        CollectionMode.INCREMENTAL,
     )
 
 

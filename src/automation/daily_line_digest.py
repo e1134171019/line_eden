@@ -58,7 +58,9 @@ def build_failure_message(error: Exception, checked_at: datetime | None = None) 
 
 
 def _source_summary_lines(service: ScholarshipService) -> list[str]:
-    summary = getattr(service.collector, "source_summary_lines", None)
+    summary = getattr(service, "source_summary_lines", None)
+    if not callable(summary):
+        summary = getattr(service.collector, "source_summary_lines", None)
     if not callable(summary):
         return []
     return list(summary())

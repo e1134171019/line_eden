@@ -134,3 +134,25 @@ def test_revision_hash_changes_when_body_or_attachment_content_changes() -> None
 
     assert original.revision_hash != changed_body.revision_hash
     assert original.revision_hash != changed_attachment.revision_hash
+
+
+# 同一固定網址只要截止日實質改變，就必須建立新 revision。
+def test_revision_hash_changes_when_deadline_changes() -> None:
+    original = DetailFetchResult(
+        "正文",
+        _source(),
+        tuple(),
+        0,
+        body_text="申請截止日期為 2026 年 9 月 20 日。",
+        rules_status=RULES_STATUS_RESOLVED,
+    )
+    extended = DetailFetchResult(
+        "正文",
+        _source(),
+        tuple(),
+        0,
+        body_text="申請截止日期延長至 2026 年 9 月 30 日。",
+        rules_status=RULES_STATUS_RESOLVED,
+    )
+
+    assert original.revision_hash != extended.revision_hash

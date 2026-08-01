@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from src.catalogs.tun_2025_program_catalog import (
     OFFICIAL_VERIFIED,
     TUN_2025_PROGRAMS,
+    ProgramSourceType,
     ScholarshipProgramWatch,
 )
 
@@ -13,63 +14,25 @@ SOURCE_CORE = "covered_by_core_source"
 SOURCE_PENDING = "pending"
 
 
-# 直接官方入口失效時，以主辦單位新頁面取代；沒有公開官網者使用政府／學校正式轉載。
-_SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
-    # 主辦單位頁在 Runner 憑證鏈失敗，改用 115 年大學正式公告。
-    "it-social-care": (
-        "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01",
-        SOURCE_RELAY,
-    ),
-    # 使用陽光基金會 2026 獎助學金申請專站，不走舊 WordPress 憑證鏈。
-    "sunshine-scholarship": (
-        "https://scls.sunshine.org.tw/",
-        OFFICIAL_VERIFIED,
-    ),
-    "sunshine-wanzu": (
-        "https://scls.sunshine.org.tw/",
-        OFFICIAL_VERIFIED,
-    ),
-    "auden-innovation-research": (
-        "https://www.auden.com.tw/news-4/",
-        OFFICIAL_VERIFIED,
-    ),
-    "auden-university-talent": (
-        "https://www.auden.com.tw/news-4/",
-        OFFICIAL_VERIFIED,
-    ),
-    "heart-child": (
-        "https://www.ccft.org.tw/OnePage.aspx?tid=148",
-        OFFICIAL_VERIFIED,
-    ),
-    # 主辦單位舊文章已 404，改用正式學校轉載頁。
-    "harmony-stability": (
-        "https://www.hk.edu.tw/remote/HKlf_1238963/",
-        SOURCE_RELAY,
-    ),
-    # 舊單篇公告已下架，改監測校方持續更新的校外獎學金列表。
-    "tcb-foundation": (
-        "https://student.nutc.edu.tw/p/403-1020-34-2.php?Lang=zh-tw",
-        SOURCE_RELAY,
-    ),
-    "tainan-kaiji": (
-        "https://service.utaipei.edu.tw/p/404-1034-131943.php?Lang=zh-tw",
-        SOURCE_RELAY,
-    ),
-    "rehe-association": (
-        "https://service.utaipei.edu.tw/p/404-1034-125939.php?Lang=zh-tw",
-        SOURCE_RELAY,
-    ),
-    "chiu-filial-piety": (
-        "https://pyjh.chc.edu.tw/posts/1238",
-        SOURCE_RELAY,
-    ),
-    "dapeng-aid": (
-        "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
-        SOURCE_RELAY,
-    ),
-    # 兩項主辦單位官網在 GitHub Runner TLS／握手失敗；既有教育部圓夢助學網已監測。
-    "yonglin-hope": ("", SOURCE_CORE),
-    "hndasset-wenxiang": ("", SOURCE_CORE),
+@dataclass(frozen=True)
+class ProgramSourceOverride:
+    """沒有穩定主辦單位入口時的替代來源契約。"""
+
+    url: str
+    status: str
+    source_type: ProgramSourceType
+
+
+# 沒有穩定主辦單位消息列表者，由既有教育部圓夢助學網來源持續探索。
+_SOURCE_OVERRIDES: dict[str, ProgramSourceOverride] = {
+    program_id: ProgramSourceOverride("", SOURCE_CORE, ProgramSourceType.CORE_COVERED)
+    for program_id in (
+        "tainan-kaiji",
+        "chiu-filial-piety",
+        "dapeng-aid",
+        "hndasset-wenxiang",
+        "harmony-stability",
+    )
 }
 
 
@@ -82,8 +45,14 @@ def resolved_programs() -> tuple[ScholarshipProgramWatch, ...]:
         if override is None:
             resolved.append(item)
             continue
-        url, status = override
-        resolved.append(replace(item, official_url=url, official_status=status))
+        resolved.append(
+            replace(
+                item,
+                official_url=override.url,
+                official_status=override.status,
+                source_type=override.source_type,
+            )
+        )
     return tuple(resolved)
 
 
@@ -114,11 +83,11 @@ def unresolved_programs() -> tuple[ScholarshipProgramWatch, ...]:
 
 
 def validate_resolved_sources() -> None:
-    """38 項都必須具有直接監測、核心來源覆蓋或明確待查狀態。"""
+    """30 項都必須具有直接監測、核心來源覆蓋或明確待查狀態。"""
 
     programs = resolved_programs()
-    if len(programs) != 38:
-        raise ValueError("解析後方案數量必須為 38。")
+    if len(programs) != 30:
+        raise ValueError("解析後方案數量必須為 30。")
     for item in programs:
         if item.official_status in {OFFICIAL_VERIFIED, SOURCE_RELAY}:
             if not item.official_url.startswith(("https://", "http://")):
@@ -126,11 +95,29 @@ def validate_resolved_sources() -> None:
         elif item.official_status == SOURCE_CORE:
             if item.official_url:
                 raise ValueError(f"核心來源覆蓋方案不得重複請求：{item.program_id}")
+            if item.source_type is not ProgramSourceType.CORE_COVERED:
+                raise ValueError(f"核心來源覆蓋方案型態錯誤：{item.program_id}")
         elif item.official_status == SOURCE_PENDING:
             if item.official_url:
                 raise ValueError(f"待查方案不得偽造網址：{item.program_id}")
         else:
             raise ValueError(f"未知來源狀態：{item.program_id}")
+
+    _validate_shared_entry_types(programs)
+
+
+def _validate_shared_entry_types(
+    programs: tuple[ScholarshipProgramWatch, ...],
+) -> None:
+    """純函式：同一入口不可同時宣告不同抓取策略。"""
+
+    types_by_url: dict[str, set[ProgramSourceType]] = {}
+    for program in programs:
+        if program.official_url:
+            types_by_url.setdefault(program.official_url, set()).add(program.source_type)
+    conflicted = [url for url, source_types in types_by_url.items() if len(source_types) > 1]
+    if conflicted:
+        raise ValueError(f"共用入口具有衝突抓取型態：{conflicted[0]}")
 
 
 validate_resolved_sources()

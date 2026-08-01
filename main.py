@@ -29,7 +29,6 @@ from config import (
     NOTIFICATION_TITLE,
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
-    SCHOLARSHIP_FILTER_KEYWORDS,
     SOURCE_FETCH_WORKERS,
     SOURCE_MAX_PAGES,
     SUMMARY_TEMPLATE_NAME,
@@ -142,7 +141,6 @@ def build_service(
         _build_collector(mode),
         _build_repository(),
         build_notifier(mode),
-        include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
         summary_batch_size=LINE_SUMMARY_BATCH_SIZE,
         message_renderer=load_summary_message_renderer(SUMMARY_TEMPLATE_NAME),
         detail_fetcher=_build_detail_fetcher(),
@@ -160,18 +158,17 @@ def build_baseline_service() -> BaselineService:
     return BaselineService(
         _build_collector(RunMode.INITIALIZE_BASELINE),
         _build_repository(),
-        SCHOLARSHIP_FILTER_KEYWORDS,
     )
 
 
-# 稽核與基準抓完整分頁；每日、正式與 dry-run 僅抓最新入口頁。
-def _collection_mode(mode: RunMode) -> CollectionMode:
-    if mode in {RunMode.AUDIT, RunMode.INITIALIZE_BASELINE}:
-        return CollectionMode.FULL_AUDIT
-    return CollectionMode.INCREMENTAL
+# watermark 尚未落地前所有模式抓完整分頁，避免漏跑期間的新公告掉到後頁。
+def _collection_mode(_mode: RunMode) -> CollectionMode:
+    """純函式：在增量 watermark 完成前固定採用完整來源稽核。"""
+
+    return CollectionMode.FULL_AUDIT
 
 
-# 建立六個既有來源與 38 項方案官方監測群組。
+# 建立六個既有來源與 30 項方案官方監測群組。
 def _build_collector(mode: RunMode) -> ExpandedScholarshipCollector:
     return ExpandedScholarshipCollector(
         LHU_SCHOLARSHIP_URL,

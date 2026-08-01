@@ -20,7 +20,7 @@ from src.models.scholarship import Scholarship
 
 
 class ExpandedScholarshipCollector(LhuCollector):
-    """現有六個官方來源，加上 TUN 38 項方案的官方監測群組。"""
+    """現有六個官方來源，加上 TUN 30 項方案的官方監測群組。"""
 
     def __init__(
         self,

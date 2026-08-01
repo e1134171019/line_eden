@@ -95,8 +95,8 @@ def test_batch_failure_is_partial() -> None:
     assert "timeout" in result.errors[0]
 
 
-# 每日增量只抓入口頁，不得呼叫批次或跟進歷史分頁。
-def test_incremental_mode_stops_after_entry_page() -> None:
+# 每日增量補抓第二頁，避免停跑一天後的新公告已下沉而永久漏失。
+def test_incremental_mode_catches_up_second_page() -> None:
     pages = _all_pages_visible()
     requested: list[str] = []
     batches: list[tuple[str, ...]] = []
@@ -109,11 +109,11 @@ def test_incremental_mode_stops_after_entry_page() -> None:
         lambda urls: batches.append(urls) or ({}, {}),
     )
 
-    assert requested == [_ENTRY]
+    assert requested == [_ENTRY, _PAGE_2]
     assert batches == []
-    assert result.pages_succeeded == 1
+    assert result.pages_succeeded == 2
     assert result.completeness == "incremental"
-    assert result.stop_reason == "incremental_first_page"
+    assert result.stop_reason == "incremental_catchup_pages"
 
 
 # 已偵測更多頁但觸及上限時必須標示 partial。

@@ -22,13 +22,14 @@ from src.services.scholarship_service import AuditRecord, AuditResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 MAX_ELIGIBLE_ITEMS = 5
+MAX_REVIEW_ITEMS = 5
 MAX_SHADOW_CHANGED_ITEMS = 10
 MAX_SHADOW_ERROR_ITEMS = 8
 MAX_DETAIL_TITLE_LENGTH = 34
 MAX_DETAIL_REASON_LENGTH = 82
 
 
-# 將六個官方來源的真實稽核與 shadow 統計整理成 LINE 報告。
+# 將多來源真實稽核、入口過濾與 shadow 統計整理成 LINE 報告。
 def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
@@ -151,7 +152,7 @@ def _eligible_lines(result: AuditResult) -> list[str]:
         and _period_status(record) != EXPIRED
     ]
     if not eligible:
-        return ["目前沒有明確符合你背景且仍可申請的公告。"]
+        return _review_fallback_lines(result)
     lines = ["明確符合公告："]
     for item in eligible[:MAX_ELIGIBLE_ITEMS]:
         lines.extend([
@@ -162,6 +163,33 @@ def _eligible_lines(result: AuditResult) -> list[str]:
     remaining = len(eligible) - MAX_ELIGIBLE_ITEMS
     if remaining > 0:
         lines.append(f"另有 {remaining} 筆明確符合公告未列出。")
+    return lines
+
+
+def _review_fallback_lines(result: AuditResult) -> list[str]:
+    """純函式：沒有明確符合項目時，仍列出可申請但待人工確認的公告。"""
+
+    review_records = [
+        record
+        for record in result.records
+        if record.item.notice_kind == APPLICATION
+        and record.item.eligibility_status == REVIEW
+        and _period_status(record) != EXPIRED
+    ]
+    lines = ["目前沒有明確符合你背景且仍可申請的公告。"]
+    if not review_records:
+        return lines
+    lines.append("仍可人工確認公告：")
+    for record in review_records[:MAX_REVIEW_ITEMS]:
+        item = record.item
+        lines.extend([
+            f"- {item.published_date}｜{item.title}",
+            f"  {item.eligibility_reason}",
+            f"  {item.source_url}",
+        ])
+    remaining = len(review_records) - MAX_REVIEW_ITEMS
+    if remaining > 0:
+        lines.append(f"另有 {remaining} 筆待確認公告未列出。")
     return lines
 
 
@@ -178,7 +206,7 @@ def main() -> None:
     service = build_service(mode=RunMode.AUDIT, use_gemini=True)
     result = service.audit()
     csv_path, json_path = write_structured_shadow_artifacts(result)
-    source_summary = getattr(service.collector, "source_summary_lines", lambda: [])()
+    source_summary = service.source_summary_lines()
     message = build_report_message(result, source_summary)
     send_text_message(
         api_url=LINE_API_URL,

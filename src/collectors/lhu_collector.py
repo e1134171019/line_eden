@@ -191,6 +191,12 @@ class _LhuOnlyCollector(BaseCollector):
         self.owner = owner
 
     @property
+    def source_url(self) -> str:
+        """純函式：提供龍華單站入口供來源口徑統計。"""
+
+        return self.owner.source_url
+
+    @property
     def diagnostic(self) -> CollectorDiagnostic:
         return self.owner.lhu_diagnostic
 

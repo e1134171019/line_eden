@@ -28,10 +28,9 @@ def _item(index: int, title: str) -> Scholarship:
 def _service(
     tmp_path: Path,
     items: list[Scholarship],
-    keywords: tuple[str, ...] | None = None,
 ) -> tuple[BaselineService, ScholarshipRepository]:
     repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
-    return BaselineService(FakeCollector(items), repository, keywords), repository
+    return BaselineService(FakeCollector(items), repository), repository
 
 
 def test_baseline_service_marks_current_items_without_notification_dependencies(
@@ -48,13 +47,13 @@ def test_baseline_service_marks_current_items_without_notification_dependencies(
     assert repository.list_pending() == []
 
 
-def test_baseline_service_applies_same_title_filter_as_full_service(tmp_path: Path) -> None:
-    keep = _item(1, "能源獎學金")
-    drop = _item(2, "一般行政公告")
-    service, repository = _service(tmp_path, [keep, drop], ("獎學金", "助學金"))
+def test_baseline_preserves_notice_without_standard_title_keywords(tmp_path: Path) -> None:
+    scholarship = _item(1, "鴻海獎學鯨")
+    service, repository = _service(tmp_path, [scholarship])
 
     result = service.initialize_baseline()
 
-    assert result.collected == [keep]
+    assert scholarship.category == "other"
+    assert result.collected == [scholarship]
     assert result.baseline_count == 1
     assert repository.list_pending() == []

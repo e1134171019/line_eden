@@ -126,3 +126,40 @@ def test_supporting_and_form_roles_are_separate() -> None:
     )
 
     assert inventory.selected_roles == (RULES, APPLICATION_FORM, SUPPORTING_DOCUMENT)
+
+
+# Google Drive 檢視網址必須轉成可下載入口，避免只解析到預覽頁。
+def test_google_drive_view_link_is_normalized_for_download() -> None:
+    html = """
+    <main><h1>獎學金</h1><p>本辦法適用於符合資格之大專院校在校學生申請。</p>
+      <a href="https://drive.google.com/file/d/file-id-123/view?usp=sharing">
+        申請辦法
+      </a>
+    </main>
+    """
+
+    links = extract_attachment_links(
+        html, "https://example.com/news/1", "獎學金", max_count=3,
+    )
+
+    assert links == [
+        "https://drive.google.com/uc?export=download&id=file-id-123",
+    ]
+
+
+# 沒有副檔名的中介辦法頁與 JavaScript 下載按鈕都必須進入附件圖。
+def test_intermediate_and_script_download_links_are_discovered() -> None:
+    html = """
+    <main><h1>獎學金</h1><p>本公告提供完整申請辦法及相關表格下載使用。</p>
+      <a href="/rules">申請辦法</a>
+      <button onclick="window.open('/files/form.docx')">申請表</button>
+    </main>
+    """
+
+    inventory = extract_attachment_inventory(
+        html, "https://example.com/news/1", "獎學金", max_count=3,
+    )
+
+    assert inventory.discovered_count == 2
+    assert "https://example.com/rules" in inventory.selected_urls
+    assert "https://example.com/files/form.docx" in inventory.selected_urls

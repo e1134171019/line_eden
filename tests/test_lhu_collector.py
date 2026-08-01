@@ -89,8 +89,8 @@ def test_lhu_shared_paginator_skips_dyna_first_page_alias(monkeypatch: Any) -> N
     assert collector.lhu_diagnostic.completeness == "complete"
 
 
-# 每日增量模式只讀最新入口頁，不回抓歷史頁。
-def test_lhu_incremental_collects_first_page_only(monkeypatch: Any) -> None:
+# 每日增量模式補抓第二頁，避免停跑一天後公告下沉而漏失。
+def test_lhu_incremental_catches_up_second_page(monkeypatch: Any) -> None:
     page_2 = f"{BASE_URL}&page=2"
     page_3 = f"{BASE_URL}&page=3"
     calls: list[str] = []
@@ -111,10 +111,10 @@ def test_lhu_incremental_collects_first_page_only(monkeypatch: Any) -> None:
     records = collector._collect_lhu()
 
     assert len(records) == 1
-    assert calls == [BASE_URL]
+    assert calls == [BASE_URL, page_2]
     assert collector.lhu_diagnostic.completeness == "incremental"
     assert collector.lhu_diagnostic.pages_detected == 3
-    assert collector.lhu_diagnostic.pages_succeeded == 1
+    assert collector.lhu_diagnostic.pages_succeeded == 2
 
 
 # 建立含三頁導覽的最小列表 fixture。

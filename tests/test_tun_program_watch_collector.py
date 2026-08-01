@@ -5,19 +5,27 @@ from typing import cast
 import httpx
 from pytest import MonkeyPatch, raises
 
-from src.catalogs.tun_2025_program_catalog import ScholarshipProgramWatch
-from src.collectors.collection_diagnostics import CollectionMode
+from src.catalogs.tun_2025_program_catalog import (
+    ProgramSourceType,
+    ScholarshipProgramWatch,
+)
+from src.collectors.collection_diagnostics import CollectionMode, SourceAccessMode
 from src.collectors.http_client import DetailSafeHttpClient
 from src.collectors.listing_paginator import ListingCrawlResult, ListingPage
 from src.collectors.tun_program_watch_collector import (
     TunProgramWatchCollector,
     _ProgramPageFetcher,
+    _append_unique,
     _build_diagnostic,
+    _build_target_diagnostics,
     _chunk_urls,
     _extract_program_notices,
+    _extract_program_source_diagnostics,
     _fetch_text_with_retry,
     _group_programs_by_url,
+    _semantic_target_status,
 )
+from src.models.scholarship import Scholarship
 
 
 def _program(
@@ -82,6 +90,85 @@ def test_groups_programs_by_shared_official_url() -> None:
         "one",
         "two",
     ]
+
+
+# 30 個邏輯方案必須與直接入口、核心涵蓋及唯一網站分開統計。
+def test_program_watch_reports_real_monitoring_scope() -> None:
+    targets = _build_target_diagnostics([], {}, [])
+
+    assert len(targets) == 30
+    assert sum(
+        target.access_mode is SourceAccessMode.DIRECT for target in targets
+    ) == 25
+    assert sum(
+        target.access_mode is SourceAccessMode.CORE_COVERED for target in targets
+    ) == 5
+    assert len({target.entry_url for target in targets if target.entry_url}) == 21
+    assert len({target.domain for target in targets if target.domain}) == 20
+
+
+# 核心來源涵蓋方案必須真的命中名稱，不能因設定為 covered 就自動成功。
+def test_core_covered_program_requires_matching_evidence() -> None:
+    evidence = Scholarship.from_raw(
+        "moe-helpdreams-private",
+        "115年度臺疆祖廟清寒優秀獎學金",
+        "",
+        "https://www.edu.tw/helpdreams/notice/1",
+    )
+
+    without_evidence = _build_target_diagnostics([], {}, [])
+    with_evidence = _build_target_diagnostics([], {}, [], (evidence,))
+    missing = next(target for target in without_evidence if target.target_id == "tainan-kaiji")
+    matched = next(target for target in with_evidence if target.target_id == "tainan-kaiji")
+
+    assert missing.is_succeeded is False
+    assert "未命中" in missing.error
+    assert matched.is_succeeded is True
+    assert matched.parsed_rows == 1
+
+
+# 固定辦法頁不需要偽造刊登日期，也必須建立穩定公告供 revision 追蹤。
+def test_fixed_page_creates_trackable_notice_without_listing_date() -> None:
+    program = ScholarshipProgramWatch(
+        "fixed",
+        "青力親為服務學習獎勵計畫",
+        "測試基金會",
+        ("青力親為服務學習獎勵計畫",),
+        "https://foundation.example/rules",
+        "verified",
+        ProgramSourceType.FIXED_PAGE,
+    )
+
+    extraction = _extract_program_source_diagnostics(
+        "<main><h1>青力親為服務學習獎勵計畫</h1><p>每學期接受申請。</p></main>",
+        program.official_url,
+        (program,),
+    )
+
+    assert len(extraction.records) == 1
+    assert extraction.records[0].published_date == ""
+    assert extraction.records[0].source_url == program.official_url
+    assert extraction.records[0].category == "other"
+    assert extraction.program_counts[0].parsed_rows == 1
+
+
+# HTTP 成功但沒有命中方案別名時，語意狀態必須降級。
+def test_semantic_target_rejects_http_only_success() -> None:
+    page = ListingPage("https://foundation.example/news", "<html>一般消息</html>")
+    crawl = ListingCrawlResult(
+        (page,),
+        1,
+        1,
+        1,
+        "complete",
+        "all_detected_pages_completed",
+        tuple(),
+    )
+
+    completeness, error = _semantic_target_status(crawl, 0, 0)
+
+    assert completeness == "partial"
+    assert error == "入口可連線但未命中方案別名"
 
 
 # 暫時性 timeout 成功後不得繼續消耗剩餘重試次數。
@@ -178,7 +265,7 @@ def test_watch_diagnostic_aggregates_complete_and_partial_crawls() -> None:
         [("https://one.example/news", complete), ("https://two.example/news", partial)],
         parsed_rows=4,
         raw_rows=7,
-        successful_programs=38,
+        successful_programs=30,
         fallback_used=True,
     )
 
@@ -187,7 +274,7 @@ def test_watch_diagnostic_aggregates_complete_and_partial_crawls() -> None:
     assert diagnostic.pages_requested == 3
     assert diagnostic.pages_succeeded == 2
     assert diagnostic.rejected_rows == 3
-    assert diagnostic.child_sources_succeeded == 38
+    assert diagnostic.child_sources_succeeded == 30
     assert diagnostic.ssl_compatibility_fallback is True
     assert "parallel_fetch_errors" in diagnostic.error
     assert "page/2" in diagnostic.error
@@ -241,6 +328,53 @@ def test_link_title_has_priority_over_container_noise() -> None:
 
     assert matched == 0
     assert records == []
+
+
+# 分享按鈕不得取代同一公告列中的真正公告連結。
+def test_share_link_is_ignored_in_favor_of_notice_link() -> None:
+    program = _program("energy", "能源工程獎學金")
+    html = """
+    <ul>
+      <li>
+        <span>2026/09/15</span>
+        <a href="https://www.addtoany.com/share">分享</a>
+        <a href="/news/88">能源工程獎學金開放申請</a>
+      </li>
+    </ul>
+    """
+
+    records, matched = _extract_program_notices(
+        html,
+        "https://foundation.example/news",
+        (program,),
+    )
+
+    assert matched >= 1
+    assert len(records) == 1
+    assert records[0].source_url == "https://foundation.example/news/88"
+
+
+# 同一來源與 URL 即使頁面列出不同日期，仍是同一公告身分。
+def test_append_unique_deduplicates_same_announcement_identity() -> None:
+    current = Scholarship.from_raw(
+        "tun-program-energy",
+        "能源工程獎學金開放申請",
+        "2026-09-15",
+        "https://foundation.example/news/88",
+    )
+    older = Scholarship.from_raw(
+        "tun-program-energy",
+        "能源工程獎學金開放申請",
+        "2026-08-15",
+        "https://foundation.example/news/88",
+    )
+    records: list[Scholarship] = []
+    seen: set[str] = set()
+
+    duplicate_rows = _append_unique(records, seen, [current, older])
+
+    assert duplicate_rows == 1
+    assert records == [current]
 
 
 # 官方公告列的西元日期應轉成 Scholarship 標準日期。

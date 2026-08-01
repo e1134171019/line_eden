@@ -43,6 +43,10 @@ def test_moe_overseas_collects_four_child_sources(monkeypatch: Any) -> None:
     assert collector.diagnostic.child_sources_detected == 4
     assert collector.diagnostic.child_sources_succeeded == 4
     assert collector.diagnostic.completeness == "incremental"
+    assert len(collector.diagnostic.target_diagnostics) == 4
+    assert {target.domain for target in collector.diagnostic.target_diagnostics} == {
+        "www.scholarship.moe.gov.tw"
+    }
 
 
 # parser 必須排除固定導覽標題，只保留有日期的公告標題。
@@ -110,3 +114,5 @@ def test_studyabroad_parser_collects_brochures_and_notice_panel() -> None:
         "請特別留意「補件」規定",
     ]
     assert all(record.published_date == "" for record in records)
+    assert len({record.announcement_id for record in records}) == 4
+    assert all("line_eden_notice=" in record.source_url for record in records[2:])

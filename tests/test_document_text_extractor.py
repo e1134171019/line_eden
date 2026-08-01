@@ -2,6 +2,7 @@
 
 from io import BytesIO
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 from docx import Document
 import pytest
@@ -58,11 +59,38 @@ def test_empty_pdf_text_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
 
-# 驗證舊版 DOC 不會被錯當成 DOCX。
-def test_legacy_doc_is_unsupported() -> None:
+# 驗證舊版 DOC 會被辨識並回報明確無法安全解析，不得靜默漏掉。
+def test_legacy_doc_is_discovered_but_fails_closed() -> None:
     kind = extractor.detect_document_kind(
         "application/msword",
         "https://example.com/form.doc",
     )
 
-    assert kind == "unsupported"
+    assert kind == "doc"
+    with pytest.raises(ValueError, match="舊式 DOC 已發現"):
+        extractor.extract_document_text(
+            b"legacy-doc",
+            "application/msword",
+            "https://example.com/form.doc",
+            max_pdf_pages=10,
+        )
+
+
+# 驗證 ODT 辦法可在不執行巨集的情況下擷取文字。
+def test_extract_odt_text() -> None:
+    stream = BytesIO()
+    with ZipFile(stream, "w") as archive:
+        archive.writestr(
+            "content.xml",
+            "<document><p>申請資格限大專院校學生。</p><p>平均八十分以上。</p></document>",
+        )
+
+    text = extractor.extract_document_text(
+        stream.getvalue(),
+        extractor.ODT_MIME,
+        "https://example.com/rules.odt",
+        max_pdf_pages=10,
+    )
+
+    assert "大專院校學生" in text
+    assert "平均八十分以上" in text

@@ -81,7 +81,6 @@ def _service(
         NotificationFanout(
             (CallableNotificationChannel("test", sent_messages.append),)
         ),
-        include_keywords=("獎學金", "助學金", "就學貸款"),
         summary_batch_size=5,
         detail_fetcher=FakeDetailFetcher(details),
         evaluator=EligibilityEvaluator(),
@@ -150,6 +149,44 @@ def test_detail_failure_is_not_sent(tmp_path: Path) -> None:
     assert sent_messages == []
 
 
+# 新公告第一次正文暫時失敗時，下一輪恢復後必須重試並正常通知。
+def test_transient_detail_failure_is_retried_after_recovery(tmp_path: Path) -> None:
+    item = _item(1, "能源工程學生獎學金")
+    details: dict[str, str] = {}
+    sent_messages: list[str] = []
+    service, _ = _service(tmp_path, [item], details, sent_messages)
+
+    failed = service.run(dry_run=False)
+    details[item.source_url] = "大專在校生，電子工程相關科系可申請。"
+    recovered = service.run(dry_run=False)
+
+    assert failed.notified_count == 0
+    assert recovered.notified_count == 1
+    assert len(sent_messages) == 1
+
+
+# 建立歷史基準後，每日新出現的公告必須獨立進入評估與通知。
+def test_new_daily_announcement_after_baseline_is_notified(tmp_path: Path) -> None:
+    historical = _item(1, "歷史能源工程獎學金")
+    current = _item(2, "本日能源工程獎學金")
+    items = [historical]
+    details = {
+        historical.source_url: "大專在校生，電子工程相關科系可申請。",
+        current.source_url: "大專在校生，電子工程相關科系可申請。",
+    }
+    sent_messages: list[str] = []
+    service, _ = _service(tmp_path, items, details, sent_messages)
+    service.initialize_baseline()
+
+    items.append(current)
+    result = service.run(dry_run=False)
+
+    assert result.notified_count == 1
+    assert len(sent_messages) == 1
+    assert current.title in sent_messages[0]
+    assert historical.title not in sent_messages[0]
+
+
 # 同一公告只有實質正文變更才重開評估與通知，純空白調整不重送。
 def test_content_revision_re_evaluates_and_notifies_again(tmp_path: Path) -> None:
     item = _item(1, "能源工程學生獎學金")
@@ -192,3 +229,20 @@ def test_existing_notification_initializes_revision_without_resending(
 
     assert result.notified_count == 0
     assert sent_messages == []
+
+
+# 歷史基準第一次只記錄正文版本，後續同網址內容改變才重新評估通知。
+def test_baseline_content_change_reopens_and_notifies(tmp_path: Path) -> None:
+    item = _item(1, "能源工程學生獎學金")
+    details = {item.source_url: "大專在校生，電子工程相關科系可申請。"}
+    sent_messages: list[str] = []
+    service, _ = _service(tmp_path, [item], details, sent_messages)
+    service.initialize_baseline()
+
+    initialized = service.run(dry_run=False)
+    details[item.source_url] = "大專在校生，電子工程相關科系可申請，平均須達 80 分。"
+    changed = service.run(dry_run=False)
+
+    assert initialized.notified_count == 0
+    assert changed.notified_count == 1
+    assert len(sent_messages) == 1

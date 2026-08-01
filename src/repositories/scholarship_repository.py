@@ -22,6 +22,7 @@ SCHEMA_COLUMNS = {
     "eligibility_reason": "TEXT",
     "profile_hash": "TEXT",
     "evaluated_at": "TEXT",
+    "evaluation_retry_required": "INTEGER NOT NULL DEFAULT 0",
     "revision_hash": "TEXT",
     "extraction_policy_hash": "TEXT",
     "revision_observed_at": "TEXT",
@@ -58,6 +59,7 @@ class ScholarshipRepository:
             eligibility_reason TEXT,
             profile_hash TEXT,
             evaluated_at TEXT,
+            evaluation_retry_required INTEGER NOT NULL DEFAULT 0,
             revision_hash TEXT,
             extraction_policy_hash TEXT,
             revision_observed_at TEXT
@@ -221,11 +223,12 @@ class ScholarshipRepository:
     def list_for_evaluation(self, profile_hash: str) -> list[Scholarship]:
         condition = (
             "notified_at IS NULL AND baseline_at IS NULL "
-            "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ?)"
+            "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ? "
+            "OR evaluation_retry_required = 1)"
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
 
-    # 取出本輪仍出現在來源 listing、且未列為歷史基準的 revision 候選。
+    # 取出本輪仍出現在來源 listing 的 revision 候選，包含歷史基準。
     def list_revision_candidates(
         self,
         announcement_ids: list[str],
@@ -234,10 +237,7 @@ class ScholarshipRepository:
         if not unique_ids:
             return []
         placeholders = ",".join(["?"] * len(unique_ids))
-        condition = (
-            "baseline_at IS NULL "
-            f"AND announcement_id IN ({placeholders})"
-        )
+        condition = f"announcement_id IN ({placeholders})"
         return self._query_scholarships(
             self._select_query(condition),
             unique_ids,
@@ -328,7 +328,6 @@ class ScholarshipRepository:
             should_reset = (
                 reset_on_change
                 and status is RevisionObservationStatus.CHANGED
-                and row[1] is None
             )
             if should_reset:
                 self._save_changed_revision(
@@ -368,9 +367,11 @@ class ScholarshipRepository:
             UPDATE scholarships
             SET revision_hash = ?, extraction_policy_hash = ?,
                 revision_observed_at = ?, notified_at = NULL,
+                baseline_at = NULL,
                 notice_kind = 'unknown', eligibility_status = NULL,
-                eligibility_reason = NULL, profile_hash = NULL, evaluated_at = NULL
-            WHERE announcement_id = ? AND baseline_at IS NULL
+                eligibility_reason = NULL, profile_hash = NULL, evaluated_at = NULL,
+                evaluation_retry_required = 0
+            WHERE announcement_id = ?
             """,
             [
                 revision_hash,
@@ -388,14 +389,23 @@ class ScholarshipRepository:
         reason: str,
         profile_hash: str,
         notice_kind: str = "application",
+        retry_required: bool = False,
     ) -> int:
         query = """
         UPDATE scholarships
         SET notice_kind = ?, eligibility_status = ?, eligibility_reason = ?,
-            profile_hash = ?, evaluated_at = ?
+            profile_hash = ?, evaluated_at = ?, evaluation_retry_required = ?
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
-        params = [notice_kind, status, reason, profile_hash, self._now_iso(), content_hash]
+        params = [
+            notice_kind,
+            status,
+            reason,
+            profile_hash,
+            self._now_iso(),
+            int(retry_required),
+            content_hash,
+        ]
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(query, params)
             conn.commit()

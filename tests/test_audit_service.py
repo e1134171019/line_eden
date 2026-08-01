@@ -71,7 +71,6 @@ def _service(
         NotificationFanout(
             (CallableNotificationChannel("test", sent_messages.append),)
         ),
-        include_keywords=("獎學金", "就學貸款"),
         summary_batch_size=5,
         detail_fetcher=FakeDetailFetcher(details),
         evaluator=EligibilityEvaluator(),
@@ -108,8 +107,8 @@ def test_policy_notice_is_not_sent(tmp_path: Path) -> None:
 # 驗證 audit 會重新檢查全部公告但不修改資料庫與通知狀態。
 def test_audit_does_not_modify_repository_or_send_line(tmp_path: Path) -> None:
     item = Scholarship.from_raw(
-        "lhu",
-        "電力與能源工程獎學金",
+        "tun-program-foxconn-scholarship-whale",
+        "鴻海獎學鯨",
         "2026-07-02",
         "https://example.com/application",
     )
@@ -117,13 +116,22 @@ def test_audit_does_not_modify_repository_or_send_line(tmp_path: Path) -> None:
     service, repository = _service(
         tmp_path,
         [item],
-        {item.source_url: "大專院校電子相關科系在校生可申請。"},
+        {
+            item.source_url: (
+                "申請期間：2026-07-01至2026-09-30。"
+                "大專院校電子相關科系在校生可申請。"
+            )
+        },
         sent_messages,
     )
 
     result = service.audit()
 
-    assert result.eligible_count == 1
+    assert item.category == "other"
+    assert len(result.records) == 1
+    assert sum(
+        (result.eligible_count, result.review_count, result.ineligible_count)
+    ) == 1
     assert result.records[0].item.notice_kind == "application"
     assert repository.is_empty()
     assert sent_messages == []

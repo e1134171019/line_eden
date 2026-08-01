@@ -50,7 +50,6 @@ def _build_service(
         FakeCollector(items),
         repository,
         NotificationFanout((CallableNotificationChannel("test", notifier),)),
-        include_keywords=None,
         summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
     return service, repository
@@ -100,7 +99,6 @@ def test_service_new_item_after_baseline_is_pending(tmp_path: Path) -> None:
         FakeCollector([old_item, new_item]),
         repository,
         NotificationFanout(tuple()),
-        include_keywords=None,
         summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
     result = next_service.run(dry_run=True)
@@ -185,7 +183,6 @@ def test_service_retries_only_failed_notification_channel(tmp_path: Path) -> Non
         FakeCollector([item]),
         repository,
         dispatcher,
-        include_keywords=None,
         summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
 
@@ -201,31 +198,41 @@ def test_service_retries_only_failed_notification_channel(tmp_path: Path) -> Non
     assert repository.list_pending() == []
 
 
-# 驗證關鍵字過濾只保留目標公告。
-def test_service_filter_by_keywords(tmp_path: Path) -> None:
-    keep_item = Scholarship.from_raw(
-        "lhu",
-        "2026 優秀學生獎學金",
+# 專用 Collector 已確認來源範圍，非標準方案名稱仍必須進入正式流程。
+def test_live_preserves_collector_scoped_notice_without_title_keywords(
+    tmp_path: Path,
+) -> None:
+    scholarship = Scholarship.from_raw(
+        "tun-program-foxconn-scholarship-whale",
+        "鴻海獎學鯨",
         "2026-07-01",
-        "https://example.com/keep",
+        "https://example.com/foxconn",
     )
-    drop_item = Scholarship.from_raw(
-        "lhu",
-        "教務處一般行政公告",
-        "2026-07-01",
-        "https://example.com/drop",
-    )
-    repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
-    service = ScholarshipService(
-        FakeCollector([keep_item, drop_item]),
-        repository,
-        NotificationFanout(tuple()),
-        include_keywords=("獎學金", "助學金"),
-        summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
-    )
+    sent_messages: list[str] = []
+    service, repository = _build_service(tmp_path, [scholarship], sent_messages.append)
 
-    result = service.run(dry_run=True)
+    result = service.run(dry_run=False)
 
-    assert len(result.collected) == 1
-    assert len(result.pending_items) == 1
-    assert result.collected[0].title == "2026 優秀學生獎學金"
+    assert scholarship.category == "other"
+    assert result.collected == [scholarship]
+    assert result.notified_count == 1
+    assert len(sent_messages) == 1
+    assert repository.list_pending() == []
+    assert service.source_summary_lines() == [
+        "入庫資料守恆：輸入 1 = 唯一公告 1 + 輸入內重複 0；"
+        "唯一公告 = 新增 1 + 既有更新 0",
+    ]
+
+
+# 驗證同批重複 identity 不會在入庫階段無聲消失。
+def test_service_reports_duplicate_identity_before_repository(tmp_path: Path) -> None:
+    item = _build_item(1)
+    service, _ = _build_service(tmp_path, [item, item], lambda _: None)
+
+    service.run(dry_run=True)
+
+    assert service.discovery_result is not None
+    assert service.discovery_result.input_count == 2
+    assert service.discovery_result.unique_count == 1
+    assert service.discovery_result.duplicate_input_count == 1
+    assert service.discovery_result.inserted_count == 1
