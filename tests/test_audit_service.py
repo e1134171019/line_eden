@@ -7,7 +7,10 @@ from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
-from src.services.scholarship_service import ScholarshipService
+from src.services.scholarship_service import (
+    ELIGIBILITY_NOT_APPLICABLE,
+    ScholarshipService,
+)
 
 
 class FakeCollector(BaseCollector):
@@ -74,7 +77,7 @@ def _service(
     return service, repository
 
 
-# 驗證 policy 公告不會進入正式推播。
+# 驗證 policy 公告不會進入正式推播，也不污染個人資格不符統計。
 def test_policy_notice_is_not_sent(tmp_path: Path) -> None:
     policy = Scholarship.from_raw(
         "lhu",
@@ -93,10 +96,12 @@ def test_policy_notice_is_not_sent(tmp_path: Path) -> None:
     result = service.run(dry_run=False)
 
     assert result.notified_count == 0
-    assert result.ineligible_count == 1
+    assert result.ineligible_count == 0
     assert sent_messages == []
     pending = repository.list_pending()
     assert pending[0].notice_kind == "policy"
+    assert pending[0].application_status == "not_applicable"
+    assert pending[0].eligibility_status == ELIGIBILITY_NOT_APPLICABLE
 
 
 # 驗證 audit 會重新檢查全部公告但不修改資料庫與通知狀態。
