@@ -55,10 +55,18 @@ def _score_checks(text: str) -> list[str]:
     checks: list[str] = []
     for pattern in patterns:
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            label = match.group("label")
+            label = _display_score_label(match.group("label"))
             value = match.group("score")
             checks.append(f"請自行確認：{label}須達 {value} 分門檻。")
     return checks
+
+
+def _display_score_label(label: str) -> str:
+    if label in {"學業平均", "平均成績", "學業成績"}:
+        return "學業平均成績"
+    if label == "操行":
+        return "操行成績"
+    return label
 
 
 def _gpa_checks(text: str) -> list[str]:
