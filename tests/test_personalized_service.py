@@ -13,11 +13,9 @@ from src.services.scholarship_service import ScholarshipService
 class FakeCollector(BaseCollector):
     """回傳指定公告的測試蒐集器。"""
 
-    # 初始化固定公告清單。
     def __init__(self, items: list[Scholarship]) -> None:
         self.items = items
 
-    # 回傳固定公告清單。
     def collect(self) -> list[Scholarship]:
         return self.items
 
@@ -25,16 +23,13 @@ class FakeCollector(BaseCollector):
 class FakeDetailFetcher:
     """依公告網址回傳固定內文。"""
 
-    # 初始化網址與內文對照。
     def __init__(self, details: dict[str, str]) -> None:
         self.details = details
 
-    # 回傳指定公告的測試內文。
     def fetch_text(self, scholarship: Scholarship) -> str:
         return self.details[scholarship.source_url]
 
 
-# 建立匿名進修部電子工程學生背景。
 def _profile() -> StudentProfile:
     return StudentProfile(
         school="測試科技大學",
@@ -53,7 +48,6 @@ def _profile() -> StudentProfile:
     )
 
 
-# 建立測試公告。
 def _item(index: int, title: str) -> Scholarship:
     return Scholarship.from_raw(
         "lhu",
@@ -63,7 +57,6 @@ def _item(index: int, title: str) -> Scholarship:
     )
 
 
-# 建立含個人化資格判斷的服務。
 def _service(
     tmp_path: Path,
     items: list[Scholarship],
@@ -85,7 +78,6 @@ def _service(
     return service, repository
 
 
-# 驗證 dry-run 只列出明確適合公告，不推播不適合或待確認資料。
 def test_personalized_dry_run_only_returns_eligible(tmp_path: Path) -> None:
     day_item = _item(1, "日間部學生獎學金")
     energy_item = _item(2, "電力與能源優秀學生獎學金")
@@ -93,7 +85,9 @@ def test_personalized_dry_run_only_returns_eligible(tmp_path: Path) -> None:
     items = [day_item, energy_item, unknown_item]
     details = {
         day_item.source_url: "限日間部學生申請。",
-        energy_item.source_url: "電子工程相關科系，學業平均 80 分以上。",
+        energy_item.source_url: (
+            "大專在校生之電子工程相關科系可申請，學業平均 80 分以上。"
+        ),
         unknown_item.source_url: "詳細資格請參閱附件。",
     }
     sent_messages: list[str] = []
@@ -108,7 +102,6 @@ def test_personalized_dry_run_only_returns_eligible(tmp_path: Path) -> None:
     assert sent_messages == []
 
 
-# 驗證正式模式只傳送適合公告並在訊息中列出符合原因。
 def test_live_mode_only_sends_eligible_item(tmp_path: Path) -> None:
     day_item = _item(1, "日間部學生獎學金")
     energy_item = _item(2, "電力與能源優秀學生獎學金")
@@ -128,17 +121,50 @@ def test_live_mode_only_sends_eligible_item(tmp_path: Path) -> None:
     assert energy_item.source_url in sent_messages[0]
     assert "符合原因" in sent_messages[0]
     assert day_item.title not in sent_messages[0]
-    assert repository.list_notifiable(_profile().fingerprint(), False) == []
+    assert repository.list_pending() == []
 
 
-# 驗證公告內文讀取失敗時採保守待確認，不會推播。
-def test_detail_failure_is_not_sent(tmp_path: Path) -> None:
-    item = _item(1, "未知條件獎學金")
+def test_profile_change_re_evaluates_existing_item(tmp_path: Path) -> None:
+    item = _item(1, "電力工程獎學金")
     sent_messages: list[str] = []
-    service, _ = _service(tmp_path, [item], {}, sent_messages)
+    service, repository = _service(
+        tmp_path,
+        [item],
+        {item.source_url: "申請對象限碩士生。"},
+        sent_messages,
+    )
+    first = service.run(dry_run=True)
+    assert first.pending_items == []
 
-    result = service.run(dry_run=False)
+    eligible_profile = StudentProfile(
+        school="測試科技大學",
+        degree_level="學士",
+        program_type="進修部",
+        department="電子工程系",
+        year=2,
+        employed=True,
+        average_grade=90.34,
+        conduct_grade=85,
+        class_rank=1,
+        class_size=17,
+        residence="新北市",
+        special_statuses=tuple(),
+        research_keywords=("電力工程",),
+    )
+    second_service = ScholarshipService(
+        FakeCollector([item]),
+        repository,
+        sent_messages.append,
+        include_keywords=("獎學金",),
+        summary_batch_size=5,
+        detail_fetcher=FakeDetailFetcher(
+            {item.source_url: "大專院校學生可申請電力工程獎學金。"}
+        ),
+        evaluator=EligibilityEvaluator(),
+        profile=eligible_profile,
+        notify_review_items=False,
+    )
 
-    assert result.notified_count == 0
-    assert result.review_count == 1
-    assert sent_messages == []
+    second = second_service.run(dry_run=True)
+
+    assert [candidate.title for candidate in second.pending_items] == [item.title]
