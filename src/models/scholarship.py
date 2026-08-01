@@ -66,6 +66,11 @@ class Scholarship:
     program_id: str = ""
     entry_url: str = ""
     detail_url: str = ""
+    match_method: str = ""
+    match_score: int = 0
+    matched_alias: str = ""
+    detail_evidence_score: int = 0
+    resolution_status: str = ""
     notice_kind: str = "unknown"
     application_status: str = "not_applicable"
     eligibility_status: str = ""
@@ -86,6 +91,9 @@ class Scholarship:
         program_id: str = "",
         entry_url: str = "",
         detail_url: str = "",
+        match_method: str = "",
+        match_score: int = 0,
+        matched_alias: str = "",
     ) -> "Scholarship":
         normalized_source = _normalize_text(source)
         normalized_title = _normalize_text(title)
@@ -109,4 +117,7 @@ class Scholarship:
             program_id=resolved_program_id,
             entry_url=normalized_entry,
             detail_url=normalized_detail,
+            match_method=_normalize_text(match_method),
+            match_score=max(int(match_score), 0),
+            matched_alias=_normalize_text(matched_alias),
         )
