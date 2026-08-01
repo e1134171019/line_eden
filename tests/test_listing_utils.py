@@ -69,7 +69,7 @@ def test_dyna_same_host_pages_keep_https() -> None:
     ]
 
 
-# 入口是第 2 頁時，必須補抓第 1 頁並排除已取得的第 2 頁。
+# 入口是第 2 頁時，預設補抓第 1 頁；LHU 可明確略過 canonical 首頁別名。
 def test_dyna_current_page_generates_all_other_pages() -> None:
     base_url = "https://student.example.edu/p/403-1000-20-2.php"
     html = """
@@ -85,6 +85,9 @@ def test_dyna_current_page_generates_all_other_pages() -> None:
 
     assert dyna_page_urls(html, base_url) == [
         (1, "https://student.example.edu/p/403-1000-20-1.php"),
+        (3, "https://student.example.edu/p/403-1000-20-3.php"),
+    ]
+    assert dyna_page_urls(html, base_url, skip_page_one=True) == [
         (3, "https://student.example.edu/p/403-1000-20-3.php"),
     ]
 
