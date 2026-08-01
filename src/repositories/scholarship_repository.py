@@ -8,15 +8,22 @@ from src.models.scholarship import Scholarship
 
 SCHEMA_COLUMNS = {
     "category": "TEXT NOT NULL DEFAULT 'other'",
+    "program_id": "TEXT NOT NULL DEFAULT ''",
+    "entry_url": "TEXT NOT NULL DEFAULT ''",
+    "detail_url": "TEXT NOT NULL DEFAULT ''",
     "notice_kind": "TEXT NOT NULL DEFAULT 'unknown'",
+    "application_status": "TEXT NOT NULL DEFAULT 'not_applicable'",
     "discovered_at": "TEXT",
     "baseline_at": "TEXT",
     "notified_at": "TEXT",
     "eligibility_status": "TEXT",
     "eligibility_reason": "TEXT",
+    "exclusion_reason": "TEXT NOT NULL DEFAULT ''",
     "profile_hash": "TEXT",
     "evaluated_at": "TEXT",
 }
+
+NOTIFIABLE_APPLICATION_STATUSES = ("open", "upcoming", "deadline_unknown")
 
 
 class ScholarshipRepository:
@@ -39,13 +46,18 @@ class ScholarshipRepository:
             published_date TEXT NOT NULL,
             source_url TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'other',
+            program_id TEXT NOT NULL DEFAULT '',
+            entry_url TEXT NOT NULL DEFAULT '',
+            detail_url TEXT NOT NULL DEFAULT '',
             notice_kind TEXT NOT NULL DEFAULT 'unknown',
+            application_status TEXT NOT NULL DEFAULT 'not_applicable',
             content_hash TEXT NOT NULL UNIQUE,
             discovered_at TEXT NOT NULL,
             baseline_at TEXT,
             notified_at TEXT,
             eligibility_status TEXT,
             eligibility_reason TEXT,
+            exclusion_reason TEXT NOT NULL DEFAULT '',
             profile_hash TEXT,
             evaluated_at TEXT
         )
@@ -62,6 +74,7 @@ class ScholarshipRepository:
                 if name not in existing:
                     conn.execute(f"ALTER TABLE scholarships ADD COLUMN {name} {definition}")
             self._fill_discovered_at(conn)
+            self._fill_source_urls(conn)
             conn.commit()
 
     # 讀取目前資料表欄位名稱。
@@ -74,6 +87,17 @@ class ScholarshipRepository:
         conn.execute(
             "UPDATE scholarships SET discovered_at = ? WHERE discovered_at IS NULL",
             [self._now_iso()],
+        )
+
+    # 舊資料只有 source_url，migration 後將它作為入口與正文 URL。
+    def _fill_source_urls(self, conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "UPDATE scholarships SET entry_url = source_url "
+            "WHERE entry_url IS NULL OR entry_url = ''"
+        )
+        conn.execute(
+            "UPDATE scholarships SET detail_url = source_url "
+            "WHERE detail_url IS NULL OR detail_url = ''"
         )
 
     # 產生 UTC ISO 時間字串。
@@ -103,9 +127,10 @@ class ScholarshipRepository:
         rows = [self._discovery_row(item) for item in scholarships]
         query = """
         INSERT OR IGNORE INTO scholarships (
-            source, title, published_date, source_url, category, notice_kind,
-            content_hash, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            source, title, published_date, source_url, category,
+            program_id, entry_url, detail_url, notice_kind, application_status,
+            content_hash, discovered_at, exclusion_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
@@ -120,9 +145,14 @@ class ScholarshipRepository:
             item.published_date,
             item.source_url,
             item.category,
+            item.program_id,
+            item.entry_url or item.source_url,
+            item.detail_url or item.source_url,
             item.notice_kind,
+            item.application_status,
             item.content_hash,
             self._now_iso(),
+            item.exclusion_reason,
         )
 
     # 取出目前所有尚未基準化或通知的公告。
@@ -138,28 +168,33 @@ class ScholarshipRepository:
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
 
-    # 取出符合推播狀態且屬於申請型的公告。
+    # 取出符合推播狀態、屬於申請型且尚可處理的公告。
     def list_notifiable(
         self,
         profile_hash: str,
         include_review: bool,
     ) -> list[Scholarship]:
         statuses = ["eligible", "review"] if include_review else ["eligible"]
-        placeholders = ",".join(["?"] * len(statuses))
+        eligibility_placeholders = ",".join(["?"] * len(statuses))
+        period_placeholders = ",".join(["?"] * len(NOTIFIABLE_APPLICATION_STATUSES))
         condition = (
             "notified_at IS NULL AND baseline_at IS NULL AND profile_hash = ? "
             "AND notice_kind = 'application' "
-            f"AND eligibility_status IN ({placeholders})"
+            f"AND application_status IN ({period_placeholders}) "
+            f"AND eligibility_status IN ({eligibility_placeholders})"
         )
-        params = [profile_hash, *statuses]
+        params = [profile_hash, *NOTIFIABLE_APPLICATION_STATUSES, *statuses]
         return self._query_scholarships(self._select_query(condition), params)
 
     # 建立讀取 Scholarship 所需的統一查詢。
     def _select_query(self, condition: str) -> str:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
-               COALESCE(notice_kind, 'unknown'),
-               COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, '')
+               COALESCE(program_id, ''), COALESCE(entry_url, source_url),
+               COALESCE(detail_url, source_url), COALESCE(notice_kind, 'unknown'),
+               COALESCE(application_status, 'not_applicable'),
+               COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, ''),
+               COALESCE(exclusion_reason, '')
         FROM scholarships
         WHERE {condition}
         ORDER BY published_date DESC, id DESC
@@ -184,12 +219,17 @@ class ScholarshipRepository:
             source_url=row[3],
             category=row[4],
             content_hash=row[5],
-            notice_kind=row[6],
-            eligibility_status=row[7],
-            eligibility_reason=row[8],
+            program_id=row[6],
+            entry_url=row[7],
+            detail_url=row[8],
+            notice_kind=row[9],
+            application_status=row[10],
+            eligibility_status=row[11],
+            eligibility_reason=row[12],
+            exclusion_reason=row[13],
         )
 
-    # 保存公告用途與個人資格判斷。
+    # 保存公告用途、申請期間與個人資格判斷。
     def mark_eligibility(
         self,
         content_hash: str,
@@ -197,14 +237,25 @@ class ScholarshipRepository:
         reason: str,
         profile_hash: str,
         notice_kind: str = "application",
+        application_status: str = "deadline_unknown",
+        exclusion_reason: str = "",
     ) -> int:
         query = """
         UPDATE scholarships
-        SET notice_kind = ?, eligibility_status = ?, eligibility_reason = ?,
-            profile_hash = ?, evaluated_at = ?
+        SET notice_kind = ?, application_status = ?, eligibility_status = ?,
+            eligibility_reason = ?, exclusion_reason = ?, profile_hash = ?, evaluated_at = ?
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
-        params = [notice_kind, status, reason, profile_hash, self._now_iso(), content_hash]
+        params = [
+            notice_kind,
+            application_status,
+            status,
+            reason,
+            exclusion_reason,
+            profile_hash,
+            self._now_iso(),
+            content_hash,
+        ]
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(query, params)
             conn.commit()

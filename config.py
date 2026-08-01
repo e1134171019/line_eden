@@ -84,6 +84,9 @@ GEMINI_PROMPT_VERSION = f"eligibility-v2-pages-{GEMINI_MAX_PAGES_PER_DOCUMENT}"
 SCHOLARSHIP_FILTER_KEYWORDS = (
     "獎學金",
     "助學金",
+    "獎助學金",
+    "獎助金",
+    "助學計畫",
     "就學貸款",
     "補助",
 )

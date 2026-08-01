@@ -39,8 +39,16 @@ class ExpandedScholarshipCollector(LhuCollector):
             max_pages,
         )
         self.fetch_workers = fetch_workers
+        self.tun_collector: TunProgramWatchCollector | None = None
 
     def collect(self) -> list[Scholarship]:
+        self.tun_collector = TunProgramWatchCollector(
+            self.timeout_seconds,
+            self.user_agent,
+            self.collection_mode,
+            self.max_pages,
+            self.fetch_workers,
+        )
         collectors: list[BaseCollector] = [
             _LhuOnlyCollector(self),
             HelpDreamsCollector(
@@ -75,13 +83,14 @@ class ExpandedScholarshipCollector(LhuCollector):
                 self.collection_mode,
                 self.max_pages,
             ),
-            TunProgramWatchCollector(
-                self.timeout_seconds,
-                self.user_agent,
-                self.collection_mode,
-                self.max_pages,
-                self.fetch_workers,
-            ),
+            self.tun_collector,
         ]
         self.multi_source = MultiSourceCollector(collectors)
         return self.multi_source.collect()
+
+    # 六個來源群組摘要後追加 38 項 TUN 方案的逐項狀態。
+    def source_summary_lines(self) -> list[str]:
+        lines = super().source_summary_lines()
+        if self.tun_collector is not None:
+            lines.extend(self.tun_collector.program_status_lines())
+        return lines
