@@ -14,7 +14,7 @@ def write_structured_shadow_artifacts(
     result: AuditResult,
     output_dir: Path = Path("artifacts"),
 ) -> tuple[Path, Path]:
-    """輸出不含 profile 原始內容的來源、正文與 shadow 比較明細。"""
+    """輸出來源、revision、正文政策與 shadow 比較明細。"""
 
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / CSV_NAME
@@ -31,6 +31,7 @@ def write_structured_shadow_artifacts(
         "review_kinds": _review_kind_counts(result.records),
         "resolution_statuses": _resolution_counts(result.records),
         "application_statuses": _application_status_counts(result.records),
+        "extraction_policies": _extraction_policy_counts(result.records),
         "structured": {
             "evaluated": result.structured_evaluated_count,
             "changed": result.structured_changed_count,
@@ -71,9 +72,19 @@ def _application_status_counts(records: list[AuditRecord]) -> dict[str, int]:
     return counts
 
 
+def _extraction_policy_counts(records: list[AuditRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        source = record.fetch_result.source
+        name = source.extraction_policy_name or "non_html_or_unknown"
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def _record_payload(record: AuditRecord) -> dict[str, object]:
     shadow = record.structured_shadow
     diagnostic = record.structured_gemini_diagnostic
+    source = record.fetch_result.source
     conditions = []
     if shadow:
         conditions = [
@@ -93,12 +104,19 @@ def _record_payload(record: AuditRecord) -> dict[str, object]:
         "source_url": item.source_url,
         "entry_url": item.entry_url,
         "detail_url": item.detail_url,
+        "announcement_id": item.announcement_id,
+        "revision_hash": item.revision_hash,
         "program_id": item.program_id,
         "match_method": item.match_method,
         "match_score": item.match_score,
         "matched_alias": item.matched_alias,
         "detail_evidence_score": item.detail_evidence_score,
         "resolution_status": item.resolution_status,
+        "extraction_policy_name": source.extraction_policy_name,
+        "extraction_policy_version": source.extraction_policy_version,
+        "extraction_policy_hash": source.extraction_policy_hash,
+        "extraction_selector": source.extraction_selector,
+        "heuristic_fallback": source.heuristic_fallback,
         "notice_kind": item.notice_kind,
         "application_status": item.application_status,
         "rules_status": record.fetch_result.rules_status,
@@ -129,12 +147,19 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         "source_url",
         "entry_url",
         "detail_url",
+        "announcement_id",
+        "revision_hash",
         "program_id",
         "match_method",
         "match_score",
         "matched_alias",
         "detail_evidence_score",
         "resolution_status",
+        "extraction_policy_name",
+        "extraction_policy_version",
+        "extraction_policy_hash",
+        "extraction_selector",
+        "heuristic_fallback",
         "notice_kind",
         "application_status",
         "rules_status",
