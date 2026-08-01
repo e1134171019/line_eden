@@ -15,6 +15,11 @@ RESULT_MARKERS = (
     "得獎名單",
     "核定名單",
     "結果公告",
+    "得獎公告",
+    "獲獎公告",
+    "審核結果",
+    "審查結果",
+    "頒發名單",
     "正取名單",
     "備取名單",
 )
@@ -34,8 +39,12 @@ APPLICATION_MARKERS = (
     "開放申請",
     "開始申請",
     "申辦公告",
+    "申請資格",
+    "申請對象",
     "申請期間",
+    "申請方式",
     "截止日期",
+    "檢附文件",
     "徵件",
     "報名",
 )
@@ -49,7 +58,16 @@ INFORMATION_MARKERS = (
     "問答集",
     "FAQ",
 )
-AWARD_MARKERS = ("獎學金", "助學金", "獎助學金", "補助")
+AWARD_MARKERS = (
+    "獎學金",
+    "助學金",
+    "獎助學金",
+    "獎助金",
+    "助學計畫",
+    "獎勵學金",
+    "濟助",
+    "補助",
+)
 
 
 # 依標題與正文判斷公告是否為可申請獎助機會。
@@ -121,11 +139,13 @@ def _is_loan_notice(title: str) -> bool:
 
 # 判斷標題或正文是否具有當期獎助申請行動訊號。
 def _is_application_notice(title: str, detail_text: str) -> bool:
+    if _contains_any(detail_text, RESULT_MARKERS):
+        return False
     if _contains_any(title, APPLICATION_MARKERS):
         return True
-    if _contains_any(title, AWARD_MARKERS):
+    if _contains_any(detail_text, APPLICATION_MARKERS):
         return True
-    return _contains_any(detail_text, APPLICATION_MARKERS)
+    return _contains_any(title, AWARD_MARKERS)
 
 
 # 判斷文字是否包含任一指定標記。
