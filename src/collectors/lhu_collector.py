@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from collections import deque
 from datetime import datetime
 from urllib.parse import urljoin
 
@@ -11,12 +10,7 @@ from src.collectors.collection_diagnostics import CollectionMode, CollectorDiagn
 from src.collectors.helpdreams_collector import HelpDreamsCollector
 from src.collectors.http_client import SafeHttpClient
 from src.collectors.indigenous_grant_collector import IndigenousGrantCollector
-from src.collectors.listing_utils import (
-    detect_total_pages,
-    dyna_page_urls,
-    next_page_url,
-    numbered_page_urls,
-)
+from src.collectors.listing_paginator import crawl_listing_pages
 from src.collectors.moe_overseas_collector import MoeOverseasCollector
 from src.collectors.multi_source_collector import MultiSourceCollector
 from src.collectors.xinzhuang_awards_collector import XinzhuangAwardsCollector
@@ -101,107 +95,46 @@ class LhuCollector(BaseCollector):
             return []
         return self.multi_source.summary_lines()
 
-    # 依執行模式抓取第一頁或全部偵測分頁。
+    # 由共用 paginator 抓取入口頁或完整歷史分頁，再解析龍華公告列。
     def _collect_lhu(self) -> list[Scholarship]:
-        queue: deque[str] = deque([self.source_url])
-        visited: set[str] = set()
-        seen_records: set[str] = set()
-        records: list[Scholarship] = []
-        pages_requested = 0
-        raw_rows = 0
-        detected = 1
-        stop_reason = ""
-        error = ""
-        fallback_used = False
         with SafeHttpClient(self.timeout_seconds, self.user_agent) as client:
-            while queue and pages_requested < self.max_pages:
-                url = queue.popleft()
-                if url in visited:
-                    continue
-                pages_requested += 1
-                try:
-                    html = client.get_text(url)
-                except Exception as page_error:
-                    error = " ".join(str(page_error).split())[:180]
-                    stop_reason = "page_fetch_failed"
-                    break
-                visited.add(url)
-                page_records, page_rows = self._parse_html_with_count(html)
-                raw_rows += page_rows
-                new_records = [
-                    item for item in page_records if item.source_url not in seen_records
-                ]
-                for item in new_records:
-                    seen_records.add(item.source_url)
-                records.extend(new_records)
-                detected = max(detected, detect_total_pages(html), len(visited))
-                if self.collection_mode is CollectionMode.INCREMENTAL:
-                    stop_reason = "incremental_first_page"
-                    break
-                if page_records and not new_records:
-                    stop_reason = "record_page_loop_detected"
-                    break
-                self._enqueue_lhu_pages(queue, visited, html, url)
-                if len(visited) >= detected and not queue:
-                    stop_reason = "all_detected_pages_completed"
-                    break
+            result = crawl_listing_pages(
+                self.source_url,
+                self.collection_mode,
+                self.max_pages,
+                client.get_text,
+                skip_dyna_page_one=True,
+            )
             fallback_used = bool(client.fallback_hosts)
-        if not stop_reason:
-            stop_reason = "max_page_limit" if queue else "pagination_exhausted"
-        completeness = self._lhu_completeness(detected, len(visited), error, stop_reason)
+
+        records: list[Scholarship] = []
+        seen: set[str] = set()
+        raw_rows = 0
+        for page in result.pages:
+            page_records, page_rows = self._parse_html_with_count(page.html)
+            raw_rows += page_rows
+            for item in page_records:
+                if item.source_url in seen:
+                    continue
+                seen.add(item.source_url)
+                records.append(item)
+
+        error = "; ".join(result.errors)
         self.lhu_diagnostic = CollectorDiagnostic(
-            completeness=completeness,
-            pages_detected=detected,
-            pages_requested=pages_requested,
-            pages_succeeded=len(visited),
+            completeness=result.completeness,
+            pages_detected=result.pages_detected,
+            pages_requested=result.pages_requested,
+            pages_succeeded=result.pages_succeeded,
             raw_rows=raw_rows,
             parsed_rows=len(records),
             rejected_rows=max(raw_rows - len(records), 0),
-            stop_reason=stop_reason,
+            stop_reason=result.stop_reason,
             error=error,
             ssl_compatibility_fallback=fallback_used,
         )
         if not records and error:
             raise RuntimeError(error)
         return records
-
-    # 龍華已有 canonical 首頁；後續 DYNA 頁不得再加入第 1 頁別名。
-    def _enqueue_lhu_pages(
-        self,
-        queue: deque[str],
-        visited: set[str],
-        html: str,
-        current_url: str,
-    ) -> None:
-        dyna_candidates = [
-            (page, url)
-            for page, url in dyna_page_urls(html, current_url)
-            if page != 1
-        ]
-        candidates = [
-            *dyna_candidates,
-            *numbered_page_urls(html, current_url),
-        ]
-        for _, url in candidates:
-            if url not in visited and url not in queue:
-                queue.append(url)
-        next_url = next_page_url(html, current_url)
-        if next_url and next_url not in visited and next_url not in queue:
-            queue.append(next_url)
-
-    # 完整模式必須成功取得所有偵測頁面，否則只能標示 partial。
-    def _lhu_completeness(
-        self,
-        detected: int,
-        succeeded: int,
-        error: str,
-        stop_reason: str,
-    ) -> str:
-        if self.collection_mode is CollectionMode.INCREMENTAL:
-            return "incremental"
-        if error or stop_reason in {"record_page_loop_detected", "max_page_limit"}:
-            return "partial"
-        return "complete" if succeeded >= detected else "partial"
 
     # 保留可指定 URL 的下載函式供測試及人工診斷使用。
     def _fetch_html(self, url: str | None = None) -> str:
