@@ -18,7 +18,10 @@ from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_UNKNOWN,
 )
 from src.evaluators.attachment_requirement import detect_attachment_requirement
-from src.extractors.announcement_content_extractor import extract_announcement_text
+from src.extractors.announcement_content_extractor import (
+    extract_announcement_content,
+    extract_announcement_text,
+)
 from src.extractors.announcement_relevance import content_matches_announcement
 from src.extractors.attachment_content_classifier import (
     CONTENT_RULES,
@@ -29,6 +32,7 @@ from src.extractors.attachment_link_extractor import (
     extract_attachment_inventory,
 )
 from src.extractors.document_text_extractor import detect_document_kind, extract_document_text
+from src.models.detail_extraction import AnnouncementContentExtraction
 from src.models.scholarship import Scholarship
 
 
@@ -61,14 +65,15 @@ class AnnouncementDetailFetcher:
         return self._fetch_result(scholarship).text
 
     def fetch_with_diagnostics(self, scholarship: Scholarship) -> DetailFetchResult:
+        requested_url = scholarship.detail_url or scholarship.source_url
         try:
             return self._fetch_result(scholarship)
         except Exception as error:
-            return self._source_failure(scholarship.source_url, error)
+            return self._source_failure(requested_url, error)
 
     def _fetch_result(self, scholarship: Scholarship) -> DetailFetchResult:
         with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
-            requested_url = scholarship.source_url
+            requested_url = scholarship.detail_url or scholarship.source_url
             resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
             if kind != "unsupported":
@@ -111,7 +116,8 @@ class AnnouncementDetailFetcher:
         requested_url: str,
     ) -> DetailFetchResult:
         html = self._decode_html(resource)
-        body = extract_announcement_text(html, title, resource.url)
+        extraction = extract_announcement_content(html, title, resource.url)
+        body = extraction.text
         inventory = extract_attachment_inventory(
             html,
             resource.url,
@@ -138,7 +144,14 @@ class AnnouncementDetailFetcher:
             if item.status == "success" and item.content_role == CONTENT_RULES
         ]
         rules_status = self._determine_rules_status(body, inventory, extracted_attachments)
-        source = self._success_diagnostic("source", requested_url, resource, "html", body)
+        source = self._success_diagnostic(
+            "source",
+            requested_url,
+            resource,
+            "html",
+            body,
+            extraction=extraction,
+        )
         if not content_matches_announcement(title, body, rules_texts):
             return self._content_mismatch_result(
                 source,
@@ -215,7 +228,6 @@ class AnnouncementDetailFetcher:
             for item in attachments
         ):
             return RULES_STATUS_RESOLVED
-
         requirement = detect_attachment_requirement(body_text)
         if requirement.required and inventory.discovered_count == 0:
             return RULES_STATUS_DECLARED_MISSING
@@ -279,6 +291,7 @@ class AnnouncementDetailFetcher:
         text: str,
         attachment_role: str = "unknown",
         attachment_label: str = "",
+        extraction: AnnouncementContentExtraction | None = None,
     ) -> ResourceDiagnostic:
         return ResourceDiagnostic(
             role,
@@ -293,6 +306,11 @@ class AnnouncementDetailFetcher:
             attachment_role,
             attachment_label,
             resource.ssl_compatibility_fallback,
+            extraction.policy_name if extraction else "",
+            extraction.policy_version if extraction else "",
+            extraction.policy_hash if extraction else "",
+            extraction.selected_selector if extraction else "",
+            extraction.heuristic_fallback if extraction else False,
         )
 
     def _error_diagnostic(
