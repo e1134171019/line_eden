@@ -27,6 +27,7 @@ def write_structured_shadow_artifacts(
             "review": result.review_count,
             "ineligible": result.ineligible_count,
         },
+        "review_kinds": _review_kind_counts(result.records),
         "structured": {
             "evaluated": result.structured_evaluated_count,
             "changed": result.structured_changed_count,
@@ -40,6 +41,16 @@ def write_structured_shadow_artifacts(
         encoding="utf-8",
     )
     return csv_path, json_path
+
+
+def _review_kind_counts(records: list[AuditRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for record in records:
+        kind = record.item.review_kind
+        if not kind:
+            continue
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 def _record_payload(record: AuditRecord) -> dict[str, object]:
@@ -61,10 +72,16 @@ def _record_payload(record: AuditRecord) -> dict[str, object]:
         "title": record.item.title,
         "source": record.item.source,
         "source_url": record.item.source_url,
+        "entry_url": record.item.entry_url,
+        "detail_url": record.item.detail_url,
+        "program_id": record.item.program_id,
         "notice_kind": record.item.notice_kind,
+        "application_status": record.item.application_status,
         "rules_status": record.fetch_result.rules_status,
         "legacy_status": record.item.eligibility_status,
         "legacy_reason": record.item.eligibility_reason,
+        "legacy_manual_checks": list(record.item.manual_checks),
+        "legacy_review_kind": record.item.review_kind,
         "shadow_status": record.shadow_status,
         "structured_status": shadow.structured_status if shadow else "",
         "structured_reason": shadow.structured_reason if shadow else "",
@@ -75,6 +92,8 @@ def _record_payload(record: AuditRecord) -> dict[str, object]:
         "gemini_cache_hit": diagnostic.cache_hit if diagnostic else False,
         "gemini_input_tokens": diagnostic.input_tokens if diagnostic else 0,
         "gemini_output_tokens": diagnostic.output_tokens if diagnostic else 0,
+        "body_text_length": len(record.fetch_result.body_text),
+        "eligibility_text_length": len(record.fetch_result.eligibility_text()),
     }
 
 
@@ -84,10 +103,16 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         "title",
         "source",
         "source_url",
+        "entry_url",
+        "detail_url",
+        "program_id",
         "notice_kind",
+        "application_status",
         "rules_status",
         "legacy_status",
         "legacy_reason",
+        "legacy_manual_checks",
+        "legacy_review_kind",
         "shadow_status",
         "structured_status",
         "structured_reason",
@@ -98,15 +123,18 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         "gemini_cache_hit",
         "gemini_input_tokens",
         "gemini_output_tokens",
+        "body_text_length",
+        "eligibility_text_length",
     ]
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
             csv_row = dict(row)
-            csv_row["conditions"] = json.dumps(
-                row["conditions"],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+            for field in ("conditions", "legacy_manual_checks"):
+                csv_row[field] = json.dumps(
+                    row[field],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
             writer.writerow(csv_row)
