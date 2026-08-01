@@ -34,7 +34,13 @@ def _record(
         detail_evidence_score=evidence_score,
     )
     fetch_result = SimpleNamespace(eligibility_text=lambda: text)
-    return SimpleNamespace(item=item, fetch_result=fetch_result)
+    return SimpleNamespace(
+        item=item,
+        fetch_result=fetch_result,
+        structured_shadow=None,
+        shadow_status="not_run",
+        structured_gemini_diagnostic=None,
+    )
 
 
 def _result(**overrides: object) -> SimpleNamespace:
