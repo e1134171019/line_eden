@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import replace
+from typing import Any
 
 from src.models.announcement_revision import build_revision_hash
+from src.models.scholarship import Scholarship
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.scholarship_service import (
     ELIGIBILITY_NOT_APPLICABLE,
@@ -17,11 +19,11 @@ class RevisionAwareScholarshipService(ScholarshipService):
 
     repository: ScholarshipRepository
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._current_hashes: list[str] = []
 
-    def _collect_and_discover(self):  # type: ignore[no-untyped-def]
+    def _collect_and_discover(self) -> list[Scholarship]:
         raw = self.collector.collect()
         collected = self._filter_collected(raw)
         self.repository.discover(collected)
@@ -71,7 +73,7 @@ class RevisionAwareScholarshipService(ScholarshipService):
             outcome.evidence.status,
         )
 
-    def _build_audit_record(self, item):  # type: ignore[no-untyped-def]
-        record: AuditRecord = super()._build_audit_record(item)
+    def _build_audit_record(self, item: Scholarship) -> AuditRecord:
+        record = super()._build_audit_record(item)
         revision_hash = build_revision_hash(record.fetch_result)
         return replace(record, item=replace(record.item, revision_hash=revision_hash))
