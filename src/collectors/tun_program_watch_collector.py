@@ -48,6 +48,10 @@ _ROC_DATE = re.compile(
     r"(?:民國\s*)?(?P<year>1\d{2})\s*年\s*"
     r"(?P<month>\d{1,2})\s*月\s*(?P<day>\d{1,2})\s*日?"
 )
+_DAY_MONTH_YEAR_DATE = re.compile(
+    r"(?P<day>\d{1,2})\s*(?:日)?\s*(?P<month>\d{1,2})\s*月\s*,?\s*"
+    r"(?P<year>20\d{2})"
+)
 _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
 _FETCH_ATTEMPTS = 3
 _MIN_ALIAS_MATCH_LENGTH = 4
@@ -107,6 +111,11 @@ class TunProgramWatchCollector(BaseCollector):
         """副作用函式：載入前序核心來源公告，供涵蓋方案逐項核對。"""
 
         self.core_evidence = notices
+
+    def target_id_for(self, notice: Scholarship) -> str:
+        """純函式：將每筆方案公告對應回來源契約的 program_id。"""
+
+        return notice.source.removeprefix("tun-program-")
 
     def collect(self) -> list[Scholarship]:
         groups = _group_programs_by_url(monitorable_programs())
@@ -517,7 +526,22 @@ def _extract_fixed_program_diagnostics(
     for unwanted in soup.select("script, style, noscript, svg"):
         unwanted.decompose()
     page_text = " ".join(soup.get_text(" ", strip=True).split())
-    parsed_date = _parse_date(page_text)
+    time_node = soup.find("time")
+    datetime_value = (
+        str(time_node.get("datetime", "")).strip()
+        if isinstance(time_node, Tag)
+        else ""
+    )
+    time_text = (
+        " ".join(time_node.get_text(" ", strip=True).split())
+        if isinstance(time_node, Tag)
+        else ""
+    )
+    parsed_date = (
+        _parse_date(datetime_value)
+        or _parse_date(time_text)
+        or _parse_date(page_text)
+    )
     published_date = parsed_date.isoformat() if parsed_date else ""
     records: list[Scholarship] = []
     counts: list[_ProgramMatchCount] = []
@@ -701,4 +725,14 @@ def _parse_date(text: str) -> date | None:
             return date(year, month, day)
         except ValueError:
             continue
+    day_month_year = _DAY_MONTH_YEAR_DATE.search(text)
+    if day_month_year is not None:
+        try:
+            return date(
+                int(day_month_year.group("year")),
+                int(day_month_year.group("month")),
+                int(day_month_year.group("day")),
+            )
+        except ValueError:
+            return None
     return None

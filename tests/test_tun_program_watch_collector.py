@@ -103,7 +103,7 @@ def test_program_watch_reports_real_monitoring_scope() -> None:
     assert sum(
         target.access_mode is SourceAccessMode.CORE_COVERED for target in targets
     ) == 5
-    assert len({target.entry_url for target in targets if target.entry_url}) == 21
+    assert len({target.entry_url for target in targets if target.entry_url}) == 22
     assert len({target.domain for target in targets if target.domain}) == 20
 
 
@@ -150,6 +150,34 @@ def test_fixed_page_creates_trackable_notice_without_listing_date() -> None:
     assert extraction.records[0].source_url == program.official_url
     assert extraction.records[0].category == "other"
     assert extraction.program_counts[0].parsed_rows == 1
+
+
+# 固定頁必須優先使用文章刊登時間，不能把正文截止日當成發布日。
+def test_fixed_page_prefers_article_datetime_over_deadline() -> None:
+    program = ScholarshipProgramWatch(
+        "auden-university-talent",
+        "耀登炳南大專院校優秀人才獎學金",
+        "耀登炳南教育基金會",
+        ("耀登炳南大專院校優秀人才獎學金",),
+        "https://www.auden.com.tw/2026scholarship/",
+        "verified",
+        ProgramSourceType.FIXED_PAGE,
+    )
+    html = """
+    <article>
+      <time>23 7 月, 2026</time>
+      <h1>2026耀登炳南大專院校優秀人才獎學金</h1>
+      <p>申請日期即日起至2026年9月30日止。</p>
+    </article>
+    """
+
+    extraction = _extract_program_source_diagnostics(
+        html,
+        program.official_url,
+        (program,),
+    )
+
+    assert extraction.records[0].published_date == "2026-07-23"
 
 
 # HTTP 成功但沒有命中方案別名時，語意狀態必須降級。

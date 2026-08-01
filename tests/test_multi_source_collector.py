@@ -37,6 +37,13 @@ class BrokenCollector(BaseCollector):
         raise RuntimeError("source unavailable")
 
 
+class TargetAwareStubCollector(StubCollector):
+    """測試聚合來源可把每筆公告映射回自己的子目標。"""
+
+    def target_id_for(self, notice: Scholarship) -> str:
+        return notice.source.removeprefix("tun-program-")
+
+
 def _item(source: str, title: str, day: str, url: str) -> Scholarship:
     return Scholarship.from_raw(source, title, day, url)
 
@@ -231,6 +238,67 @@ def test_full_audit_quarantines_semantically_unverified_targets() -> None:
     assert collector.collect() == [valid]
     assert collector.quarantined_records == (unverified,)
     assert "未通過語意驗證" in collector.diagnostics[0].error
+
+
+# 聚合來源中一個方案失敗時，只能隔離該方案，不得連坐成功方案。
+def test_target_aware_source_keeps_valid_program_when_sibling_fails() -> None:
+    valid = _item(
+        "tun-program-auden-university-talent",
+        "2026耀登炳南大專院校優秀人才獎學金",
+        "2026-07-23",
+        "https://www.auden.com.tw/2026scholarship/",
+    )
+    invalid = _item(
+        "tun-program-missing",
+        "錯誤入口產生的公告",
+        "2026-07-20",
+        "https://missing.example/notice",
+    )
+    collector = TargetAwareStubCollector([valid, invalid], "TUN 方案監測")
+    collector.diagnostic = CollectorDiagnostic(
+        completeness="partial",
+        pages_detected=2,
+        pages_requested=2,
+        pages_succeeded=2,
+        raw_rows=2,
+        parsed_rows=2,
+        stop_reason="program_watch_partial",
+        child_sources_detected=2,
+        child_sources_succeeded=1,
+        target_diagnostics=(
+            SourceTargetDiagnostic(
+                "auden-university-talent",
+                "耀登炳南大專院校優秀人才獎學金",
+                SourceAccessMode.DIRECT,
+                valid.source_url,
+                "complete",
+                pages_detected=1,
+                pages_requested=1,
+                pages_succeeded=1,
+                raw_rows=1,
+                parsed_rows=1,
+            ),
+            SourceTargetDiagnostic(
+                "missing",
+                "錯誤方案",
+                SourceAccessMode.DIRECT,
+                "https://missing.example",
+                "partial",
+                pages_detected=1,
+                pages_requested=1,
+                pages_succeeded=1,
+                error="入口可連線但未命中方案別名",
+            ),
+        ),
+    )
+    multi_source = MultiSourceCollector([collector])
+
+    assert multi_source.collect() == [valid]
+    assert multi_source.quarantined_records == (invalid,)
+    assert multi_source.diagnostics[0].status == "partial"
+    assert multi_source.diagnostics[0].accepted_count == 1
+    assert multi_source.diagnostics[0].validation is not None
+    assert multi_source.diagnostics[0].validation.errors == tuple()
 
 
 # 解析 100 列、排除 20 列時，排除原因數量必須完整守恆。

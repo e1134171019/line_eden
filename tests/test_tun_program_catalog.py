@@ -71,6 +71,10 @@ def test_verified_entries_use_precise_current_routes() -> None:
     assert by_id["auden-innovation-research"].official_url == (
         "https://www.auden.com.tw/news-4/"
     )
+    assert by_id["auden-university-talent"].official_url == (
+        "https://www.auden.com.tw/2026scholarship/"
+    )
+    assert by_id["auden-university-talent"].source_type is ProgramSourceType.FIXED_PAGE
 
 
 # 同一入口的多個方案應共用請求；不同辦法頁則必須保持分離。
@@ -79,7 +83,7 @@ def test_shared_organizers_reuse_official_entry() -> None:
 
     assert by_id["ht-talented-long-term"].official_url != by_id["ht-student-aid"].official_url
     assert by_id["cfh-graduate"].official_url == by_id["cfh-disabled-family"].official_url
-    assert by_id["auden-innovation-research"].official_url == by_id[
+    assert by_id["auden-innovation-research"].official_url != by_id[
         "auden-university-talent"
     ].official_url
 

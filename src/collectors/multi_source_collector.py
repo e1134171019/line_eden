@@ -6,7 +6,11 @@ import re
 import unicodedata
 
 from config import SOURCE_TARGET_ANOMALY_LIMIT, SOURCE_VALIDATION_EXAMPLE_LIMIT
-from src.collectors.base_collector import BaseCollector, CoreEvidenceAwareCollector
+from src.collectors.base_collector import (
+    BaseCollector,
+    CoreEvidenceAwareCollector,
+    TargetRecordAwareCollector,
+)
 from src.collectors.collection_diagnostics import (
     AccountingStatus,
     CollectorDiagnostic,
@@ -134,7 +138,15 @@ class MultiSourceCollector(BaseCollector):
                 continue
             source_records.extend(collected)
             detail = _collector_diagnostic(collector)
-            validation = validate_source_collection(detail, collected)
+            supports_target_isolation = isinstance(
+                collector,
+                TargetRecordAwareCollector,
+            )
+            validation = validate_source_collection(
+                detail,
+                collected,
+                allow_target_failures=supports_target_isolation,
+            )
             if validation.status is SourceValidationStatus.INVALID:
                 quarantined_records.extend(collected)
                 self._record_validation_failure(
@@ -144,12 +156,18 @@ class MultiSourceCollector(BaseCollector):
                     validation,
                 )
                 continue
+            accepted_records, target_quarantine = _partition_target_records(
+                collector,
+                detail,
+                collected,
+            )
+            quarantined_records.extend(target_quarantine)
             successful_sources += 1
             accepted, duplicates = self._append_unique(
                 records,
                 canonical_by_key,
                 duplicate_records,
-                collected,
+                accepted_records,
             )
             self.diagnostics.append(
                 self._build_diagnostic(
@@ -421,6 +439,7 @@ class MultiSourceCollector(BaseCollector):
 def validate_source_collection(
     diagnostic: CollectorDiagnostic,
     collected: list[Scholarship],
+    allow_target_failures: bool = False,
 ) -> SourceValidation:
     """純函式：確認來源資料符合去重前的最低契約。"""
 
@@ -439,7 +458,7 @@ def validate_source_collection(
         errors.append(
             f"Collector 輸出內有 {duplicate_identities} 筆重複 identity；樣本：{samples}"
         )
-    errors.extend(_completeness_errors(diagnostic))
+    errors.extend(_completeness_errors(diagnostic, allow_target_failures))
     errors.extend(_rejection_reason_errors(diagnostic))
     status = SourceValidationStatus.INVALID if errors else SourceValidationStatus.VALID
     return SourceValidation(status, tuple(errors), accounting)
@@ -515,7 +534,10 @@ def _duplicate_identity_sample(group: DuplicateIdentityGroup) -> str:
     return f"{first.source}｜{first.source_url[:100]}｜{variants}"
 
 
-def _completeness_errors(diagnostic: CollectorDiagnostic) -> list[str]:
+def _completeness_errors(
+    diagnostic: CollectorDiagnostic,
+    allow_target_failures: bool = False,
+) -> list[str]:
     """純函式：驗證宣告完整的來源確實抓完頁面與子來源。"""
 
     errors: list[str] = []
@@ -541,12 +563,42 @@ def _completeness_errors(diagnostic: CollectorDiagnostic) -> list[str]:
         and not target.is_succeeded
     )
     is_incremental_watch = diagnostic.stop_reason.startswith("program_watch_incremental")
-    if failed_targets and not is_incremental_watch:
+    if failed_targets and not is_incremental_watch and not allow_target_failures:
         samples = "、".join(target.display_name for target in failed_targets[:5])
         errors.append(
             f"{len(failed_targets)} 個監測方案未通過語意驗證：{samples}"
         )
     return errors
+
+
+def _partition_target_records(
+    collector: BaseCollector,
+    diagnostic: CollectorDiagnostic,
+    collected: list[Scholarship],
+) -> tuple[list[Scholarship], list[Scholarship]]:
+    """純函式：只隔離失敗目標自己的公告，避免聚合來源整組連坐。"""
+
+    if not isinstance(collector, TargetRecordAwareCollector):
+        return collected, []
+    failed_target_ids = {
+        target.target_id
+        for target in diagnostic.target_diagnostics
+        if target.access_mode in {
+            SourceAccessMode.DIRECT,
+            SourceAccessMode.CORE_COVERED,
+        }
+        and not target.is_succeeded
+    }
+    accepted: list[Scholarship] = []
+    quarantined: list[Scholarship] = []
+    for notice in collected:
+        destination = (
+            quarantined
+            if collector.target_id_for(notice) in failed_target_ids
+            else accepted
+        )
+        destination.append(notice)
+    return accepted, quarantined
 
 
 def build_cross_source_key(item: Scholarship) -> str:
