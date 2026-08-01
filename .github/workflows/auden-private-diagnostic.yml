@@ -1,4 +1,4 @@
-name: Private Auden eligibility diagnostic
+name: Private full scholarship diagnostic
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   actions: read
 
 jobs:
-  diagnose-auden:
+  diagnose-all-sources:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -26,6 +26,9 @@ jobs:
           test -n "$LINE_CHANNEL_ACCESS_TOKEN"
           test -n "$LINE_USER_ID"
           test -n "$STATE_PASSPHRASE"
+
+      - name: Checkout diagnostic catalog
+        uses: actions/checkout@v5
 
       - name: Download evaluated cloud state
         uses: actions/download-artifact@v5
@@ -48,61 +51,150 @@ jobs:
           tar -xzf cloud-state/scholarship-state.tar.gz
           test -f data/scholarships.db
 
-      - name: Send private Auden result to LINE
+      - name: Send private full result to LINE
         shell: bash
         run: |
           python - <<'PY'
+          from collections import Counter
           import json
           import os
           import sqlite3
           import urllib.request
 
-          target_url = "https://www.auden.com.tw/2026scholarship/"
+          from src.catalogs.tun_2025_program_catalog import TUN_2025_PROGRAMS
+
+          SOURCE_GROUPS = (
+              ("龍華科技大學", ("lhu",)),
+              ("圓夢助學－民間", ("moe-helpdreams-private",)),
+              ("圓夢助學－政府", ("moe-helpdreams-government",)),
+              ("原民會獎助學金", ("indigenous-grants",)),
+              (
+                  "教育部留學獎學金",
+                  ("moe-studyabroad", "moe-top100", "moe-overseas-scholarship", "moe-eu-scholarship"),
+              ),
+              ("新莊聯合獎助學金", ("ntpc-xinzhuang-awards",)),
+          )
+          STATUS_LABELS = {
+              "eligible": "符合",
+              "review": "待確認",
+              "ineligible": "不符合",
+              "": "未評估",
+              None: "未評估",
+          }
+
+          def compact(value, limit=110):
+              text = " ".join(str(value or "").split())
+              return text if len(text) <= limit else text[: limit - 1] + "…"
+
+          def push(messages):
+              for start in range(0, len(messages), 5):
+                  payload = json.dumps(
+                      {
+                          "to": os.environ["LINE_USER_ID"],
+                          "messages": [
+                              {"type": "text", "text": message[:4900]}
+                              for message in messages[start : start + 5]
+                          ],
+                      },
+                      ensure_ascii=False,
+                  ).encode("utf-8")
+                  request = urllib.request.Request(
+                      "https://api.line.me/v2/bot/message/push",
+                      data=payload,
+                      headers={
+                          "Authorization": f"Bearer {os.environ['LINE_CHANNEL_ACCESS_TOKEN']}",
+                          "Content-Type": "application/json",
+                      },
+                      method="POST",
+                  )
+                  with urllib.request.urlopen(request, timeout=10) as response:
+                      if response.status != 200:
+                          raise RuntimeError("LINE 私密全量診斷傳送失敗")
+
           with sqlite3.connect("data/scholarships.db") as conn:
-              row = conn.execute(
+              conn.row_factory = sqlite3.Row
+              group_lines = []
+              for label, sources in SOURCE_GROUPS:
+                  placeholders = ",".join("?" for _ in sources)
+                  rows = conn.execute(
+                      f"""
+                      SELECT COALESCE(eligibility_status, '') AS status,
+                             COUNT(DISTINCT announcement_id) AS amount
+                      FROM scholarships
+                      WHERE source IN ({placeholders})
+                      GROUP BY COALESCE(eligibility_status, '')
+                      """,
+                      sources,
+                  ).fetchall()
+                  counts = Counter({row["status"]: row["amount"] for row in rows})
+                  total = sum(counts.values())
+                  group_lines.append(
+                      f"{label}：{total} 筆｜符合 {counts['eligible']}／"
+                      f"待確認 {counts['review']}／不符合 {counts['ineligible']}／"
+                      f"未評估 {counts['']}"
+                  )
+
+              tun_rows = conn.execute(
                   """
-                  SELECT title, published_date, notice_kind,
-                         COALESCE(eligibility_status, 'not_evaluated'),
-                         COALESCE(eligibility_reason, '尚未產生原因'),
-                         CASE WHEN notified_at IS NULL THEN '尚未標記通知' ELSE '已標記通知' END
+                  SELECT source, title, published_date, source_url,
+                         COALESCE(notice_kind, 'unknown') AS notice_kind,
+                         COALESCE(eligibility_status, '') AS eligibility_status,
+                         COALESCE(eligibility_reason, '') AS eligibility_reason,
+                         CASE WHEN notified_at IS NULL THEN 0 ELSE 1 END AS notified,
+                         id
                   FROM scholarships
-                  WHERE source_url = ?
-                     OR source = 'tun-program-auden-university-talent'
-                  ORDER BY CASE WHEN source_url = ? THEN 0 ELSE 1 END, id DESC
-                  LIMIT 1
-                  """,
-                  [target_url, target_url],
-              ).fetchone()
-          if row is None:
-              raise SystemExit("Auden 2026 公告不存在於本次加密狀態")
-          title, published, notice_kind, status, reason, delivery = row
-          message = (
-              "Auden 2026 單筆私密診斷\n"
-              f"標題：{title}\n"
-              f"刊登日：{published}\n"
-              f"公告分類：{notice_kind}\n"
-              f"資格狀態：{status}\n"
-              f"通知狀態：{delivery}\n"
-              f"判定原因：{reason}\n"
-              f"官方頁：{target_url}"
+                  WHERE source LIKE 'tun-program-%'
+                  ORDER BY id DESC
+                  """
+              ).fetchall()
+
+          rows_by_source = {}
+          for row in tun_rows:
+              rows_by_source.setdefault(row["source"], []).append(row)
+          tun_statuses = Counter()
+          program_lines = []
+          missing = 0
+          for index, program in enumerate(TUN_2025_PROGRAMS, start=1):
+              source = f"tun-program-{program.program_id}"
+              rows = rows_by_source.get(source, [])
+              if not rows:
+                  missing += 1
+                  entry = "待找入口" if not program.official_url else "未抓到公告"
+                  program_lines.append(f"{index:02d}. × {program.title}｜{entry}")
+                  continue
+              latest = rows[0]
+              status = latest["eligibility_status"]
+              tun_statuses[status] += 1
+              delivery = "已通知" if latest["notified"] else "未通知"
+              reason = compact(latest["eligibility_reason"] or "尚未產生判定原因")
+              program_lines.append(
+                  f"{index:02d}. ✓ {program.title}｜{len(rows)} 筆｜"
+                  f"{STATUS_LABELS.get(status, status)}／{delivery}\n"
+                  f"    最新：{compact(latest['title'], 70)}（{latest['published_date'] or '日期未知'}）\n"
+                  f"    原因：{reason}"
+              )
+
+          source_message = "\n".join(
+              [
+                  "全部來源私密診斷（資料庫現況）",
+                  "說明：這裡是各來源目前入庫資料，不把 163／352 誤稱為本輪新增。",
+                  *group_lines,
+                  (
+                      f"TUN 30 方案：有資料 {30 - missing}／30，缺資料 {missing}；"
+                      f"符合 {tun_statuses['eligible']}／待確認 {tun_statuses['review']}／"
+                      f"不符合 {tun_statuses['ineligible']}／未評估 {tun_statuses['']}"
+                  ),
+              ]
           )
-          payload = json.dumps(
-              {"to": os.environ["LINE_USER_ID"], "messages": [{"type": "text", "text": message}]},
-              ensure_ascii=False,
-          ).encode("utf-8")
-          request = urllib.request.Request(
-              "https://api.line.me/v2/bot/message/push",
-              data=payload,
-              headers={
-                  "Authorization": f"Bearer {os.environ['LINE_CHANNEL_ACCESS_TOKEN']}",
-                  "Content-Type": "application/json",
-              },
-              method="POST",
-          )
-          with urllib.request.urlopen(request, timeout=10) as response:
-              if response.status != 200:
-                  raise RuntimeError("LINE 私密診斷傳送失敗")
-          print("Auden 私密診斷已送出；內容未寫入公開 log。")
+          messages = [source_message]
+          for start in range(0, len(program_lines), 5):
+              end = min(start + 5, len(program_lines))
+              messages.append(
+                  f"30 方案逐項診斷 {start + 1}-{end}/30\n" +
+                  "\n".join(program_lines[start:end])
+              )
+          push(messages)
+          print("全部來源私密診斷已送出；資格內容未寫入公開 log。")
           PY
 
       - name: Remove decrypted state
