@@ -5,6 +5,10 @@ from pathlib import Path
 from src.collectors.base_collector import BaseCollector
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.models.scholarship import Scholarship
+from src.notifiers.notification_dispatcher import (
+    CallableNotificationChannel,
+    NotificationFanout,
+)
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.scholarship_service import ScholarshipService
@@ -64,7 +68,9 @@ def _service(
     service = ScholarshipService(
         FakeCollector(items),
         repository,
-        sent_messages.append,
+        NotificationFanout(
+            (CallableNotificationChannel("test", sent_messages.append),)
+        ),
         include_keywords=("獎學金", "就學貸款"),
         summary_batch_size=5,
         detail_fetcher=FakeDetailFetcher(details),

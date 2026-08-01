@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-from typing import Callable
 
 from config import (
+    APPRISE_URLS,
     DATA_DIR,
     GEMINI_API_KEY,
     GEMINI_CACHE_DB_FILENAME,
@@ -19,17 +19,20 @@ from config import (
     LHU_SCHOLARSHIP_URL,
     LINE_API_URL,
     LINE_CHANNEL_ACCESS_TOKEN,
+    LINE_NOTIFICATION_CHANNEL_ID,
     LINE_SUMMARY_BATCH_SIZE,
     LINE_USER_ID,
     MAX_ATTACHMENT_COUNT,
     MAX_DOWNLOAD_BYTES,
     MAX_PDF_PAGES,
     NOTIFY_REVIEW_ITEMS,
+    NOTIFICATION_TITLE,
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
     SOURCE_FETCH_WORKERS,
     SOURCE_MAX_PAGES,
+    SUMMARY_TEMPLATE_NAME,
     validate_gemini_settings,
     validate_settings,
 )
@@ -47,7 +50,13 @@ from src.formatters.cli_output_formatter import (
     print_items,
     print_summary,
 )
-from src.notifiers.line_notifier import send_text_message
+from src.formatters.summary_message_renderer import load_summary_message_renderer
+from src.notifiers.apprise_notifier import load_apprise_channels
+from src.notifiers.line_notifier import LineNotificationChannel, send_text_message
+from src.notifiers.notification_dispatcher import (
+    NotificationDispatcher,
+    NotificationFanout,
+)
 from src.profiles.student_profile import load_student_profile
 from src.repositories.gemini_cache_repository import GeminiCacheRepository
 from src.repositories.scholarship_repository import ScholarshipRepository
@@ -59,9 +68,6 @@ from src.services.gemini_fallback_service import (
 )
 from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
 from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
-
-Notifier = Callable[[str], None]
-
 
 class ParsedArgs(argparse.Namespace):
     """Scholarship Agent 已知的命令列欄位。"""
@@ -105,25 +111,20 @@ def resolve_run_mode(args: ParsedArgs) -> RunMode:
     return RunMode.LIVE
 
 
-def _discard_notification(_: str) -> None:
-    """非正式模式的通知接收器，明確丟棄訊息。"""
-
-
-def build_notifier(mode: RunMode) -> Notifier:
-    """只有 LIVE／DAILY 模式能取得真正的 LINE notifier。"""
+def build_notifier(mode: RunMode) -> NotificationDispatcher:
+    """只有 LIVE／DAILY 模式會載入 LINE 與可選的 Apprise 管道。"""
     if not mode.sends_scholarship_notifications:
-        return _discard_notification
-
-    def _notify(text: str) -> None:
-        send_text_message(
-            api_url=LINE_API_URL,
-            channel_access_token=LINE_CHANNEL_ACCESS_TOKEN,
-            user_id=LINE_USER_ID,
-            text=text,
-            timeout_seconds=HTTP_TIMEOUT_SECONDS,
-        )
-
-    return _notify
+        return NotificationFanout(tuple())
+    line_channel = LineNotificationChannel(
+        channel_id=LINE_NOTIFICATION_CHANNEL_ID,
+        api_url=LINE_API_URL,
+        channel_access_token=LINE_CHANNEL_ACCESS_TOKEN,
+        user_id=LINE_USER_ID,
+        timeout_seconds=HTTP_TIMEOUT_SECONDS,
+        sender=send_text_message,
+    )
+    apprise_channels = load_apprise_channels(APPRISE_URLS, NOTIFICATION_TITLE)
+    return NotificationFanout((line_channel, *apprise_channels))
 
 
 def build_service(
@@ -143,6 +144,7 @@ def build_service(
         build_notifier(mode),
         include_keywords=SCHOLARSHIP_FILTER_KEYWORDS,
         summary_batch_size=LINE_SUMMARY_BATCH_SIZE,
+        message_renderer=load_summary_message_renderer(SUMMARY_TEMPLATE_NAME),
         detail_fetcher=_build_detail_fetcher(),
         evaluator=EligibilityEvaluator(),
         profile=profile,

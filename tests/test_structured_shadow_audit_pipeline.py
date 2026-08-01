@@ -17,6 +17,7 @@ from src.diagnostics.detail_fetch_diagnostics import (
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
 from src.models.scholarship import Scholarship
+from src.notifiers.notification_dispatcher import NotificationFanout
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.gemini_fallback_service import GeminiAnalysisDiagnostic, GeminiUsageLimiter
@@ -130,7 +131,7 @@ def test_audit_keeps_legacy_and_records_structured_difference(tmp_path: Path) ->
     service = ScholarshipService(
         FakeCollector(item),
         ScholarshipRepository(tmp_path / "data" / "scholarships.db"),
-        lambda _: None,
+        NotificationFanout(tuple()),
         include_keywords=("獎學金",),
         summary_batch_size=5,
         detail_fetcher=FakeDetailFetcher(_fetch_result(item)),
@@ -165,7 +166,7 @@ def test_audit_marks_budget_deferred_for_next_run(tmp_path: Path) -> None:
     service = ScholarshipService(
         FakeCollector(item),
         ScholarshipRepository(tmp_path / "data" / "scholarships.db"),
-        lambda _: None,
+        NotificationFanout(tuple()),
         include_keywords=("獎學金",),
         summary_batch_size=5,
         detail_fetcher=FakeDetailFetcher(_fetch_result(item)),

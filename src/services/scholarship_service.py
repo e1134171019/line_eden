@@ -22,8 +22,13 @@ from src.evaluators.evaluator_input_builder import build_evaluator_input
 from src.evaluators.notice_classifier import APPLICATION, UNKNOWN, classify_notice
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
 from src.formatters.scholarship_message_formatter import (
-    build_summary_message,
     split_scholarships,
+)
+from src.formatters.summary_message_renderer import (
+    DEFAULT_SUMMARY_TEMPLATE_NAME,
+    SummaryMessageRenderer,
+    build_summary_context,
+    load_summary_message_renderer,
 )
 from src.models.evaluator_input import (
     GEMINI_RULE_COMPLETE,
@@ -37,6 +42,7 @@ from src.models.announcement_revision import (
     RevisionObservationStatus,
 )
 from src.models.scholarship import Scholarship, build_announcement_id
+from src.notifiers.notification_dispatcher import NotificationDispatcher
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.gemini_fallback_service import (
@@ -99,15 +105,16 @@ class AuditResult:
 
 
 class ScholarshipService:
-    """協調蒐集、公告分類、資格判斷與 LINE 通知流程。"""
+    """協調蒐集、公告分類、資格判斷與多管道通知流程。"""
 
     def __init__(
         self,
         collector: BaseCollector,
         repository: ScholarshipRepository,
-        notifier: Callable[[str], None],
+        notifier: NotificationDispatcher,
         include_keywords: tuple[str, ...] | None,
         summary_batch_size: int,
+        message_renderer: SummaryMessageRenderer | None = None,
         detail_fetcher: DetailFetcher | None = None,
         evaluator: EligibilityEvaluator | None = None,
         profile: StudentProfile | None = None,
@@ -121,6 +128,9 @@ class ScholarshipService:
         self.notifier = notifier
         self.include_keywords = include_keywords or tuple()
         self.summary_batch_size = summary_batch_size
+        self.message_renderer = message_renderer or load_summary_message_renderer(
+            DEFAULT_SUMMARY_TEMPLATE_NAME
+        )
         self.detail_fetcher = detail_fetcher
         self.evaluator = evaluator
         self.profile = profile
@@ -154,7 +164,7 @@ class ScholarshipService:
             record.shadow_status in {"text_error", "text_cached_error"}
             for record in records
         )
-        message = f"已稽核 {len(records)} 筆公告，不會傳送 LINE 或修改獎學金狀態。"
+        message = f"已稽核 {len(records)} 筆公告，不會傳送通知或修改獎學金狀態。"
         if self.gemini_fallback or self.gemini_text_analysis:
             message += " Gemini 結果只會寫入獨立文件快取與 shadow artifact。"
         return AuditResult(
@@ -473,7 +483,7 @@ class ScholarshipService:
             pending_items,
             0,
             0,
-            "dry-run，不會傳送 LINE。",
+            "dry-run，不會傳送通知。",
             *counts,
             *self._gemini_usage(),
         )
@@ -517,12 +527,53 @@ class ScholarshipService:
 
     def _send_batches(self, batches: list[list[Scholarship]]) -> int:
         notified_count = 0
-        for index, batch in enumerate(batches, start=1):
-            message = build_summary_message(batch, index, len(batches))
-            self.notifier(message)
-            hashes = [item.content_hash for item in batch]
-            notified_count += self.repository.mark_notified(hashes)
+        channel_ids = self.notifier.channel_ids()
+        if not channel_ids:
+            raise RuntimeError("正式通知模式至少需要一個通知管道")
+        for batch_index, notices in enumerate(batches, start=1):
+            notified_count += self._send_batch(
+                notices,
+                batch_index,
+                len(batches),
+                channel_ids,
+            )
         return notified_count
+
+    # 逐管道補送尚未成功的公告，全部完成後才標記整批 notified。
+    def _send_batch(
+        self,
+        notices: list[Scholarship],
+        batch_index: int,
+        batch_count: int,
+        channel_ids: tuple[str, ...],
+    ) -> int:
+        for channel_id in channel_ids:
+            undelivered = self._undelivered_notices(notices, channel_id)
+            if not undelivered:
+                continue
+            context = build_summary_context(undelivered, batch_index, batch_count)
+            self.notifier.send_text(channel_id, self.message_renderer.render(context))
+            hashes = [notice.content_hash for notice in undelivered]
+            self.repository.save_notification_delivery(hashes, channel_id)
+        hashes = [notice.content_hash for notice in notices]
+        return self.repository.save_notified_if_delivered(hashes, channel_ids)
+
+    # 只保留尚未成功送達指定管道的公告。
+    def _undelivered_notices(
+        self,
+        notices: list[Scholarship],
+        channel_id: str,
+    ) -> list[Scholarship]:
+        hashes = [notice.content_hash for notice in notices]
+        undelivered_hashes = self.repository.load_undelivered_hashes(
+            hashes,
+            channel_id,
+        )
+        return [
+            notice
+            for notice in notices
+            if notice.content_hash in undelivered_hashes
+        ]
 
 
 def _gemini_rule_scope(status: str) -> GeminiRuleScope:

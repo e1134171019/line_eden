@@ -1,6 +1,6 @@
 # Scholarship Agent
 
-目前包含七個階段：
+目前包含八個階段：
 
 1. LINE Messaging API 推播。
 2. 龍華獎學金公告蒐集、SQLite 去重、歷史基準與 dry-run。
@@ -9,6 +9,7 @@
 5. 追蹤短網址並解析 PDF、DOCX 附件，降低資格只寫在附件造成的漏報。
 6. 明確啟用時，只把本機無法解析的掃描型 PDF 少量頁面交給 Gemini 抽取資格欄位。
 7. 以穩定公告 ID 追蹤同一網址，正文或附件實質改版時重新評估。
+8. 以可插拔通知層同時支援 LINE 與可選的 Apprise 管道，並逐管道追蹤傳送結果。
 
 ## 核心流程
 
@@ -82,6 +83,29 @@ code .env
 LINE_CHANNEL_ACCESS_TOKEN=你的完整ChannelAccessToken
 LINE_USER_ID=你的U開頭UserID
 ```
+
+## 可選 Apprise 多管道設定
+
+LINE 仍是正式模式的必要主管道。若要同步傳送 Discord、Telegram、Email、Slack、Webhook
+等 Apprise 支援的目的地，可在 `.env` 加入以空白或換行分隔的通知 URL：
+
+```dotenv
+APPRISE_URLS="discord://webhook_id/webhook_token
+tgram://bot_token/chat_id"
+```
+
+每個 URL 都是獨立通知管道。部分管道成功、部分失敗時，SQLite 會保留成功紀錄，
+下次只補送失敗管道；所有啟用管道都成功後才寫入該版公告的 `notified_at`。
+通知 URL 通常包含 token 或密碼，只能放在 `.env` 或 GitHub Actions Secret，
+不得提交或輸出至 log。
+
+LINE／Apprise 的摘要共用 Jinja2 模板：
+
+```text
+src/templates/scholarship_summary.txt.j2
+```
+
+可直接調整模板文字，不需修改服務層 Python 程式。
 
 ## Gemini 私密設定
 
@@ -261,8 +285,8 @@ python main.py --use-gemini
 - `review` 預設不推播；可由 `config.py` 的 `NOTIFY_REVIEW_ITEMS` 調整。
 - 摘要中的每筆公告都有日期、標題、符合原因與獨立網址。
 - 每則摘要最多列出 `LINE_SUMMARY_BATCH_SIZE` 筆。
-- 成功傳送後才寫入該批公告的 `notified_at`。
-- 發送失敗時保留 pending，供下次重試。
+- 每個啟用管道成功後分別保存傳送紀錄；全部成功才寫入該批公告的 `notified_at`。
+- 單一管道發送失敗時保留 pending，下次只補送尚未成功的管道。
 - 已通知公告若正文或附件內容實質改版，會重新評估；只有改版後仍明確 `eligible` 才再次推播。
 
 ## 公告用途分類

@@ -190,3 +190,29 @@ def test_repository_migrates_legacy_schema(tmp_path: Path) -> None:
     assert len(repository.list_pending()) == 1
     assert repository.mark_baseline_announcements([rows[0][0]]) == 1
     assert repository.list_pending() == []
+
+
+# 管道送達狀態必須綁定目前 revision，不能沿用舊版成功紀錄。
+def test_notification_delivery_is_scoped_to_current_revision(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    item = _build_item("能源獎學金", "2026-08-01", "https://example.com/delivery")
+    repo.discover([item])
+    repo.observe_revision(
+        AnnouncementRevision(item.announcement_id, "revision-a", "policy-a")
+    )
+
+    assert repo.load_undelivered_hashes([item.content_hash], "line") == {
+        item.content_hash
+    }
+    assert repo.save_notification_delivery([item.content_hash], "line") == 1
+    assert repo.load_undelivered_hashes([item.content_hash], "line") == set()
+    assert repo.save_notified_if_delivered([item.content_hash], ("line",)) == 1
+
+    repo.observe_revision(
+        AnnouncementRevision(item.announcement_id, "revision-b", "policy-a")
+    )
+
+    assert repo.load_undelivered_hashes([item.content_hash], "line") == {
+        item.content_hash
+    }
+    assert repo.list_pending() != []

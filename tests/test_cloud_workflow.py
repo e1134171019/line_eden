@@ -36,6 +36,7 @@ def test_cloud_workflow_uses_secrets_and_encrypted_state() -> None:
         "STATE_PASSPHRASE",
     ):
         assert f"secrets.{name}" in content
+    assert "APPRISE_URLS: ${{ secrets.APPRISE_URLS }}" in content
     assert "--symmetric --cipher-algo AES256" in content
     assert "scholarship-state.tar.gz.gpg" in content
     assert "retention-days: 90" in content

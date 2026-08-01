@@ -6,6 +6,7 @@ from src.collectors.base_collector import BaseCollector
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, ResourceDiagnostic
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.models.scholarship import Scholarship
+from src.notifiers.notification_dispatcher import NotificationFanout
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.scholarship_service import ScholarshipService
@@ -66,7 +67,7 @@ def test_audit_record_keeps_source_diagnostic(tmp_path: Path) -> None:
     )
     repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     service = ScholarshipService(
-        FakeCollector(item), repository, lambda _: None,
+        FakeCollector(item), repository, NotificationFanout(tuple()),
         include_keywords=("獎學金", "助學金"),
         summary_batch_size=5,
         detail_fetcher=FailedDiagnosticFetcher(),

@@ -8,6 +8,7 @@ __pycache__/
 profile.json
 *.log
 .pytest_cache/
+.coverage
 data/*.db
 data/last_run.json
 data/*.lock

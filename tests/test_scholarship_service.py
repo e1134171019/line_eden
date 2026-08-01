@@ -7,6 +7,10 @@ import pytest
 
 from src.collectors.base_collector import BaseCollector
 from src.models.scholarship import Scholarship
+from src.notifiers.notification_dispatcher import (
+    CallableNotificationChannel,
+    NotificationFanout,
+)
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.scholarship_service import ScholarshipService
 
@@ -45,7 +49,7 @@ def _build_service(
     service = ScholarshipService(
         FakeCollector(items),
         repository,
-        notifier,
+        NotificationFanout((CallableNotificationChannel("test", notifier),)),
         include_keywords=None,
         summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
@@ -95,7 +99,7 @@ def test_service_new_item_after_baseline_is_pending(tmp_path: Path) -> None:
     next_service = ScholarshipService(
         FakeCollector([old_item, new_item]),
         repository,
-        lambda _: None,
+        NotificationFanout(tuple()),
         include_keywords=None,
         summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )
@@ -156,6 +160,47 @@ def test_service_batch_failure_keeps_unsent_items_pending(tmp_path: Path) -> Non
     assert pending_urls == ["https://example.com/1"]
 
 
+# 多管道部分成功時，重試只補送失敗管道，不重複已成功的通知。
+def test_service_retries_only_failed_notification_channel(tmp_path: Path) -> None:
+    item = _build_item(1)
+    line_messages: list[str] = []
+    webhook_messages: list[str] = []
+    has_failed_once = False
+
+    def flaky_webhook(message: str) -> None:
+        nonlocal has_failed_once
+        webhook_messages.append(message)
+        if not has_failed_once:
+            has_failed_once = True
+            raise RuntimeError("Webhook unavailable")
+
+    repository = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    dispatcher = NotificationFanout(
+        (
+            CallableNotificationChannel("line", line_messages.append),
+            CallableNotificationChannel("webhook", flaky_webhook),
+        )
+    )
+    service = ScholarshipService(
+        FakeCollector([item]),
+        repository,
+        dispatcher,
+        include_keywords=None,
+        summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
+    )
+
+    with pytest.raises(RuntimeError, match="Webhook unavailable"):
+        service.run(dry_run=False)
+    assert len(repository.list_pending()) == 1
+
+    retried = service.run(dry_run=False)
+
+    assert retried.notified_count == 1
+    assert len(line_messages) == 1
+    assert len(webhook_messages) == 2
+    assert repository.list_pending() == []
+
+
 # 驗證關鍵字過濾只保留目標公告。
 def test_service_filter_by_keywords(tmp_path: Path) -> None:
     keep_item = Scholarship.from_raw(
@@ -174,7 +219,7 @@ def test_service_filter_by_keywords(tmp_path: Path) -> None:
     service = ScholarshipService(
         FakeCollector([keep_item, drop_item]),
         repository,
-        lambda _: None,
+        NotificationFanout(tuple()),
         include_keywords=("獎學金", "助學金"),
         summary_batch_size=TEST_SUMMARY_BATCH_SIZE,
     )

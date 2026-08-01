@@ -44,6 +44,12 @@ def _env_bool(name: str, default: bool) -> bool:
     )
 
 
+def _env_urls(name: str) -> tuple[str, ...]:
+    """解析以空白或換行分隔的通知 URL，並保留原始順序去重。"""
+    values = os.getenv(name, "").split()
+    return tuple(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
 LINE_API_URL = "https://api.line.me/v2/bot/message/push"
 LHU_SCHOLARSHIP_URL = "https://www.lhu.edu.tw/p/422-1000-4.php?Lang=zh-tw"
 SCHOLARSHIP_DB_FILENAME = "scholarships.db"
@@ -57,6 +63,9 @@ CLOUD_STATE_ENCRYPTED_FILENAME = "scholarship-state.tar.gz.gpg"
 GITHUB_API_URL = "https://api.github.com"
 GITHUB_API_VERSION = "2026-03-10"
 LINE_SUMMARY_BATCH_SIZE = 5
+LINE_NOTIFICATION_CHANNEL_ID = "line"
+NOTIFICATION_TITLE = "Scholarship Agent"
+SUMMARY_TEMPLATE_NAME = "scholarship_summary.txt.j2"
 NOTIFY_REVIEW_ITEMS = _env_bool("NOTIFY_REVIEW_ITEMS", False)
 HTTP_TIMEOUT_SECONDS = 10.0
 HTTP_USER_AGENT = "ScholarshipAgent/3.2 (+https://www.lhu.edu.tw/)"
@@ -138,6 +147,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv(
 ).strip()
 LINE_USER_ID = os.getenv("LINE_USER_ID", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+APPRISE_URLS = _env_urls("APPRISE_URLS")
 
 
 def validate_settings() -> None:

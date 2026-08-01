@@ -40,7 +40,7 @@ class ScholarshipRepository:
 
     # 建立完整資料表與唯一索引。
     def _create_table(self) -> None:
-        query = """
+        scholarship_query = """
         CREATE TABLE IF NOT EXISTS scholarships (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source TEXT NOT NULL,
@@ -63,8 +63,18 @@ class ScholarshipRepository:
             revision_observed_at TEXT
         )
         """
+        delivery_query = """
+        CREATE TABLE IF NOT EXISTS notification_deliveries (
+            content_hash TEXT NOT NULL,
+            revision_key TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            delivered_at TEXT NOT NULL,
+            PRIMARY KEY (content_hash, revision_key, channel_id)
+        )
+        """
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(query)
+            conn.execute(scholarship_query)
+            conn.execute(delivery_query)
             conn.commit()
 
     # 補齊舊版資料表缺少的狀態欄位。
@@ -433,6 +443,109 @@ class ScholarshipRepository:
     def mark_notified(self, content_hashes: list[str]) -> int:
         return self._mark_time("notified_at", content_hashes)
 
+    # 讀取指定管道尚未送達的公告 row handle。
+    def load_undelivered_hashes(
+        self,
+        content_hashes: list[str],
+        channel_id: str,
+    ) -> set[str]:
+        unique_hashes = list(dict.fromkeys(content_hashes))
+        if not unique_hashes:
+            return set()
+        placeholders = ",".join(["?"] * len(unique_hashes))
+        query = f"""
+        SELECT scholarships.content_hash
+        FROM scholarships
+        LEFT JOIN notification_deliveries AS deliveries
+          ON deliveries.content_hash = scholarships.content_hash
+         AND deliveries.revision_key = {_revision_key_sql('scholarships')}
+         AND deliveries.channel_id = ?
+        WHERE scholarships.content_hash IN ({placeholders})
+          AND deliveries.content_hash IS NULL
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(query, [channel_id, *unique_hashes]).fetchall()
+        return {str(row[0]) for row in rows}
+
+    # 保存單一管道已成功送達的公告 revision。
+    def save_notification_delivery(
+        self,
+        content_hashes: list[str],
+        channel_id: str,
+    ) -> int:
+        unique_hashes = list(dict.fromkeys(content_hashes))
+        if not unique_hashes:
+            return 0
+        placeholders = ",".join(["?"] * len(unique_hashes))
+        select_query = f"""
+        SELECT content_hash, {_revision_key_sql('scholarships')}
+        FROM scholarships
+        WHERE content_hash IN ({placeholders})
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            revisions = conn.execute(select_query, unique_hashes).fetchall()
+            rows = [
+                (str(content_hash), str(revision_key), channel_id, self._now_iso())
+                for content_hash, revision_key in revisions
+            ]
+            cursor = conn.executemany(
+                """
+                INSERT OR IGNORE INTO notification_deliveries (
+                    content_hash, revision_key, channel_id, delivered_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.commit()
+        return max(cursor.rowcount, 0)
+
+    # 所有指定管道都完成目前 revision 後，才寫入 notified_at。
+    def save_notified_if_delivered(
+        self,
+        content_hashes: list[str],
+        channel_ids: tuple[str, ...],
+    ) -> int:
+        unique_hashes = list(dict.fromkeys(content_hashes))
+        unique_channels = tuple(dict.fromkeys(channel_ids))
+        if not unique_hashes or not unique_channels:
+            return 0
+        marked_count = 0
+        with sqlite3.connect(self.db_path) as conn:
+            for content_hash in unique_hashes:
+                marked_count += self._save_notified_row(
+                    conn,
+                    content_hash,
+                    unique_channels,
+                )
+            conn.commit()
+        return marked_count
+
+    # 檢查單筆公告 delivery completeness 並原子寫入通知時間。
+    def _save_notified_row(
+        self,
+        conn: sqlite3.Connection,
+        content_hash: str,
+        channel_ids: tuple[str, ...],
+    ) -> int:
+        placeholders = ",".join(["?"] * len(channel_ids))
+        query = f"""
+        UPDATE scholarships
+        SET notified_at = ?
+        WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
+          AND (
+              SELECT COUNT(DISTINCT deliveries.channel_id)
+              FROM notification_deliveries AS deliveries
+              WHERE deliveries.content_hash = scholarships.content_hash
+                AND deliveries.revision_key = {_revision_key_sql('scholarships')}
+                AND deliveries.channel_id IN ({placeholders})
+          ) = ?
+        """
+        cursor = conn.execute(
+            query,
+            [self._now_iso(), content_hash, *channel_ids, len(channel_ids)],
+        )
+        return max(cursor.rowcount, 0)
+
     # 寫入指定時間欄位。
     def _mark_time(self, column: str, content_hashes: list[str]) -> int:
         if not content_hashes:
@@ -458,3 +571,8 @@ def _revision_observation_status(
     if previous_hash == revision_hash:
         return RevisionObservationStatus.UNCHANGED
     return RevisionObservationStatus.CHANGED
+
+
+def _revision_key_sql(table_name: str) -> str:
+    """純函式：建立 delivery 對應目前公告 revision 的 SQL 表達式。"""
+    return f"COALESCE(NULLIF({table_name}.revision_hash, ''), {table_name}.content_hash)"

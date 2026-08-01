@@ -33,6 +33,20 @@ def test_env_bool_rejects_ambiguous_value(monkeypatch: pytest.MonkeyPatch) -> No
         config._env_bool("TEST_BOOL_SETTING", False)
 
 
+def test_env_urls_splits_whitespace_and_removes_exact_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "TEST_NOTIFICATION_URLS",
+        "discord://first\n tgram://second discord://first",
+    )
+
+    assert config._env_urls("TEST_NOTIFICATION_URLS") == (
+        "discord://first",
+        "tgram://second",
+    )
+
+
 def test_default_gemini_budget_supports_full_review_batch() -> None:
     assert config.GEMINI_MAX_CALLS_PER_RUN == 50
     assert config.GEMINI_MAX_INPUT_TOKENS_PER_DOCUMENT == 12000

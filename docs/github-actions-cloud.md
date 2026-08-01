@@ -10,7 +10,7 @@ GitHub Actions schedule（23:30 UTC）
 → 還原上一輪加密 SQLite artifact
 → 由 GitHub Secrets 建立 profile.json
 → python main.py --use-gemini
-→ 只有 application + eligible 才傳 LINE
+→ 只有 application + eligible 才傳 LINE 與可選的 Apprise 管道
 → 加密並保存更新後 SQLite 狀態
 ```
 
@@ -45,6 +45,16 @@ STATE_PASSPHRASE
 ```
 
 前三個值與本機 `.env` 相同，不要貼到 Issue、Commit、README 或 Actions log。
+
+若要啟用額外通知管道，可再建立一個選填 Secret：
+
+```text
+APPRISE_URLS
+```
+
+值的格式與本機 `.env` 相同，可用空白或換行分隔多個 Apprise URL。URL 通常含有
+bot token、webhook token 或密碼，不得寫進 workflow、Issue、Commit 或 Actions log。
+沒有設定此 Secret 時仍只傳 LINE，不影響既有流程。
 
 ### 產生 STUDENT_PROFILE_B64
 
@@ -140,7 +150,7 @@ GitHub Actions schedule 使用 UTC；23:30 UTC 對應台灣翌日 07:30。排程
 
 ## 狀態保存與失敗處理
 
-每次 `initialize`、`run` 或 `dry-run` 後，workflow 都會嘗試保存當下 SQLite 狀態，包括 Agent 最後回傳非零 exit code 的情況。這可降低部分 LINE 批次已成功、後續程序失敗時再次重複通知的風險。
+每次 `initialize`、`run` 或 `dry-run` 後，workflow 都會嘗試保存當下 SQLite 狀態，包括 Agent 最後回傳非零 exit code 的情況。通知層也會逐管道保存成功紀錄，可降低部分管道已成功、後續管道或程序失敗時再次重複通知的風險。
 
 保存內容：
 

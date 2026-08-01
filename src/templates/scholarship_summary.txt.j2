@@ -1,0 +1,9 @@
+【適合你的獎學金｜第 {{ context.batch_index }}/{{ context.batch_count }} 則】
+{% for notice in context.notices -%}
+{{ loop.index }}. {{ notice.published_date }}
+{{ notice.title }}
+{% if notice.eligibility_reason -%}
+符合原因：{{ notice.eligibility_reason }}
+{% endif -%}
+{{ notice.source_url }}
+{% endfor -%}

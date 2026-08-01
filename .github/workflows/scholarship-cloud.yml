@@ -40,6 +40,7 @@ jobs:
       OPERATION: ${{ github.event_name == 'schedule' && 'daily' || github.event_name == 'push' && 'daily' || inputs.operation }}
       LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
       LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+      APPRISE_URLS: ${{ secrets.APPRISE_URLS }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       STUDENT_PROFILE_B64: ${{ secrets.STUDENT_PROFILE_B64 }}
       STATE_PASSPHRASE: ${{ secrets.STATE_PASSPHRASE }}

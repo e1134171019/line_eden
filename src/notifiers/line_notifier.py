@@ -1,6 +1,25 @@
 # -*- coding: utf-8 -*-
 
+from dataclasses import dataclass
+from typing import Protocol
+
 import httpx
+
+
+class LineSender(Protocol):
+    """LINE transport 的完整可替換呼叫介面。"""
+
+    def __call__(
+        self,
+        *,
+        api_url: str,
+        channel_access_token: str,
+        user_id: str,
+        text: str,
+        timeout_seconds: float,
+    ) -> None:
+        """傳送單一 LINE 純文字訊息。"""
+        ...
 
 
 # 建立 LINE Messaging API 的授權標頭。
@@ -34,3 +53,24 @@ def send_text_message(
         timeout=timeout_seconds,
     )
     response.raise_for_status()
+
+
+@dataclass(frozen=True)
+class LineNotificationChannel:
+    """LINE Messaging API 的具名通知管道。"""
+
+    channel_id: str
+    api_url: str
+    channel_access_token: str
+    user_id: str
+    timeout_seconds: float
+    sender: LineSender = send_text_message
+
+    def send_text(self, text: str) -> None:
+        self.sender(
+            api_url=self.api_url,
+            channel_access_token=self.channel_access_token,
+            user_id=self.user_id,
+            text=text,
+            timeout_seconds=self.timeout_seconds,
+        )

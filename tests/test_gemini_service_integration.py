@@ -10,6 +10,7 @@ from src.diagnostics.detail_fetch_diagnostics import (
 )
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.models.scholarship import Scholarship
+from src.notifiers.notification_dispatcher import NotificationFanout
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.gemini_fallback_service import (
@@ -102,7 +103,7 @@ def _service(
     return ScholarshipService(
         FakeCollector(item),
         ScholarshipRepository(tmp_path / "scholarships.db"),
-        lambda _: None,
+        NotificationFanout(tuple()),
         include_keywords=("獎學金",),
         summary_batch_size=5,
         detail_fetcher=FakeDiagnosticFetcher(),
