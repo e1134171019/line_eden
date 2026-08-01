@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 
+from src.models.announcement_revision import build_announcement_id
+
 
 # 正規化文字欄位，避免雜訊造成雜湊不穩定。
 def _normalize_text(text: str) -> str:
@@ -21,7 +23,7 @@ def _normalize_date(date_text: str) -> str:
         return value
 
 
-# 由穩定欄位建立內容雜湊，供資料去重。
+# 由 listing metadata 建立相容舊資料庫的內容雜湊。
 def build_content_hash(source: str, title: str, published_date: str, source_url: str) -> str:
     payload = "|".join([
         _normalize_text(source),
@@ -32,7 +34,6 @@ def build_content_hash(source: str, title: str, published_date: str, source_url:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-# 依標題區分獎學金、助學金、貸款與其他補助。
 def _classify_title(title: str) -> str:
     normalized = _normalize_text(title)
     if "就學貸款" in normalized:
@@ -46,7 +47,6 @@ def _classify_title(title: str) -> str:
     return "other"
 
 
-# TUN 已知方案可由既有 source id 推導 program id，兼容舊 collector。
 def _infer_program_id(source: str, program_id: str) -> str:
     normalized = _normalize_text(program_id)
     if normalized:
@@ -63,6 +63,8 @@ class Scholarship:
     source_url: str
     category: str
     content_hash: str
+    announcement_id: str = ""
+    revision_hash: str = ""
     program_id: str = ""
     entry_url: str = ""
     detail_url: str = ""
@@ -79,7 +81,6 @@ class Scholarship:
     review_kind: str = ""
     exclusion_reason: str = ""
 
-    # 將原始欄位正規化並產生 Scholarship 物件。
     @classmethod
     def from_raw(
         cls,
@@ -114,6 +115,7 @@ class Scholarship:
                 published_date=normalized_date,
                 source_url=normalized_url,
             ),
+            announcement_id=build_announcement_id(normalized_source, normalized_detail),
             program_id=resolved_program_id,
             entry_url=normalized_entry,
             detail_url=normalized_detail,
