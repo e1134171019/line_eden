@@ -12,7 +12,7 @@ RULES_STATUS_GENERIC_UNCONFIRMED = "generic_document_unconfirmed"
 
 @dataclass(frozen=True)
 class ResourceDiagnostic:
-    """單一來源或附件的下載與文字解析診斷。"""
+    """單一來源或附件的下載、文字解析與抽取政策診斷。"""
 
     role: str
     requested_url: str
@@ -26,6 +26,11 @@ class ResourceDiagnostic:
     attachment_role: str = "unknown"
     attachment_label: str = ""
     ssl_compatibility_fallback: bool = False
+    extraction_policy_name: str = ""
+    extraction_policy_version: str = ""
+    extraction_policy_hash: str = ""
+    extraction_selector: str = ""
+    heuristic_fallback: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,7 +71,6 @@ class DetailFetchResult:
 
     @property
     def content(self) -> NoticeContent:
-        """提供不含 legacy marker 語意的結構化內容。"""
         return NoticeContent(
             main_text=self.body_text or self.text,
             attachments=self.extracted_attachments,
@@ -74,7 +78,6 @@ class DetailFetchResult:
         )
 
     def eligibility_text(self) -> str:
-        """從結構化正文與已確認的主要辦法建立 legacy 判斷文字。"""
         body = self.content.main_text
         rules = [
             item.text
