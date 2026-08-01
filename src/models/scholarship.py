@@ -70,6 +70,8 @@ class Scholarship:
     application_status: str = "not_applicable"
     eligibility_status: str = ""
     eligibility_reason: str = ""
+    manual_checks: tuple[str, ...] = tuple()
+    review_kind: str = ""
     exclusion_reason: str = ""
 
     # 將原始欄位正規化並產生 Scholarship 物件。

@@ -54,4 +54,5 @@ def test_anonymized_eligibility_cases(case: dict[str, Any]) -> None:
     )
 
     assert decision.status == case["expected"]
-    assert case["reason_contains"] in decision.reason_text()
+    explanation = "；".join((decision.reason_text(), decision.manual_check_text()))
+    assert case["reason_contains"] in explanation

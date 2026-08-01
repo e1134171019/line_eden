@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
+import re
 from typing import Literal
 
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtraction
@@ -8,14 +9,19 @@ from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
     REVIEW,
+    REVIEW_PROFILE_MISSING,
+    REVIEW_SEMANTIC_AMBIGUOUS,
+    REVIEW_SOURCE_INCOMPLETE,
     EligibilityDecision,
 )
+from src.evaluators.manual_check_extractor import extract_manual_checks
 from src.profiles.student_profile import StudentProfile
 
 PASS = "pass"
 FAIL = "fail"
 UNKNOWN = "unknown"
-ConditionStatus = Literal["pass", "fail", "unknown"]
+MANUAL = "manual"
+ConditionStatus = Literal["pass", "fail", "unknown", "manual"]
 
 
 @dataclass(frozen=True)
@@ -37,7 +43,7 @@ class StructuredEligibilityResult:
 
 
 class StructuredEligibilityEvaluator:
-    """只依 Gemini 結構化欄位與 profile 進行確定性比對。"""
+    """依結構化硬性欄位比對；成績與排名只列人工確認。"""
 
     def evaluate(
         self,
@@ -45,10 +51,30 @@ class StructuredEligibilityEvaluator:
         profile: StudentProfile,
     ) -> StructuredEligibilityResult:
         conditions = self._conditions(extraction, profile)
+        manual_checks = tuple(
+            dict.fromkeys(item.reason for item in conditions if item.status == MANUAL)
+        )
         failures = [item.reason for item in conditions if item.status == FAIL]
         if failures:
             return StructuredEligibilityResult(
-                EligibilityDecision(INELIGIBLE, tuple(dict.fromkeys(failures))),
+                EligibilityDecision(
+                    INELIGIBLE,
+                    tuple(dict.fromkeys(failures)),
+                    manual_checks,
+                ),
+                tuple(conditions),
+            )
+
+        unknowns = [item.reason for item in conditions if item.status == UNKNOWN]
+        if unknowns:
+            unique = tuple(dict.fromkeys(unknowns))
+            return StructuredEligibilityResult(
+                EligibilityDecision(
+                    REVIEW,
+                    unique,
+                    manual_checks,
+                    _review_kind(unique),
+                ),
                 tuple(conditions),
             )
 
@@ -58,23 +84,35 @@ class StructuredEligibilityEvaluator:
             or extraction.needs_more_pages
             or not extraction.evidence
         )
-        unknowns = [item.reason for item in conditions if item.status == UNKNOWN]
         if incomplete:
-            unknowns.insert(0, "Gemini 抽取的資格文件不完整或證據不足。")
-        if unknowns:
+            reason = "Gemini 抽取的資格文件不完整或證據不足。"
             return StructuredEligibilityResult(
-                EligibilityDecision(REVIEW, tuple(dict.fromkeys(unknowns))),
+                EligibilityDecision(
+                    REVIEW,
+                    (reason,),
+                    manual_checks,
+                    REVIEW_SOURCE_INCOMPLETE,
+                ),
                 tuple(conditions),
             )
 
         passes = [item.reason for item in conditions if item.status == PASS]
         if not passes:
             return StructuredEligibilityResult(
-                EligibilityDecision(REVIEW, ("沒有足夠的結構化條件可證明符合。",)),
+                EligibilityDecision(
+                    REVIEW,
+                    ("沒有足夠的結構化硬性條件可證明適用對象。",),
+                    manual_checks,
+                    REVIEW_SOURCE_INCOMPLETE,
+                ),
                 tuple(conditions),
             )
         return StructuredEligibilityResult(
-            EligibilityDecision(ELIGIBLE, tuple(dict.fromkeys(passes))),
+            EligibilityDecision(
+                ELIGIBLE,
+                tuple(dict.fromkeys(passes)),
+                manual_checks,
+            ),
             tuple(conditions),
         )
 
@@ -88,8 +126,9 @@ class StructuredEligibilityEvaluator:
         results.extend(_degree_conditions(extraction, profile))
         results.extend(_department_conditions(extraction, profile))
         results.extend(_special_status_conditions(extraction, profile))
-        results.extend(_score_conditions(extraction, profile))
+        results.extend(_score_conditions(extraction))
         results.extend(_residence_conditions(extraction, profile))
+        results.extend(_year_conditions(extraction, profile))
         results.extend(_free_text_conditions(extraction))
         return results
 
@@ -102,9 +141,13 @@ def _program_conditions(
     current = profile.program_type
     for excluded in extraction.program_types_excluded:
         if _same_program(excluded, current) or ("在職" in excluded and profile.employed):
-            results.append(ConditionResult("program", excluded, FAIL, f"公告排除「{excluded}」。"))
+            results.append(
+                ConditionResult("program", excluded, FAIL, f"公告排除「{excluded}」。")
+            )
     if extraction.program_types_included:
-        matched = any(_same_program(item, current) for item in extraction.program_types_included)
+        matched = any(
+            _same_program(item, current) for item in extraction.program_types_included
+        )
         results.append(
             ConditionResult(
                 "program",
@@ -123,8 +166,16 @@ def _degree_conditions(
     if not extraction.degree_levels:
         return []
     is_bachelor = profile.degree_level == "學士"
-    includes_college = any(term in value for value in extraction.degree_levels for term in ("大學生", "大學部", "學士", "大專"))
-    includes_graduate = any(term in value for value in extraction.degree_levels for term in ("研究生", "碩士", "博士"))
+    includes_college = any(
+        term in value
+        for value in extraction.degree_levels
+        for term in ("大學生", "大學部", "學士", "大專")
+    )
+    includes_graduate = any(
+        term in value
+        for value in extraction.degree_levels
+        for term in ("研究生", "碩士", "博士")
+    )
     matched = includes_college if is_bachelor else includes_graduate
     return [
         ConditionResult(
@@ -143,15 +194,27 @@ def _department_conditions(
     results: list[ConditionResult] = []
     for excluded in extraction.departments_excluded:
         if _department_matches(excluded, profile):
-            results.append(ConditionResult("department", excluded, FAIL, f"公告排除「{excluded}」相關科系。"))
+            results.append(
+                ConditionResult(
+                    "department",
+                    excluded,
+                    FAIL,
+                    f"公告排除「{excluded}」相關科系。",
+                )
+            )
     if extraction.departments_included:
-        matched = any(_department_matches(item, profile) for item in extraction.departments_included)
+        matched = any(
+            _department_matches(item, profile)
+            for item in extraction.departments_included
+        )
         results.append(
             ConditionResult(
                 "department",
                 "、".join(extraction.departments_included),
                 PASS if matched else FAIL,
-                "科系或研究領域符合公告。" if matched else "公告指定科系與目前背景不符。",
+                "科系或研究領域符合公告。"
+                if matched
+                else "公告指定科系與目前背景不符。",
             )
         )
     return results
@@ -161,35 +224,58 @@ def _special_status_conditions(
     extraction: GeminiRequirementExtraction,
     profile: StudentProfile,
 ) -> list[ConditionResult]:
+    required = tuple(dict.fromkeys(extraction.required_special_statuses))
+    if not required:
+        return []
     owned = set(profile.special_statuses)
+    matched = [status for status in required if status in owned]
+    requirement = "、".join(required)
+    if matched:
+        return [
+            ConditionResult(
+                "special_status_any_of",
+                requirement,
+                PASS,
+                f"具備必要身分選項之一：「{matched[0]}」。",
+            )
+        ]
     return [
         ConditionResult(
-            "special_status",
-            status,
-            PASS if status in owned else FAIL,
-            f"具備必要身分「{status}」。" if status in owned else f"缺少必要身分「{status}」。",
+            "special_status_any_of",
+            requirement,
+            FAIL,
+            f"須具備以下任一身分：{requirement}。",
         )
-        for status in extraction.required_special_statuses
     ]
 
 
 def _score_conditions(
     extraction: GeminiRequirementExtraction,
-    profile: StudentProfile,
 ) -> list[ConditionResult]:
     results: list[ConditionResult] = []
-    for field, minimum, actual, label in (
-        ("average_grade", extraction.minimum_average_grade, profile.average_grade, "學業平均"),
-        ("conduct_grade", extraction.minimum_conduct_grade, profile.conduct_grade, "操行成績"),
+    for field, minimum, label in (
+        ("average_grade", extraction.minimum_average_grade, "學業平均"),
+        ("conduct_grade", extraction.minimum_conduct_grade, "操行成績"),
     ):
         if minimum is None:
             continue
-        if actual <= 0:
-            results.append(ConditionResult(field, f"{minimum:g}", UNKNOWN, f"profile 缺少{label}資料。"))
-        elif actual < minimum:
-            results.append(ConditionResult(field, f"{minimum:g}", FAIL, f"{label}未達 {minimum:g} 分。"))
-        else:
-            results.append(ConditionResult(field, f"{minimum:g}", PASS, f"{label}符合 {minimum:g} 分門檻。"))
+        results.append(
+            ConditionResult(
+                field,
+                f"{minimum:g}",
+                MANUAL,
+                f"請自行確認：{label}須達 {minimum:g} 分門檻。",
+            )
+        )
+    if extraction.rank_requirement:
+        results.append(
+            ConditionResult(
+                "rank",
+                extraction.rank_requirement,
+                MANUAL,
+                f"請自行確認：{extraction.rank_requirement}。",
+            )
+        )
     return results
 
 
@@ -201,7 +287,14 @@ def _residence_conditions(
     if not required:
         return []
     if not profile.residence:
-        return [ConditionResult("residence", required, UNKNOWN, "profile 缺少戶籍資料。")]
+        return [
+            ConditionResult(
+                "residence",
+                required,
+                UNKNOWN,
+                "profile 缺少戶籍資料。",
+            )
+        ]
     matched = _normalize_region(profile.residence) in _normalize_region(required)
     return [
         ConditionResult(
@@ -213,20 +306,83 @@ def _residence_conditions(
     ]
 
 
-def _free_text_conditions(extraction: GeminiRequirementExtraction) -> list[ConditionResult]:
+def _year_conditions(
+    extraction: GeminiRequirementExtraction,
+    profile: StudentProfile,
+) -> list[ConditionResult]:
+    if not extraction.year_requirements:
+        return []
+    requirement = "、".join(extraction.year_requirements)
+    years = _extract_years(requirement)
+    if not years:
+        return [
+            ConditionResult(
+                "year",
+                requirement,
+                UNKNOWN,
+                f"年級條件語意仍需人工確認：{requirement}",
+            )
+        ]
+    matched = profile.year in years
+    return [
+        ConditionResult(
+            "year",
+            requirement,
+            PASS if matched else FAIL,
+            "年級條件符合公告。" if matched else "目前年級不在公告允許範圍。",
+        )
+    ]
+
+
+def _free_text_conditions(
+    extraction: GeminiRequirementExtraction,
+) -> list[ConditionResult]:
     results = [
-        ConditionResult("explicit_exclusion", value, UNKNOWN, f"明確排除條件仍需人工確認：{value}")
+        ConditionResult(
+            "explicit_exclusion",
+            value,
+            UNKNOWN,
+            f"明確排除條件仍需人工確認：{value}",
+        )
         for value in extraction.explicit_exclusions
     ]
-    results.extend(
-        ConditionResult("other_required", value, UNKNOWN, f"其他必要條件仍需人工確認：{value}")
-        for value in extraction.other_required_conditions
-    )
-    if extraction.rank_requirement:
-        results.append(ConditionResult("rank", extraction.rank_requirement, UNKNOWN, "排名條件尚未結構化。"))
-    if extraction.year_requirements:
-        results.append(ConditionResult("year", "、".join(extraction.year_requirements), UNKNOWN, "年級條件尚未結構化。"))
+    for value in extraction.other_required_conditions:
+        manual_checks = extract_manual_checks(value)
+        if manual_checks:
+            results.extend(
+                ConditionResult("other_manual", value, MANUAL, check)
+                for check in manual_checks
+            )
+        else:
+            results.append(
+                ConditionResult(
+                    "other_required",
+                    value,
+                    UNKNOWN,
+                    f"其他必要條件仍需人工確認：{value}",
+                )
+            )
     return results
+
+
+def _review_kind(reasons: tuple[str, ...]) -> str:
+    text = "｜".join(reasons)
+    if any(marker in text for marker in ("不完整", "證據", "辦法", "附件")):
+        return REVIEW_SOURCE_INCOMPLETE
+    if any(marker in text for marker in ("profile", "缺少")):
+        return REVIEW_PROFILE_MISSING
+    return REVIEW_SEMANTIC_AMBIGUOUS
+
+
+def _extract_years(value: str) -> set[int]:
+    mapping = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6}
+    years = {int(item) for item in re.findall(r"(?:大|第)?([1-6])\s*年", value)}
+    for chinese, number in mapping.items():
+        if f"大{chinese}" in value or f"{chinese}年級" in value:
+            years.add(number)
+    if "新生" in value:
+        years.add(1)
+    return years
 
 
 def _same_program(required: str, current: str) -> bool:
@@ -240,7 +396,19 @@ def _same_program(required: str, current: str) -> bool:
 
 
 def _department_matches(required: str, profile: StudentProfile) -> bool:
-    terms = set(profile.research_keywords) | {profile.department, "電子", "電機", "電力", "能源"}
+    terms = set(profile.research_keywords) | {
+        profile.department,
+        "電子",
+        "電機",
+        "電力",
+        "能源",
+        "資通訊",
+        "資訊",
+        "通訊",
+        "工程",
+        "理工",
+        "電資",
+    }
     return any(term and term in required for term in terms)
 
 

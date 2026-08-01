@@ -75,6 +75,27 @@ def test_repository_filters_notifiable_status(tmp_path: Path) -> None:
     assert default_items[0].eligibility_reason == "符合"
 
 
+# 驗證人工確認項與 review 類型可經 SQLite 往返。
+def test_repository_round_trips_manual_checks_and_review_kind(tmp_path: Path) -> None:
+    repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
+    item = _build_item("成績人工確認獎學金", "2026-07-01", "https://example.com/manual")
+    repo.discover([item])
+
+    repo.mark_eligibility(
+        item.content_hash,
+        "review",
+        "科系範圍仍需確認。",
+        "profile-a",
+        manual_checks=("請自行確認：平均成績須達 85 分門檻。",),
+        review_kind="semantic_ambiguous",
+    )
+
+    stored = repo.list_notifiable("profile-a", include_review=True)
+
+    assert stored[0].manual_checks == ("請自行確認：平均成績須達 85 分門檻。",)
+    assert stored[0].review_kind == "semantic_ambiguous"
+
+
 # 驗證個人背景變更後既有公告會重新進入評估清單。
 def test_repository_re_evaluates_when_profile_changes(tmp_path: Path) -> None:
     repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")

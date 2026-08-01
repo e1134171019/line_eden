@@ -15,6 +15,7 @@ from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
     REVIEW,
+    REVIEW_SOURCE_INCOMPLETE,
     EligibilityDecision,
     EligibilityEvaluator,
 )
@@ -293,7 +294,11 @@ class ScholarshipService:
     def _evaluate_pending(self, profile_hash: str) -> None:
         for item in self.repository.list_for_evaluation(profile_hash):
             decision, notice_kind, application_status, _, _ = self._evaluate_item(item)
-            excluded = decision.reason_text() if decision.status == ELIGIBILITY_NOT_APPLICABLE else ""
+            excluded = (
+                decision.reason_text()
+                if decision.status == ELIGIBILITY_NOT_APPLICABLE
+                else ""
+            )
             self.repository.mark_eligibility(
                 item.content_hash,
                 decision.status,
@@ -302,6 +307,8 @@ class ScholarshipService:
                 notice_kind,
                 application_status,
                 excluded,
+                decision.manual_checks,
+                decision.review_kind,
             )
 
     def _evaluate_item(
@@ -329,7 +336,12 @@ class ScholarshipService:
         GeminiAnalysisDiagnostic | None,
     ]:
         if fetch_result.source.status == "error":
-            decision = EligibilityDecision(REVIEW, ("公告正文讀取失敗，暫不推播。",))
+            decision = EligibilityDecision(
+                REVIEW,
+                ("公告正文讀取失敗，暫不推播。",),
+                tuple(),
+                REVIEW_SOURCE_INCOMPLETE,
+            )
             return decision, UNKNOWN, NOT_APPLICABLE, "", None
 
         base_input = build_evaluator_input(fetch_result)
@@ -422,6 +434,8 @@ class ScholarshipService:
             application_status=application_status,
             eligibility_status=decision.status,
             eligibility_reason=decision.reason_text(),
+            manual_checks=decision.manual_checks,
+            review_kind=decision.review_kind,
             exclusion_reason=exclusion_reason,
         )
         return AuditRecord(

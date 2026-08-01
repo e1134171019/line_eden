@@ -14,6 +14,8 @@ def _record(
     category: str = "scholarship",
     text: str = "請於2026/09/30前完成申請。",
     application_status: str = "",
+    manual_checks: tuple[str, ...] = tuple(),
+    review_kind: str = "",
 ) -> SimpleNamespace:
     item = SimpleNamespace(
         eligibility_status=status,
@@ -25,6 +27,8 @@ def _record(
         notice_kind=notice_kind,
         category=category,
         application_status=application_status,
+        manual_checks=manual_checks,
+        review_kind=review_kind,
     )
     fetch_result = SimpleNamespace(eligibility_text=lambda: text)
     return SimpleNamespace(item=item, fetch_result=fetch_result)
@@ -51,8 +55,17 @@ def _result(**overrides: object) -> SimpleNamespace:
 def test_report_lists_current_eligible_and_review_items() -> None:
     result = _result(
         records=[
-            _record("eligible", "符合資格的獎學金"),
-            _record("review", "待確認公告", category="student_aid"),
+            _record(
+                "eligible",
+                "符合資格的獎學金",
+                manual_checks=("請自行確認：平均成績須達 85 分門檻。",),
+            ),
+            _record(
+                "review",
+                "待確認公告",
+                category="student_aid",
+                review_kind="source_incomplete",
+            ),
             _record("ineligible", "不符合公告", notice_kind="result"),
         ],
         eligible_count=1,
@@ -72,13 +85,15 @@ def test_report_lists_current_eligible_and_review_items() -> None:
     assert "申請型公告：2" in message
     assert "公告類別：獎學金 2／助學金 1" in message
     assert "申請狀態：開放 2" in message
-    assert "個人資格（未截止與期限未知）：符合 1／待確認 1／硬性不符 0" in message
+    assert "硬性資格（未截止與期限未知）：符合 1／待確認 1／不符 0" in message
+    assert "待確認原因：來源不完整 1" in message
     assert "非申請公告未列入個人資格：1" in message
     assert "來源網站：設定 7" in message
     assert "龍華科技大學：完整" in message
     assert "符合資格的獎學金" in message
-    assert "資格待確認公告：" in message
+    assert "硬性條件待確認公告：" in message
     assert "待確認公告" in message
+    assert "自行確認：平均成績須達 85 分門檻" in message
     assert "不符合公告" not in message
 
 
@@ -96,14 +111,20 @@ def test_expired_notice_is_not_counted_as_personal_ineligibility() -> None:
 
     message = build_report_message(result)
 
-    assert "個人資格（未截止與期限未知）：符合 0／待確認 0／硬性不符 0" in message
+    assert "硬性資格（未截止與期限未知）：符合 0／待確認 0／不符 0" in message
     assert "已截止未列為個人資格不符：1" in message
     assert "過期獎學金" not in message
 
 
 def test_report_lists_review_when_no_eligible_items() -> None:
     result = _result(
-        records=[_record("review", "待確認公告")],
+        records=[
+            _record(
+                "review",
+                "待確認公告",
+                review_kind="semantic_ambiguous",
+            )
+        ],
         review_count=1,
         gemini_calls=1,
     )
@@ -111,9 +132,9 @@ def test_report_lists_review_when_no_eligible_items() -> None:
     message = build_report_message(result)
 
     assert "本次稽核公告：1" in message
-    assert "資格待確認公告：" in message
+    assert "硬性條件待確認公告：" in message
     assert "待確認公告" in message
-    assert "目前沒有符合或待確認且仍可申請的公告。" not in message
+    assert "目前沒有硬性條件符合或待確認且仍可申請的公告。" not in message
     assert "LINE Messaging API 測試成功" not in message
 
 

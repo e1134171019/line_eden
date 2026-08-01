@@ -52,7 +52,7 @@
     "name": "成績至少九十五分",
     "title": "高成就獎學金",
     "detail": "申請人學業平均至少 95 分。",
-    "expected": "ineligible",
+    "expected": "review",
     "reason_contains": "95"
   },
   {
@@ -66,7 +66,7 @@
     "name": "班排名前百分之五",
     "title": "頂尖學生獎學金",
     "detail": "申請資格為班級排名前 5%。",
-    "expected": "ineligible",
+    "expected": "review",
     "reason_contains": "5%"
   },
   {

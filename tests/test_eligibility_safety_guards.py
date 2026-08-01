@@ -85,7 +85,7 @@ def test_general_college_qualification_context_is_eligible() -> None:
     assert decision.status == ELIGIBLE
 
 
-def test_missing_profile_grade_is_review_not_ineligible() -> None:
+def test_missing_profile_grade_is_only_manual_check() -> None:
     profile = replace(_profile(), average_grade=0)
     decision = EligibilityEvaluator().evaluate(
         _item("高成就獎學金"),
@@ -94,4 +94,5 @@ def test_missing_profile_grade_is_review_not_ineligible() -> None:
     )
 
     assert decision.status == REVIEW
-    assert "未填學業平均" in decision.reason_text()
+    assert "未填學業平均" not in decision.reason_text()
+    assert any("80" in item for item in decision.manual_checks)

@@ -26,8 +26,15 @@ MAX_REVIEW_ITEMS = 5
 MAX_SHADOW_CHANGED_ITEMS = 10
 MAX_SHADOW_ERROR_ITEMS = 8
 MAX_SOURCE_ERROR_ITEMS = 8
+MAX_MANUAL_CHECKS_PER_ITEM = 3
 MAX_DETAIL_TITLE_LENGTH = 34
 MAX_DETAIL_REASON_LENGTH = 82
+
+_REVIEW_LABELS = {
+    "source_incomplete": "來源不完整",
+    "profile_missing": "個人資料缺值",
+    "semantic_ambiguous": "語意待確認",
+}
 
 
 # 將七個 collector 群組的真實稽核與 shadow 統計整理成 LINE 報告。
@@ -75,7 +82,7 @@ def _pipeline_lines(result: AuditResult) -> list[str]:
     ]
 
 
-# 建立公告性質、獎助類別、申請期間與真正資格統計。
+# 建立公告性質、獎助類別、申請期間與硬性資格統計。
 def _scope_lines(records: list[AuditRecord]) -> list[str]:
     notice_counts = Counter(record.item.notice_kind for record in records)
     category_counts = Counter(record.item.category for record in records)
@@ -88,8 +95,13 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
     eligibility_counts = Counter(
         record.item.eligibility_status for record in actionable
     )
+    review_counts = Counter(
+        record.item.review_kind
+        for record in actionable
+        if record.item.eligibility_status == REVIEW and record.item.review_kind
+    )
     non_application = len(records) - notice_counts[APPLICATION]
-    return [
+    lines = [
         f"申請型公告：{len(applications)}",
         f"非申請型公告：{non_application}",
         (
@@ -108,31 +120,40 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
             f"期限未知 {period_counts['deadline_unknown']}"
         ),
         (
-            "個人資格（未截止與期限未知）："
+            "硬性資格（未截止與期限未知）："
             f"符合 {eligibility_counts[ELIGIBLE]}／"
             f"待確認 {eligibility_counts[REVIEW]}／"
-            f"硬性不符 {eligibility_counts[INELIGIBLE]}"
+            f"不符 {eligibility_counts[INELIGIBLE]}"
         ),
         f"已截止未列為個人資格不符：{period_counts['expired']}",
         f"非申請公告未列入個人資格：{non_application}",
     ]
+    if review_counts:
+        lines.append(
+            "待確認原因："
+            + "／".join(
+                f"{_REVIEW_LABELS.get(kind, kind)} {count}"
+                for kind, count in sorted(review_counts.items())
+            )
+        )
+    return lines
 
 
-# LINE 最優先列出未截止的明確符合與待確認公告。
+# LINE 最優先列出未截止的硬性條件符合與待確認公告。
 def _actionable_lines(result: AuditResult) -> list[str]:
     eligible = _records_with_status(result.records, ELIGIBLE)
     review = _records_with_status(result.records, REVIEW)
     if not eligible and not review:
-        return ["目前沒有符合或待確認且仍可申請的公告。"]
+        return ["目前沒有硬性條件符合或待確認且仍可申請的公告。"]
     lines: list[str] = []
     if eligible:
-        lines.append("明確符合公告：")
+        lines.append("硬性條件符合公告：")
         lines.extend(_item_lines(record) for record in eligible[:MAX_ELIGIBLE_ITEMS])
         remaining = len(eligible) - MAX_ELIGIBLE_ITEMS
         if remaining > 0:
-            lines.append(f"另有 {remaining} 筆明確符合公告未列出。")
+            lines.append(f"另有 {remaining} 筆硬性條件符合公告未列出。")
     if review:
-        lines.append("資格待確認公告：")
+        lines.append("硬性條件待確認公告：")
         lines.extend(_item_lines(record) for record in review[:MAX_REVIEW_ITEMS])
         remaining = len(review) - MAX_REVIEW_ITEMS
         if remaining > 0:
@@ -154,14 +175,24 @@ def _records_with_status(
     ]
 
 
-# 將一筆公告壓縮成 LINE 單行，保留理由與正文 URL。
+# 將一筆公告壓縮成 LINE 文字，保留硬性理由、人工確認與正文 URL。
 def _item_lines(record: AuditRecord) -> str:
     item = record.item
     title = _short(item.title, MAX_DETAIL_TITLE_LENGTH)
     reason = _short(item.eligibility_reason, MAX_DETAIL_REASON_LENGTH)
     url = getattr(item, "detail_url", "") or item.source_url
     published = item.published_date or "日期未知"
-    return f"- {published}｜{title}\n  {reason}\n  {url}"
+    lines = [f"- {published}｜{title}", f"  {reason}"]
+    if item.review_kind:
+        lines.append(f"  類型：{_REVIEW_LABELS.get(item.review_kind, item.review_kind)}")
+    if item.manual_checks:
+        checks = [
+            _short(_strip_manual_prefix(value), MAX_DETAIL_REASON_LENGTH)
+            for value in item.manual_checks[:MAX_MANUAL_CHECKS_PER_ITEM]
+        ]
+        lines.append("  自行確認：" + "；".join(checks))
+    lines.append(f"  {url}")
+    return "\n".join(lines)
 
 
 # 列出每筆 structured 分歧與抽取錯誤，避免摘要只剩數量。
@@ -207,6 +238,11 @@ def _error_line(record: AuditRecord) -> str:
 def _short(text: str, limit: int) -> str:
     normalized = " ".join(text.split())
     return normalized if len(normalized) <= limit else f"{normalized[: limit - 1]}…"
+
+
+def _strip_manual_prefix(value: str) -> str:
+    prefix = "請自行確認："
+    return value[len(prefix):].strip() if value.startswith(prefix) else value
 
 
 # 一般來源保留原摘要；TUN 38 項在 LINE 中壓縮為狀態統計與異常明細。
