@@ -284,14 +284,17 @@ def _extract_program_notices(
     matched_count = 0
     seen: set[str] = set()
     for node in soup.select(_CANDIDATE_SELECTORS):
-        context = _candidate_context(node)
-        if not context:
+        if _is_duplicate_container_candidate(node):
             continue
+        match_context = _candidate_context(node)
+        if not match_context:
+            continue
+        date_context = _candidate_date_context(node)
         for program in programs:
-            if not _matches_program(context, program):
+            if not _matches_program(match_context, program):
                 continue
             matched_count += 1
-            published_date = _extract_date(node, context)
+            published_date = _extract_date(node, date_context)
             if published_date is None:
                 continue
             source_url = _candidate_url(node, official_url)
@@ -311,11 +314,32 @@ def _extract_program_notices(
     return records, matched_count
 
 
+# 容器已有實質公告連結時，只分析連結節點，避免同一列及旁文重複誤命中。
+def _is_duplicate_container_candidate(node: Tag) -> bool:
+    if node.name == "a":
+        return False
+    link = node.find("a", href=True)
+    if not isinstance(link, Tag):
+        return False
+    title = " ".join(link.get_text(" ", strip=True).split())
+    return len(title) >= _MIN_SUBSTANTIVE_TITLE_LENGTH
+
+
+# 方案匹配優先使用實質連結標題，避免容器內其他方案名稱污染。
 def _candidate_context(node: Tag) -> str:
     if node.name == "a":
         title_text = " ".join(node.get_text(" ", strip=True).split())
         if len(title_text) >= _MIN_SUBSTANTIVE_TITLE_LENGTH:
             return title_text[:400]
+        container = node.find_parent(("article", "li", "tr")) or node.parent or node
+    else:
+        container = node.find_parent("article") or node
+    return " ".join(container.get_text(" ", strip=True).split())[:1200]
+
+
+# 日期仍使用公告列容器，避免標題優先後遺失兄弟節點中的日期。
+def _candidate_date_context(node: Tag) -> str:
+    if node.name == "a":
         container = node.find_parent(("article", "li", "tr")) or node.parent or node
     else:
         container = node.find_parent("article") or node
