@@ -9,6 +9,9 @@ def test_build_fetch_diagnostic_lines() -> None:
     source = ResourceDiagnostic(
         "source", "https://reurl.cc/a", "https://example.com/news",
         "text/html", 2048, "html", "success", 500, "",
+        extraction_policy_name="example-html",
+        extraction_policy_hash="1234567890abcdef",
+        selector_used="article",
     )
     success = ResourceDiagnostic(
         "attachment", "https://example.com/a.pdf", "https://cdn.example.com/a.pdf",
@@ -28,6 +31,7 @@ def test_build_fetch_diagnostic_lines() -> None:
     assert "application/pdf" in output
     assert "4.0 KiB" in output
     assert "不支援的附件格式" in output
+    assert "來源抽取：example-html | article | config 1234567890ab" in output
 
 
 # 驗證來源失敗時會顯示實際例外內容。

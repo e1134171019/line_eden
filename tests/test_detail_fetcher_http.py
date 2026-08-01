@@ -71,6 +71,10 @@ def test_fetch_html_and_attachment_evidence(monkeypatch: pytest.MonkeyPatch) -> 
     assert "電子工程相關科系" in result.text
     assert len(result.extracted_attachments) == 1
     assert result.extracted_attachments[0].content_role == CONTENT_RULES
+    assert result.source.extraction_policy_name == "lhu-html"
+    assert result.source.selector_used == ".mpgdetail"
+    assert result.source.extraction_fallback is False
+    assert len(result.extraction_policy_hash) == 64
 
 
 # 驗證短網址重新導向至 PDF 時會依最終內容類型解析。
@@ -83,9 +87,11 @@ def test_short_url_redirects_to_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_client(monkeypatch, handler)
     monkeypatch.setattr(fetcher_module, "extract_document_text", lambda *_: "大專學生可申請。")
 
-    text = _fetcher().fetch_text(_item("https://reurl.cc/example"))
+    result = _fetcher().fetch_with_diagnostics(_item("https://reurl.cc/example"))
 
-    assert text == "大專學生可申請。"
+    assert result.text == "大專學生可申請。"
+    assert result.source.extraction_policy_name == "document-pdf"
+    assert len(result.extraction_policy_hash) == 64
 
 
 # 驗證宣告檔案過大時在讀取前拒絕下載。

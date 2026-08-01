@@ -11,6 +11,7 @@ python main.py --audit 2>&1 |
 
 ```text
 來源診斷：success | html | text/html | 12.5 KiB | 文字 680 字
+來源抽取：lhu-html | .mpgdetail | config 7d4c2a1189e0
 附件診斷：發現 4，嘗試 3，成功 1，失敗 2
   [1] success | pdf | application/pdf | 320.4 KiB | 文字 1824 字
       請求：https://example.com/rules.pdf
@@ -29,5 +30,6 @@ python main.py --audit 2>&1 |
 - `請求`：公告原始附件網址。
 - `最終`：HTTP 重新導向後的實際網址，只在網址改變時顯示。
 - `文字`：實際送入資格判斷的擷取文字長度。
+- `來源抽取`：生效的 policy、實際 selector 與 effective config hash；若走通用推測會另標示 `heuristic fallback`。
 
 Audit 不傳送 LINE，也不修改 SQLite 的 baseline、notified 或資格狀態。

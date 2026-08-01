@@ -142,3 +142,47 @@ def test_detail_failure_is_not_sent(tmp_path: Path) -> None:
     assert result.notified_count == 0
     assert result.review_count == 1
     assert sent_messages == []
+
+
+# 同一公告只有實質正文變更才重開評估與通知，純空白調整不重送。
+def test_content_revision_re_evaluates_and_notifies_again(tmp_path: Path) -> None:
+    item = _item(1, "能源工程學生獎學金")
+    details = {
+        item.source_url: "大專在校生，電子工程相關科系可申請。",
+    }
+    sent_messages: list[str] = []
+    service, _ = _service(tmp_path, [item], details, sent_messages)
+
+    first = service.run(dry_run=False)
+    details[item.source_url] = "  大專在校生，電子工程相關科系可申請。  "
+    formatting_only = service.run(dry_run=False)
+    details[item.source_url] = "大專在校生，電子工程相關科系可申請，學業平均須達 80 分。"
+    changed = service.run(dry_run=False)
+
+    assert first.notified_count == 1
+    assert formatting_only.notified_count == 0
+    assert changed.notified_count == 1
+    assert len(sent_messages) == 2
+
+
+# 已通知的舊資料第一次建立 revision 基準時不得再次推播。
+def test_existing_notification_initializes_revision_without_resending(
+    tmp_path: Path,
+) -> None:
+    item = _item(1, "能源工程學生獎學金")
+    details = {item.source_url: "大專在校生，電子工程相關科系可申請。"}
+    sent_messages: list[str] = []
+    service, repository = _service(tmp_path, [item], details, sent_messages)
+    repository.discover([item])
+    repository.mark_eligibility(
+        item.content_hash,
+        "eligible",
+        "既有符合結果",
+        _profile().fingerprint(),
+    )
+    repository.mark_notified([item.content_hash])
+
+    result = service.run(dry_run=False)
+
+    assert result.notified_count == 0
+    assert sent_messages == []

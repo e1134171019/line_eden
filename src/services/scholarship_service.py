@@ -3,8 +3,8 @@
 from dataclasses import dataclass, replace
 from typing import Callable, cast
 
-from src.collectors.announcement_detail_fetcher import AnnouncementDetailFetcher
 from src.collectors.base_collector import BaseCollector
+from src.collectors.detail_fetcher import DetailFetcher
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
     ResourceDiagnostic,
@@ -32,7 +32,11 @@ from src.models.evaluator_input import (
     EvaluatorInput,
     GeminiRuleScope,
 )
-from src.models.scholarship import Scholarship
+from src.models.announcement_revision import (
+    AnnouncementRevision,
+    RevisionObservationStatus,
+)
+from src.models.scholarship import Scholarship, build_announcement_id
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
 from src.services.gemini_fallback_service import (
@@ -104,7 +108,7 @@ class ScholarshipService:
         notifier: Callable[[str], None],
         include_keywords: tuple[str, ...] | None,
         summary_batch_size: int,
-        detail_fetcher: AnnouncementDetailFetcher | None = None,
+        detail_fetcher: DetailFetcher | None = None,
         evaluator: EligibilityEvaluator | None = None,
         profile: StudentProfile | None = None,
         notify_review_items: bool = False,
@@ -127,7 +131,7 @@ class ScholarshipService:
 
     def run(self, dry_run: bool) -> ServiceResult:
         collected = self._collect_and_discover()
-        pending_items, counts = self._prepare_notifiable_items()
+        pending_items, counts = self._prepare_notifiable_items(collected)
         if dry_run:
             return self._build_dry_run_result(collected, pending_items, counts)
         return self._run_live_mode(collected, pending_items, counts)
@@ -168,8 +172,8 @@ class ScholarshipService:
 
     def initialize_baseline(self) -> ServiceResult:
         collected = self._collect_and_discover()
-        hashes = [item.content_hash for item in collected]
-        baseline_count = self.repository.mark_baseline(hashes)
+        announcement_ids = [self._announcement_id(item) for item in collected]
+        baseline_count = self.repository.mark_baseline_announcements(announcement_ids)
         pending_items = self.repository.list_pending()
         return ServiceResult(
             collected,
@@ -195,13 +199,14 @@ class ScholarshipService:
 
     def _prepare_notifiable_items(
         self,
+        collected: list[Scholarship],
     ) -> tuple[list[Scholarship], tuple[int, int, int]]:
         if not self._personalization_enabled():
             pending = self.repository.list_pending()
             return pending, (len(pending), 0, 0)
         assert self.profile is not None
         profile_hash = self.profile.fingerprint()
-        self._evaluate_pending(profile_hash)
+        self._evaluate_pending(profile_hash, collected)
         items = self.repository.list_notifiable(profile_hash, self.notify_review_items)
         counts = self._eligibility_counts(profile_hash)
         return items, counts
@@ -209,16 +214,64 @@ class ScholarshipService:
     def _personalization_enabled(self) -> bool:
         return all((self.detail_fetcher, self.evaluator, self.profile))
 
-    def _evaluate_pending(self, profile_hash: str) -> None:
-        for item in self.repository.list_for_evaluation(profile_hash):
-            decision, notice_kind, _, _ = self._evaluate_item(item)
-            self.repository.mark_eligibility(
-                item.content_hash,
-                decision.status,
-                decision.reason_text(),
-                profile_hash,
-                notice_kind,
+    def _evaluate_pending(
+        self,
+        profile_hash: str,
+        collected: list[Scholarship],
+    ) -> None:
+        pending_ids = {
+            self._announcement_id(item)
+            for item in self.repository.list_for_evaluation(profile_hash)
+        }
+        collected_ids = [self._announcement_id(item) for item in collected]
+        candidates = self.repository.list_revision_candidates(collected_ids)
+        seen_ids: set[str] = set()
+        for item in candidates:
+            announcement_id = self._announcement_id(item)
+            if announcement_id in seen_ids:
+                continue
+            seen_ids.add(announcement_id)
+            fetch_result = self._fetch_audit_result(item)
+            if fetch_result.source.status == "error":
+                if announcement_id in pending_ids:
+                    self._save_evaluation(item, fetch_result, profile_hash)
+                continue
+            observation = self.repository.observe_revision(
+                AnnouncementRevision(
+                    announcement_id=announcement_id,
+                    revision_hash=fetch_result.revision_hash,
+                    extraction_policy_hash=fetch_result.extraction_policy_hash,
+                ),
             )
+            should_evaluate = (
+                announcement_id in pending_ids
+                or observation.status is RevisionObservationStatus.CHANGED
+            )
+            if should_evaluate:
+                self._save_evaluation(item, fetch_result, profile_hash)
+
+    # 使用同一份已擷取內容完成評估，避免 revision 探測後重複下載。
+    def _save_evaluation(
+        self,
+        item: Scholarship,
+        fetch_result: DetailFetchResult,
+        profile_hash: str,
+    ) -> None:
+        decision, notice_kind, _, _ = self._evaluate_fetch_result(item, fetch_result)
+        self.repository.mark_eligibility(
+            item.content_hash,
+            decision.status,
+            decision.reason_text(),
+            profile_hash,
+            notice_kind,
+        )
+
+    # 兼容外部直接建立但未填 announcement_id 的 Scholarship。
+    def _announcement_id(self, item: Scholarship) -> str:
+        return item.announcement_id or build_announcement_id(
+            item.source,
+            item.source_url,
+        )
 
     def _evaluate_item(
         self,

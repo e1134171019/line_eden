@@ -6,6 +6,7 @@ from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, Resource
 # 將來源與附件擷取診斷整理為終端機文字行。
 def build_fetch_diagnostic_lines(result: DetailFetchResult) -> list[str]:
     lines = [f"  來源診斷：{_resource_summary(result.source)}"]
+    lines.extend(_extraction_lines(result.source))
     lines.extend(_redirect_lines(result.source, "來源"))
     if result.source.error:
         lines.append(f"  來源錯誤：{result.source.error}")
@@ -13,6 +14,19 @@ def build_fetch_diagnostic_lines(result: DetailFetchResult) -> list[str]:
     for index, item in enumerate(result.attachments, start=1):
         lines.extend(_attachment_lines(index, item))
     return lines
+
+
+# 顯示本次實際 selector、fallback 與 effective config hash。
+def _extraction_lines(item: ResourceDiagnostic) -> list[str]:
+    if not item.extraction_policy_name:
+        return []
+    selector = item.selector_used or "document-parser"
+    fallback = " | heuristic fallback" if item.extraction_fallback else ""
+    policy_hash = item.extraction_policy_hash[:12] or "unknown"
+    return [
+        f"  來源抽取：{item.extraction_policy_name} | {selector}{fallback} "
+        f"| config {policy_hash}"
+    ]
 
 
 # 建立附件發現、嘗試、成功與失敗統計。

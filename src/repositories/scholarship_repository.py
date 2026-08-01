@@ -4,9 +4,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
-from src.models.scholarship import Scholarship
+from src.models.announcement_revision import (
+    AnnouncementRevision,
+    RevisionObservation,
+    RevisionObservationStatus,
+)
+from src.models.scholarship import Scholarship, build_announcement_id
 
 SCHEMA_COLUMNS = {
+    "announcement_id": "TEXT",
     "category": "TEXT NOT NULL DEFAULT 'other'",
     "notice_kind": "TEXT NOT NULL DEFAULT 'unknown'",
     "discovered_at": "TEXT",
@@ -16,6 +22,9 @@ SCHEMA_COLUMNS = {
     "eligibility_reason": "TEXT",
     "profile_hash": "TEXT",
     "evaluated_at": "TEXT",
+    "revision_hash": "TEXT",
+    "extraction_policy_hash": "TEXT",
+    "revision_observed_at": "TEXT",
 }
 
 
@@ -38,6 +47,7 @@ class ScholarshipRepository:
             title TEXT NOT NULL,
             published_date TEXT NOT NULL,
             source_url TEXT NOT NULL,
+            announcement_id TEXT NOT NULL,
             category TEXT NOT NULL DEFAULT 'other',
             notice_kind TEXT NOT NULL DEFAULT 'unknown',
             content_hash TEXT NOT NULL UNIQUE,
@@ -47,7 +57,10 @@ class ScholarshipRepository:
             eligibility_status TEXT,
             eligibility_reason TEXT,
             profile_hash TEXT,
-            evaluated_at TEXT
+            evaluated_at TEXT,
+            revision_hash TEXT,
+            extraction_policy_hash TEXT,
+            revision_observed_at TEXT
         )
         """
         with sqlite3.connect(self.db_path) as conn:
@@ -62,6 +75,11 @@ class ScholarshipRepository:
                 if name not in existing:
                     conn.execute(f"ALTER TABLE scholarships ADD COLUMN {name} {definition}")
             self._fill_discovered_at(conn)
+            self._fill_announcement_ids(conn)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scholarships_announcement_id "
+                "ON scholarships(announcement_id)"
+            )
             conn.commit()
 
     # 讀取目前資料表欄位名稱。
@@ -75,6 +93,22 @@ class ScholarshipRepository:
             "UPDATE scholarships SET discovered_at = ? WHERE discovered_at IS NULL",
             [self._now_iso()],
         )
+
+    # 為既有資料補上不受標題與日期影響的穩定公告識別碼。
+    def _fill_announcement_ids(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT id, source, source_url FROM scholarships "
+            "WHERE announcement_id IS NULL OR announcement_id = ''"
+        ).fetchall()
+        updates = [
+            (build_announcement_id(row[1], row[2]), row[0])
+            for row in rows
+        ]
+        if updates:
+            conn.executemany(
+                "UPDATE scholarships SET announcement_id = ? WHERE id = ?",
+                updates,
+            )
 
     # 產生 UTC ISO 時間字串。
     def _now_iso(self) -> str:
@@ -100,17 +134,52 @@ class ScholarshipRepository:
     def discover(self, scholarships: list[Scholarship]) -> int:
         if not scholarships:
             return 0
-        rows = [self._discovery_row(item) for item in scholarships]
-        query = """
-        INSERT OR IGNORE INTO scholarships (
-            source, title, published_date, source_url, category, notice_kind,
-            content_hash, discovered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """
+        inserted_count = 0
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.executemany(query, rows)
+            for item in scholarships:
+                announcement_id = self._announcement_id(item)
+                existing = conn.execute(
+                    "SELECT 1 FROM scholarships WHERE announcement_id = ? LIMIT 1",
+                    [announcement_id],
+                ).fetchone()
+                if existing:
+                    self._refresh_listing_metadata(conn, item, announcement_id)
+                    continue
+                cursor = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO scholarships (
+                        source, title, published_date, source_url, announcement_id,
+                        category, notice_kind, content_hash, discovered_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    self._discovery_row(item),
+                )
+                inserted_count += max(cursor.rowcount, 0)
             conn.commit()
-        return max(cursor.rowcount, 0)
+        return inserted_count
+
+    # 更新同一公告在 listing 上可變的顯示欄位，但保留既有 row handle 與狀態。
+    def _refresh_listing_metadata(
+        self,
+        conn: sqlite3.Connection,
+        item: Scholarship,
+        announcement_id: str,
+    ) -> None:
+        conn.execute(
+            """
+            UPDATE scholarships
+            SET source = ?, title = ?, published_date = ?, source_url = ?, category = ?
+            WHERE announcement_id = ?
+            """,
+            [
+                item.source,
+                item.title,
+                item.published_date,
+                item.source_url,
+                item.category,
+                announcement_id,
+            ],
+        )
 
     # 建立單筆公告寫入資料。
     def _discovery_row(self, item: Scholarship) -> tuple[str, ...]:
@@ -119,10 +188,18 @@ class ScholarshipRepository:
             item.title,
             item.published_date,
             item.source_url,
+            self._announcement_id(item),
             item.category,
             item.notice_kind,
             item.content_hash,
             self._now_iso(),
+        )
+
+    # 相容尚未帶 announcement_id 的舊測試或外部呼叫端。
+    def _announcement_id(self, item: Scholarship) -> str:
+        return item.announcement_id or build_announcement_id(
+            item.source,
+            item.source_url,
         )
 
     # 取出目前所有尚未基準化或通知的公告。
@@ -137,6 +214,24 @@ class ScholarshipRepository:
             "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ?)"
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
+
+    # 取出本輪仍出現在來源 listing、且未列為歷史基準的 revision 候選。
+    def list_revision_candidates(
+        self,
+        announcement_ids: list[str],
+    ) -> list[Scholarship]:
+        unique_ids = list(dict.fromkeys(value for value in announcement_ids if value))
+        if not unique_ids:
+            return []
+        placeholders = ",".join(["?"] * len(unique_ids))
+        condition = (
+            "baseline_at IS NULL "
+            f"AND announcement_id IN ({placeholders})"
+        )
+        return self._query_scholarships(
+            self._select_query(condition),
+            unique_ids,
+        )
 
     # 取出符合推播狀態且屬於申請型的公告。
     def list_notifiable(
@@ -158,10 +253,16 @@ class ScholarshipRepository:
     def _select_query(self, condition: str) -> str:
         return f"""
         SELECT source, title, published_date, source_url, category, content_hash,
+               COALESCE(announcement_id, ''),
                COALESCE(notice_kind, 'unknown'),
                COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, '')
         FROM scholarships
         WHERE {condition}
+          AND id = (
+              SELECT MIN(canonical.id)
+              FROM scholarships AS canonical
+              WHERE canonical.announcement_id = scholarships.announcement_id
+          )
         ORDER BY published_date DESC, id DESC
         """
 
@@ -184,9 +285,89 @@ class ScholarshipRepository:
             source_url=row[3],
             category=row[4],
             content_hash=row[5],
-            notice_kind=row[6],
-            eligibility_status=row[7],
-            eligibility_reason=row[8],
+            announcement_id=row[6],
+            notice_kind=row[7],
+            eligibility_status=row[8],
+            eligibility_reason=row[9],
+        )
+
+    # 保存正文 revision；內容變更時清除通知與評估狀態，交由服務重新判斷。
+    def observe_revision(
+        self,
+        revision: AnnouncementRevision,
+        reset_on_change: bool = True,
+    ) -> RevisionObservation:
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(revision_hash, ''), baseline_at
+                FROM scholarships
+                WHERE announcement_id = ?
+                ORDER BY id ASC
+                LIMIT 1
+                """,
+                [revision.announcement_id],
+            ).fetchone()
+            if row is None:
+                return RevisionObservation(RevisionObservationStatus.NOT_FOUND)
+            previous_hash = str(row[0])
+            status = _revision_observation_status(
+                previous_hash,
+                revision.revision_hash,
+            )
+            should_reset = (
+                reset_on_change
+                and status is RevisionObservationStatus.CHANGED
+                and row[1] is None
+            )
+            if should_reset:
+                self._save_changed_revision(
+                    conn,
+                    revision.announcement_id,
+                    revision.revision_hash,
+                    revision.extraction_policy_hash,
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE scholarships
+                    SET revision_hash = ?, extraction_policy_hash = ?,
+                        revision_observed_at = ?
+                    WHERE announcement_id = ?
+                    """,
+                    [
+                        revision.revision_hash,
+                        revision.extraction_policy_hash,
+                        self._now_iso(),
+                        revision.announcement_id,
+                    ],
+                )
+            conn.commit()
+        return RevisionObservation(status, previous_hash)
+
+    # 原子保存內容變更並重開此公告的評估與通知生命週期。
+    def _save_changed_revision(
+        self,
+        conn: sqlite3.Connection,
+        announcement_id: str,
+        revision_hash: str,
+        extraction_policy_hash: str,
+    ) -> None:
+        conn.execute(
+            """
+            UPDATE scholarships
+            SET revision_hash = ?, extraction_policy_hash = ?,
+                revision_observed_at = ?, notified_at = NULL,
+                notice_kind = 'unknown', eligibility_status = NULL,
+                eligibility_reason = NULL, profile_hash = NULL, evaluated_at = NULL
+            WHERE announcement_id = ? AND baseline_at IS NULL
+            """,
+            [
+                revision_hash,
+                extraction_policy_hash,
+                self._now_iso(),
+                announcement_id,
+            ],
         )
 
     # 保存公告用途與個人資格判斷。
@@ -213,7 +394,7 @@ class ScholarshipRepository:
     # 統計指定背景設定下的資格判斷數量。
     def count_eligibility(self, profile_hash: str, status: str) -> int:
         query = """
-        SELECT COUNT(1) FROM scholarships
+        SELECT COUNT(DISTINCT announcement_id) FROM scholarships
         WHERE profile_hash = ? AND eligibility_status = ?
           AND notified_at IS NULL AND baseline_at IS NULL
         """
@@ -224,6 +405,29 @@ class ScholarshipRepository:
     # 將指定公告標記為歷史基準，不再推播。
     def mark_baseline(self, content_hashes: list[str]) -> int:
         return self._mark_time("baseline_at", content_hashes)
+
+    # 以穩定 identity 將歷史公告基準化，並以公告數而非 legacy row 數計數。
+    def mark_baseline_announcements(self, announcement_ids: list[str]) -> int:
+        unique_ids = list(dict.fromkeys(value for value in announcement_ids if value))
+        if not unique_ids:
+            return 0
+        placeholders = ",".join(["?"] * len(unique_ids))
+        count_query = f"""
+        SELECT COUNT(DISTINCT announcement_id)
+        FROM scholarships
+        WHERE baseline_at IS NULL
+          AND announcement_id IN ({placeholders})
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(count_query, unique_ids).fetchone()
+            conn.execute(
+                "UPDATE scholarships SET baseline_at = ? "
+                f"WHERE announcement_id IN ({placeholders}) "
+                "AND baseline_at IS NULL",
+                [self._now_iso(), *unique_ids],
+            )
+            conn.commit()
+        return int(row[0]) if row else 0
 
     # 將指定公告標記為已通知。
     def mark_notified(self, content_hashes: list[str]) -> int:
@@ -242,3 +446,15 @@ class ScholarshipRepository:
             cursor = conn.execute(query, [self._now_iso(), *content_hashes])
             conn.commit()
         return max(cursor.rowcount, 0)
+
+
+def _revision_observation_status(
+    previous_hash: str,
+    revision_hash: str,
+) -> RevisionObservationStatus:
+    """比較舊、新 revision hash，不依賴 repository 狀態。"""
+    if not previous_hash:
+        return RevisionObservationStatus.INITIALIZED
+    if previous_hash == revision_hash:
+        return RevisionObservationStatus.UNCHANGED
+    return RevisionObservationStatus.CHANGED

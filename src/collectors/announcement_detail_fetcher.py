@@ -5,6 +5,8 @@ import re
 
 import httpx
 
+from config import DOCUMENT_TEXT_EXTRACTION_VERSION
+
 from src.collectors.http_client import DetailSafeHttpClient
 from src.diagnostics.detail_fetch_diagnostics import (
     DetailFetchResult,
@@ -18,7 +20,10 @@ from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_UNKNOWN,
 )
 from src.evaluators.attachment_requirement import detect_attachment_requirement
-from src.extractors.announcement_content_extractor import extract_announcement_text
+from src.extractors.announcement_content_extractor import (
+    extract_announcement_content,
+    extract_announcement_text,
+)
 from src.extractors.announcement_relevance import content_matches_announcement
 from src.extractors.attachment_content_classifier import (
     CONTENT_RULES,
@@ -29,6 +34,7 @@ from src.extractors.attachment_link_extractor import (
     extract_attachment_inventory,
 )
 from src.extractors.document_text_extractor import detect_document_kind, extract_document_text
+from src.models.detail_extraction import build_named_extraction_hash
 from src.models.scholarship import Scholarship
 
 
@@ -90,7 +96,21 @@ class AnnouncementDetailFetcher:
         title: str,
     ) -> DetailFetchResult:
         text = self._document_text(resource)
-        source = self._success_diagnostic("source", requested_url, resource, kind, text)
+        policy_name = f"document-{kind}"
+        policy_hash = build_named_extraction_hash(
+            policy_name,
+            DOCUMENT_TEXT_EXTRACTION_VERSION,
+            (f"max_pdf_pages={self.max_pdf_pages}",),
+        )
+        source = self._success_diagnostic(
+            "source",
+            requested_url,
+            resource,
+            kind,
+            text,
+            extraction_policy_name=policy_name,
+            extraction_policy_hash=policy_hash,
+        )
         if not content_matches_announcement(title, text):
             return self._content_mismatch_result(source, text)
         return DetailFetchResult(
@@ -111,7 +131,8 @@ class AnnouncementDetailFetcher:
         requested_url: str,
     ) -> DetailFetchResult:
         html = self._decode_html(resource)
-        body = extract_announcement_text(html, title, resource.url)
+        extracted_body = extract_announcement_content(html, title, resource.url)
+        body = extracted_body.text
         inventory = extract_attachment_inventory(
             html,
             resource.url,
@@ -138,7 +159,17 @@ class AnnouncementDetailFetcher:
             if item.status == "success" and item.content_role == CONTENT_RULES
         ]
         rules_status = self._determine_rules_status(body, inventory, extracted_attachments)
-        source = self._success_diagnostic("source", requested_url, resource, "html", body)
+        source = self._success_diagnostic(
+            "source",
+            requested_url,
+            resource,
+            "html",
+            body,
+            extraction_policy_name=extracted_body.policy_name,
+            extraction_policy_hash=extracted_body.policy_hash,
+            selector_used=extracted_body.selector_used,
+            extraction_fallback=extracted_body.used_fallback,
+        )
         if not content_matches_announcement(title, body, rules_texts):
             return self._content_mismatch_result(
                 source,
@@ -279,6 +310,10 @@ class AnnouncementDetailFetcher:
         text: str,
         attachment_role: str = "unknown",
         attachment_label: str = "",
+        extraction_policy_name: str = "",
+        extraction_policy_hash: str = "",
+        selector_used: str = "",
+        extraction_fallback: bool = False,
     ) -> ResourceDiagnostic:
         return ResourceDiagnostic(
             role,
@@ -293,6 +328,10 @@ class AnnouncementDetailFetcher:
             attachment_role,
             attachment_label,
             resource.ssl_compatibility_fallback,
+            extraction_policy_name,
+            extraction_policy_hash,
+            selector_used,
+            extraction_fallback,
         )
 
     def _error_diagnostic(

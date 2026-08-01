@@ -2,6 +2,12 @@
 
 from dataclasses import dataclass
 
+from src.models.announcement_revision import (
+    RevisionAttachment,
+    RevisionContent,
+    build_revision_hash,
+)
+
 RULES_STATUS_UNKNOWN = "unknown"
 RULES_STATUS_NOT_REQUIRED = "not_required"
 RULES_STATUS_RESOLVED = "resolved"
@@ -26,6 +32,10 @@ class ResourceDiagnostic:
     attachment_role: str = "unknown"
     attachment_label: str = ""
     ssl_compatibility_fallback: bool = False
+    extraction_policy_name: str = ""
+    extraction_policy_hash: str = ""
+    selector_used: str = ""
+    extraction_fallback: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,6 +82,29 @@ class DetailFetchResult:
             attachments=self.extracted_attachments,
             rules_status=self.rules_status,
         )
+
+    @property
+    def revision_hash(self) -> str:
+        """回傳不受純排版與附件順序影響的內容 revision hash。"""
+        revision_content = RevisionContent(
+            main_text=self.content.main_text,
+            attachments=tuple(
+                RevisionAttachment(
+                    content_role=item.content_role,
+                    document_kind=item.document_kind,
+                    status=item.status,
+                    text=item.text,
+                )
+                for item in self.content.attachments
+            ),
+            rules_status=self.content.rules_status,
+        )
+        return build_revision_hash(revision_content)
+
+    @property
+    def extraction_policy_hash(self) -> str:
+        """回傳本次實際生效的抽取設定 hash。"""
+        return self.source.extraction_policy_hash
 
     def eligibility_text(self) -> str:
         """從結構化正文與已確認的主要辦法建立 legacy 判斷文字。"""

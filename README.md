@@ -1,6 +1,6 @@
 # Scholarship Agent
 
-目前包含六個階段：
+目前包含七個階段：
 
 1. LINE Messaging API 推播。
 2. 龍華獎學金公告蒐集、SQLite 去重、歷史基準與 dry-run。
@@ -8,6 +8,7 @@
 4. 先區分申請型、法規型、結果型與資訊型，只推播申請型且明確適合的公告。
 5. 追蹤短網址並解析 PDF、DOCX 附件，降低資格只寫在附件造成的漏報。
 6. 明確啟用時，只把本機無法解析的掃描型 PDF 少量頁面交給 Gemini 抽取資格欄位。
+7. 以穩定公告 ID 追蹤同一網址，正文或附件實質改版時重新評估。
 
 ## 核心流程
 
@@ -29,11 +30,24 @@
 
 公告正文擷取會排除頁首、導覽列、活動橫幅、側欄、表單與頁尾，避免「電子郵件」、「電子工程系導覽」及共用活動圖片說明污染資格判斷。
 
+同一來源網址的標題、日期或 query 順序調整不會建立重複公告。系統另以正文、附件內容與辦法解析狀態建立 `revision_hash`；純空白與附件順序變化不算改版，實質內容改變才會清除舊評估並重新判斷。既有 SQLite 第一次升級只建立 revision 基準，不會重送舊通知。
+
 附件成功解析後，網頁中的「申請資格請參閱附件」不再自動造成 `review`。附件無法下載、格式不支援、超過安全上限或沒有可擷取文字時，仍採保守不推播。
 
 Gemini 不接收 `profile.json`、LINE Token 或 User ID。模型只抽取文件條件，最後的 `eligible`、`review`、`ineligible` 仍由本機規則決定。
 
-`review` 與 `ineligible` 仍會保存於 SQLite，避免每次重複分析。個人背景改變時，系統會以背景指紋重新評估尚未通知的公告。
+`review` 與 `ineligible` 仍會保存於 SQLite。每輪只比較仍出現在來源列表的內容 revision，內容未改時不重複資格分析；個人背景改變時，系統會以背景指紋重新評估尚未通知的公告。
+
+## 來源正文抽取規則
+
+`config.py` 的 `DETAIL_EXTRACTION_POLICY_RULES` 可為特定 hostname 設定版本化的 CSS selectors。每個 `DetailExtractionPolicy` 包含：
+
+- `include_selectors`：正文候選區域。
+- `subtractive_selectors`：擷取前排除的導覽、廣告或頁尾區域。
+- `mode`：`AUTO`、`PREFER_SELECTORS` 或找不到指定區域就失敗關閉的 `STRICT_SELECTORS`。
+- `version` 與 `min_content_length`：納入 effective config hash，方便 audit 追查實際規則。
+
+Audit 會顯示 policy 名稱、實際 selector、是否使用 heuristic fallback，以及 config hash。新增來源時應優先加入專屬 policy 與 HTML fixture 測試，不應放寬全域 selector 來遷就單一網站。
 
 ## Windows PowerShell 安裝
 
@@ -249,6 +263,7 @@ python main.py --use-gemini
 - 每則摘要最多列出 `LINE_SUMMARY_BATCH_SIZE` 筆。
 - 成功傳送後才寫入該批公告的 `notified_at`。
 - 發送失敗時保留 pending，供下次重試。
+- 已通知公告若正文或附件內容實質改版，會重新評估；只有改版後仍明確 `eligible` 才再次推播。
 
 ## 公告用途分類
 

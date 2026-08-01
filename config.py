@@ -5,6 +5,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.models.detail_extraction import (
+    DetailExtractionPolicy,
+    ExtractionMode,
+    SourceExtractionPolicyRule,
+)
+
 BASE_DIR = Path(__file__).parent
 ENV_PATH = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
@@ -65,6 +71,44 @@ MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 40
+DETAIL_MIN_CONTENT_LENGTH = 20
+DETAIL_CONTENT_SELECTORS = (
+    "article",
+    "main",
+    "[role='main']",
+    ".mpgdetail",
+    ".mcont",
+    ".module-detail",
+    ".article-content",
+    ".news-content",
+    ".content-body",
+)
+DETAIL_SUBTRACTIVE_SELECTORS = (
+    "script, style, noscript, header, nav, footer, aside, form, "
+    ".header, .footer, .navbar, .menu, .sidebar, .breadcrumb, "
+    ".banner, .slider, .carousel, .bx-wrapper, .swiper, .owl-carousel, "
+    ".module-banner",
+)
+DEFAULT_DETAIL_EXTRACTION_POLICY = DetailExtractionPolicy(
+    name="default-html",
+    version="v1",
+    mode=ExtractionMode.AUTO,
+    include_selectors=DETAIL_CONTENT_SELECTORS,
+    subtractive_selectors=DETAIL_SUBTRACTIVE_SELECTORS,
+    min_content_length=DETAIL_MIN_CONTENT_LENGTH,
+)
+LHU_DETAIL_EXTRACTION_POLICY = DetailExtractionPolicy(
+    name="lhu-html",
+    version="v1",
+    mode=ExtractionMode.PREFER_SELECTORS,
+    include_selectors=(".mpgdetail", ".module-detail", ".mcont"),
+    subtractive_selectors=DETAIL_SUBTRACTIVE_SELECTORS,
+    min_content_length=DETAIL_MIN_CONTENT_LENGTH,
+)
+DETAIL_EXTRACTION_POLICY_RULES = (
+    SourceExtractionPolicyRule("lhu.edu.tw", LHU_DETAIL_EXTRACTION_POLICY),
+)
+DOCUMENT_TEXT_EXTRACTION_VERSION = "document-text-v1"
 ELIGIBILITY_RULE_VERSION = "eligibility-v8"
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
 GEMINI_MAX_CALLS_PER_RUN = _env_int("GEMINI_MAX_CALLS_PER_RUN", 50)

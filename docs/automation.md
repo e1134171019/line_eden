@@ -1,6 +1,6 @@
 # Windows 自動排程
 
-Scholarship Agent 可由 Windows 工作排程器每天執行正式模式。排程只處理尚未基準化、尚未通知的新公告；`review` 與 `ineligible` 不會推播。
+Scholarship Agent 可由 Windows 工作排程器每天執行正式模式。排程處理尚未基準化的新公告，也會比較仍在來源列表中的公告 revision。`review` 與 `ineligible` 不會推播；已通知公告只有在正文或附件實質改版、重新評估後仍為 `eligible` 時才會再次推播。
 
 ## 自動化組成
 
