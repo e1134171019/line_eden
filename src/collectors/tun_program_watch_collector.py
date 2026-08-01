@@ -36,6 +36,8 @@ _ROC_DATE = re.compile(
 )
 _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
 _FETCH_ATTEMPTS = 3
+_MIN_ALIAS_MATCH_LENGTH = 4
+_MIN_SUBSTANTIVE_TITLE_LENGTH = 6
 
 
 class TunProgramWatchCollector(BaseCollector):
@@ -311,6 +313,9 @@ def _extract_program_notices(
 
 def _candidate_context(node: Tag) -> str:
     if node.name == "a":
+        title_text = " ".join(node.get_text(" ", strip=True).split())
+        if len(title_text) >= _MIN_SUBSTANTIVE_TITLE_LENGTH:
+            return title_text[:400]
         container = node.find_parent(("article", "li", "tr")) or node.parent or node
     else:
         container = node.find_parent("article") or node
@@ -336,7 +341,11 @@ def _candidate_url(node: Tag, official_url: str) -> str:
 
 def _matches_program(text: str, program: ScholarshipProgramWatch) -> bool:
     normalized = _normalize(text)
-    return any(_normalize(alias) in normalized for alias in program.aliases)
+    aliases = (_normalize(alias) for alias in program.aliases)
+    return any(
+        len(alias) >= _MIN_ALIAS_MATCH_LENGTH and alias in normalized
+        for alias in aliases
+    )
 
 
 def _normalize(text: str) -> str:
