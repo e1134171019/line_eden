@@ -58,6 +58,7 @@ from src.services.gemini_fallback_service import (
     GeminiUsageLimiter,
 )
 from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
+from src.services.revision_aware_scholarship_service import RevisionAwareScholarshipService
 from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
 
 Notifier = Callable[[str], None]
@@ -95,7 +96,6 @@ def parse_args(argv: list[str] | None = None) -> ParsedArgs:
 
 
 def resolve_run_mode(args: ParsedArgs) -> RunMode:
-    """將命令列旗標解析成單一明確模式。"""
     if args.initialize_baseline:
         return RunMode.INITIALIZE_BASELINE
     if args.audit:
@@ -110,7 +110,6 @@ def _discard_notification(_: str) -> None:
 
 
 def build_notifier(mode: RunMode) -> Notifier:
-    """只有 LIVE／DAILY 模式能取得真正的 LINE notifier。"""
     if not mode.sends_scholarship_notifications:
         return _discard_notification
 
@@ -131,13 +130,14 @@ def build_service(
     mode: RunMode = RunMode.LIVE,
     use_gemini: bool = False,
 ) -> ScholarshipService:
-    """建立具備學生背景、正文擷取與資格判斷的完整服務。"""
+    """建立具備 revision、正文擷取與硬性資格判斷的完整服務。"""
+
     if not mode.requires_profile:
         raise ValueError("基準模式必須使用 build_baseline_service()")
 
     profile = load_student_profile(PROFILE_PATH)
     gemini_fallback, gemini_text_analysis = _build_gemini_services(use_gemini)
-    return ScholarshipService(
+    return RevisionAwareScholarshipService(
         _build_collector(mode),
         _build_repository(),
         build_notifier(mode),
@@ -154,7 +154,6 @@ def build_service(
 
 
 def build_baseline_service() -> BaselineService:
-    """建立不含 profile、evaluator、Gemini 與 notifier 的基準服務。"""
     return BaselineService(
         _build_collector(RunMode.INITIALIZE_BASELINE),
         _build_repository(),
@@ -162,14 +161,12 @@ def build_baseline_service() -> BaselineService:
     )
 
 
-# 稽核與基準抓完整分頁；每日、正式與 dry-run 僅抓最新入口頁。
 def _collection_mode(mode: RunMode) -> CollectionMode:
     if mode in {RunMode.AUDIT, RunMode.INITIALIZE_BASELINE}:
         return CollectionMode.FULL_AUDIT
     return CollectionMode.INCREMENTAL
 
 
-# 建立六個既有來源與 38 項方案官方監測群組。
 def _build_collector(mode: RunMode) -> ExpandedScholarshipCollector:
     return ExpandedScholarshipCollector(
         LHU_SCHOLARSHIP_URL,
@@ -229,7 +226,6 @@ def execute_service(
     mode: RunMode,
     service: ScholarshipService,
 ) -> ServiceResult | AuditResult:
-    """執行需要完整學生背景的模式；baseline 不得進入此函式。"""
     if mode is RunMode.AUDIT:
         return service.audit()
     if mode is RunMode.DRY_RUN:
