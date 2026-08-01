@@ -4,10 +4,8 @@ on:
   push:
     branches:
       - main
-      - agent/add-multi-channel-notifications
     paths:
       - ".github/report-trigger"
-      - ".github/feature-daily-trigger"
   schedule:
     # GitHub cron 使用 UTC；23:30 UTC = 台灣翌日 07:30。
     - cron: "30 23 * * *"
