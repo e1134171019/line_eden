@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import date
 import re
 import time
@@ -18,6 +19,7 @@ from src.catalogs.tun_2025_program_catalog import (
 from src.catalogs.tun_program_sources import (
     core_covered_programs,
     monitorable_programs,
+    resolved_programs,
     unresolved_programs,
 )
 from src.collectors.base_collector import BaseCollector
@@ -38,6 +40,24 @@ _CANDIDATE_SELECTORS = "a[href], article, li, tr, h1, h2, h3, h4"
 _FETCH_ATTEMPTS = 3
 _MIN_ALIAS_MATCH_LENGTH = 4
 _MIN_TITLE_CONTEXT_LENGTH = 6
+_EQUIVALENT_TERMS = (
+    ("大專院校", "大專校院"),
+    ("臺北", "台北"),
+    ("獎助金", "獎助學金"),
+    ("獎勵學金", "獎學金"),
+)
+
+
+@dataclass(frozen=True)
+class ProgramSourceState:
+    """單一 TUN 方案在本次執行中的來源與候選狀態。"""
+
+    program_id: str
+    title: str
+    entry_url: str
+    status: str
+    candidate_count: int = 0
+    reason: str = ""
 
 
 class TunProgramWatchCollector(BaseCollector):
@@ -62,6 +82,7 @@ class TunProgramWatchCollector(BaseCollector):
         self.max_pages = max_pages
         self.fetch_workers = fetch_workers
         self.diagnostic = CollectorDiagnostic()
+        self.program_states = _initial_program_states()
 
     def collect(self) -> list[Scholarship]:
         groups = _group_programs_by_url(monitorable_programs())
@@ -71,6 +92,7 @@ class TunProgramWatchCollector(BaseCollector):
         crawls: list[tuple[str, ListingCrawlResult]] = []
         successful_programs = len(core_covered)
         raw_matches = 0
+        states = {item.program_id: item for item in _initial_program_states()}
         fetcher = _ProgramPageFetcher(
             self.timeout_seconds,
             self.user_agent,
@@ -88,15 +110,21 @@ class TunProgramWatchCollector(BaseCollector):
             crawls.append((official_url, crawl))
             if crawl.pages:
                 successful_programs += len(programs)
+            match_counts: dict[str, int] = defaultdict(int)
             for page in crawl.pages:
-                found, matched = _extract_program_notices(
+                found, matched, page_counts = _extract_program_notices_with_counts(
                     page.html,
                     page.url,
+                    official_url,
                     programs,
                 )
                 raw_matches += matched
+                for program_id, count in page_counts.items():
+                    match_counts[program_id] += count
                 _append_unique(records, seen_records, found)
+            _update_program_states(states, programs, crawl, match_counts)
 
+        self.program_states = tuple(states[item.program_id] for item in resolved_programs())
         self.diagnostic = _build_diagnostic(
             crawls,
             len(records),
@@ -105,6 +133,15 @@ class TunProgramWatchCollector(BaseCollector):
             fetcher.fallback_used,
         )
         return records
+
+    # 逐方案輸出狀態，確保 38 項都有明確結果而不是只看群組總數。
+    def program_status_lines(self) -> list[str]:
+        return [
+            f"TUN方案 {item.program_id}：{item.status}；候選 {item.candidate_count}；"
+            f"入口 {item.entry_url or '由核心來源涵蓋'}"
+            + (f"；{item.reason}" if item.reason else "")
+            for item in self.program_states
+        ]
 
 
 class _ProgramPageFetcher:
@@ -166,6 +203,64 @@ def _chunk_urls(urls: tuple[str, ...], workers: int) -> tuple[tuple[str, ...], .
     return tuple(tuple(urls[index::worker_count]) for index in range(worker_count))
 
 
+# 建立 38 項方案的初始狀態。
+def _initial_program_states() -> tuple[ProgramSourceState, ...]:
+    core_ids = {item.program_id for item in core_covered_programs()}
+    pending_ids = {item.program_id for item in unresolved_programs()}
+    states: list[ProgramSourceState] = []
+    for item in resolved_programs():
+        if item.program_id in core_ids:
+            status = "core_covered"
+            reason = "已由六個核心來源監測，不重複請求。"
+        elif item.program_id in pending_ids:
+            status = "pending_source"
+            reason = "尚無可靠官方或正式機構轉載入口。"
+        else:
+            status = "configured"
+            reason = "等待本次入口抓取。"
+        states.append(
+            ProgramSourceState(
+                item.program_id,
+                item.title,
+                item.official_url,
+                status,
+                0,
+                reason,
+            )
+        )
+    return tuple(states)
+
+
+# 依入口抓取與匹配結果更新同一網址下的所有方案狀態。
+def _update_program_states(
+    states: dict[str, ProgramSourceState],
+    programs: tuple[ScholarshipProgramWatch, ...],
+    crawl: ListingCrawlResult,
+    match_counts: dict[str, int],
+) -> None:
+    for program in programs:
+        count = match_counts.get(program.program_id, 0)
+        if not crawl.pages:
+            status = "fetch_failed"
+            reason = "；".join(crawl.errors) or "入口頁未成功下載。"
+        elif count:
+            status = "candidate_found"
+            reason = "已找到方案候選，將進入正文與公告分類。"
+        else:
+            status = "no_candidate"
+            reason = "入口可讀，但本次未找到匹配候選。"
+        if crawl.completeness == "partial" and crawl.pages:
+            reason += f" 分頁部分完成：{crawl.stop_reason}。"
+        states[program.program_id] = ProgramSourceState(
+            program.program_id,
+            program.title,
+            program.official_url,
+            status,
+            count,
+            reason,
+        )
+
+
 # 彙整所有入口分頁結果，完整模式若任一網站缺頁即標示 partial。
 def _build_diagnostic(
     crawls: list[tuple[str, ListingCrawlResult]],
@@ -210,7 +305,9 @@ def _diagnostic_error(
         detail = "｜".join(_partial_detail(url, item) for url, item in partial[:8])
         parts.append(f"分頁未完整 {len(partial)}：{detail}")
     if failed:
-        detail = "｜".join(f"{url}（{';'.join(item.errors)}）" for url, item in failed[:8])
+        detail = "｜".join(
+            f"{url}（{';'.join(item.errors)}）" for url, item in failed[:8]
+        )
         parts.append(f"入口抓取失敗 {len(failed)}：{detail}")
     return "；".join(parts)
 
@@ -271,17 +368,34 @@ def _group_programs_by_url(
     return {url: tuple(items) for url, items in grouped.items()}
 
 
+# 保留既有測試介面，同時由內部版本回報各 program 的匹配數。
 def _extract_program_notices(
     html: str,
     official_url: str,
     programs: tuple[ScholarshipProgramWatch, ...],
 ) -> tuple[list[Scholarship], int]:
+    records, matched, _ = _extract_program_notices_with_counts(
+        html,
+        official_url,
+        official_url,
+        programs,
+    )
+    return records, matched
+
+
+def _extract_program_notices_with_counts(
+    html: str,
+    page_url: str,
+    entry_url: str,
+    programs: tuple[ScholarshipProgramWatch, ...],
+) -> tuple[list[Scholarship], int, dict[str, int]]:
     soup = BeautifulSoup(html, "html.parser")
     for unwanted in soup.select("script, style, noscript, svg"):
         unwanted.decompose()
 
     records: list[Scholarship] = []
     matched_count = 0
+    program_counts: dict[str, int] = defaultdict(int)
     seen: set[str] = set()
     for node in soup.select(_CANDIDATE_SELECTORS):
         context = _candidate_context(node)
@@ -292,10 +406,11 @@ def _extract_program_notices(
             if not _matches_program(context, program):
                 continue
             matched_count += 1
-            published_date = _extract_date(node, date_context)
-            if published_date is None:
+            program_counts[program.program_id] += 1
+            source_url = _candidate_url(node, page_url)
+            published_date = _extract_date(node, date_context) or ""
+            if not published_date and source_url == page_url:
                 continue
-            source_url = _candidate_url(node, official_url)
             title = _candidate_title(node, program)
             key = f"{program.program_id}|{published_date}|{source_url}"
             if key in seen:
@@ -307,9 +422,12 @@ def _extract_program_notices(
                     title,
                     published_date,
                     source_url,
+                    program_id=program.program_id,
+                    entry_url=entry_url,
+                    detail_url=source_url,
                 )
             )
-    return records, matched_count
+    return records, matched_count, dict(program_counts)
 
 
 # 有實質連結標題時只用標題做方案比對，避免整個容器文字造成誤觸。
@@ -366,8 +484,11 @@ def _matches_program(text: str, program: ScholarshipProgramWatch) -> bool:
     )
 
 
+# 只使用受控等價詞，避免任意模糊比對造成不同方案誤合併。
 def _normalize(text: str) -> str:
     value = unicodedata.normalize("NFKC", text).casefold()
+    for source, target in _EQUIVALENT_TERMS:
+        value = value.replace(source, target)
     return re.sub(r"[\W_]+", "", value)
 
 
