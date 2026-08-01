@@ -55,7 +55,12 @@ def detect_total_pages(html: str, base_url: str = "") -> int:
 
 
 # 解析 DYNA CMS；依 currentPage 產生目前頁以外的所有分頁網址。
-def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
+def dyna_page_urls(
+    html: str,
+    base_url: str,
+    *,
+    skip_page_one: bool = False,
+) -> list[tuple[int, str]]:
     prefix_match = _DYNA_URL_PREFIX_PATTERN.search(html)
     total_match = _DYNA_TOTAL_PAGE_PATTERN.search(html)
     if prefix_match is None or total_match is None:
@@ -72,7 +77,7 @@ def dyna_page_urls(html: str, base_url: str) -> list[tuple[int, str]]:
     return [
         (page, prefix.replace("PAGE", str(page)))
         for page in range(1, total + 1)
-        if page != current
+        if page != current and not (skip_page_one and page == 1)
     ]
 
 
