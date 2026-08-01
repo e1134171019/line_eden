@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sqlite3
 
@@ -18,6 +19,8 @@ SCHEMA_COLUMNS = {
     "notified_at": "TEXT",
     "eligibility_status": "TEXT",
     "eligibility_reason": "TEXT",
+    "manual_checks": "TEXT NOT NULL DEFAULT '[]'",
+    "review_kind": "TEXT NOT NULL DEFAULT ''",
     "exclusion_reason": "TEXT NOT NULL DEFAULT ''",
     "profile_hash": "TEXT",
     "evaluated_at": "TEXT",
@@ -57,6 +60,8 @@ class ScholarshipRepository:
             notified_at TEXT,
             eligibility_status TEXT,
             eligibility_reason TEXT,
+            manual_checks TEXT NOT NULL DEFAULT '[]',
+            review_kind TEXT NOT NULL DEFAULT '',
             exclusion_reason TEXT NOT NULL DEFAULT '',
             profile_hash TEXT,
             evaluated_at TEXT
@@ -194,6 +199,7 @@ class ScholarshipRepository:
                COALESCE(detail_url, source_url), COALESCE(notice_kind, 'unknown'),
                COALESCE(application_status, 'not_applicable'),
                COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, ''),
+               COALESCE(manual_checks, '[]'), COALESCE(review_kind, ''),
                COALESCE(exclusion_reason, '')
         FROM scholarships
         WHERE {condition}
@@ -226,7 +232,9 @@ class ScholarshipRepository:
             application_status=row[10],
             eligibility_status=row[11],
             eligibility_reason=row[12],
-            exclusion_reason=row[13],
+            manual_checks=_decode_manual_checks(row[13]),
+            review_kind=row[14],
+            exclusion_reason=row[15],
         )
 
     # 保存公告用途、申請期間與個人資格判斷。
@@ -239,11 +247,14 @@ class ScholarshipRepository:
         notice_kind: str = "application",
         application_status: str = "deadline_unknown",
         exclusion_reason: str = "",
+        manual_checks: tuple[str, ...] = tuple(),
+        review_kind: str = "",
     ) -> int:
         query = """
         UPDATE scholarships
         SET notice_kind = ?, application_status = ?, eligibility_status = ?,
-            eligibility_reason = ?, exclusion_reason = ?, profile_hash = ?, evaluated_at = ?
+            eligibility_reason = ?, manual_checks = ?, review_kind = ?,
+            exclusion_reason = ?, profile_hash = ?, evaluated_at = ?
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
         params = [
@@ -251,6 +262,8 @@ class ScholarshipRepository:
             application_status,
             status,
             reason,
+            _encode_manual_checks(manual_checks),
+            review_kind,
             exclusion_reason,
             profile_hash,
             self._now_iso(),
@@ -293,3 +306,17 @@ class ScholarshipRepository:
             cursor = conn.execute(query, [self._now_iso(), *content_hashes])
             conn.commit()
         return max(cursor.rowcount, 0)
+
+
+def _encode_manual_checks(values: tuple[str, ...]) -> str:
+    return json.dumps(list(values), ensure_ascii=False, separators=(",", ":"))
+
+
+def _decode_manual_checks(value: str) -> tuple[str, ...]:
+    try:
+        decoded = json.loads(value or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return tuple()
+    if not isinstance(decoded, list):
+        return tuple()
+    return tuple(str(item) for item in decoded if str(item).strip())
