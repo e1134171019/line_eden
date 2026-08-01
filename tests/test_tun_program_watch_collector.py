@@ -194,6 +194,55 @@ def test_watch_diagnostic_aggregates_complete_and_partial_crawls() -> None:
     assert "timeout" in diagnostic.error
 
 
+# 正規化後少於四字的短別名不得單獨觸發方案命中。
+def test_short_alias_is_ignored() -> None:
+    program = ScholarshipProgramWatch(
+        "short",
+        "人工智慧人才獎學金",
+        "測試基金會",
+        ("AI",),
+        "https://foundation.example/news",
+        "verified",
+    )
+    html = """
+    <ul>
+      <li><span>2026/09/15</span><a href="/news/88">AI 人才活動公告</a></li>
+    </ul>
+    """
+
+    records, matched = _extract_program_notices(
+        html,
+        "https://foundation.example/news",
+        (program,),
+    )
+
+    assert matched == 0
+    assert records == []
+
+
+# 公告連結有實質標題時，不得因同一容器的延伸文字誤命中方案。
+def test_link_title_has_priority_over_container_noise() -> None:
+    program = _program("energy", "能源工程獎學金")
+    html = """
+    <ul>
+      <li>
+        <span>2026/09/15</span>
+        <a href="/news/88">一般校園活動公告</a>
+        <p>延伸閱讀：能源工程獎學金</p>
+      </li>
+    </ul>
+    """
+
+    records, matched = _extract_program_notices(
+        html,
+        "https://foundation.example/news",
+        (program,),
+    )
+
+    assert matched == 0
+    assert records == []
+
+
 # 官方公告列的西元日期應轉成 Scholarship 標準日期。
 def test_extracts_gregorian_dated_program_notice() -> None:
     program = _program("energy", "能源工程獎學金")

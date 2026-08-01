@@ -47,6 +47,8 @@ def crawl_listing_pages(
     max_pages: int,
     fetch_text: Callable[[str], str],
     fetch_many: BatchFetch | None = None,
+    *,
+    skip_dyna_page_one: bool = False,
 ) -> ListingCrawlResult:
     try:
         entry_html = fetch_text(entry_url)
@@ -66,7 +68,12 @@ def crawl_listing_pages(
             collection_mode,
         )
 
-    known_urls = _known_page_urls(entry_html, entry_url, max_pages)
+    known_urls = _known_page_urls(
+        entry_html,
+        entry_url,
+        max_pages,
+        skip_dyna_page_one,
+    )
     if fetch_many and _known_pages_are_complete(detected, known_urls, max_pages):
         return _crawl_known_pages(
             entry_page,
@@ -83,6 +90,7 @@ def crawl_listing_pages(
         collection_mode,
         max_pages,
         fetch_text,
+        skip_dyna_page_one,
     )
 
 
@@ -130,6 +138,7 @@ def _crawl_sequential(
     mode: CollectionMode,
     max_pages: int,
     fetch_text: Callable[[str], str],
+    skip_dyna_page_one: bool,
 ) -> ListingCrawlResult:
     queue: deque[str] = deque(known_urls)
     visited = {entry_page.url}
@@ -158,7 +167,14 @@ def _crawl_sequential(
         fingerprints.add(fingerprint)
         pages.append(ListingPage(url, html))
         detected = max(detected, detect_total_pages(html, url), len(visited))
-        _enqueue_pages(queue, visited, html, url, max_pages)
+        _enqueue_pages(
+            queue,
+            visited,
+            html,
+            url,
+            max_pages,
+            skip_dyna_page_one,
+        )
 
     if not stop_reason:
         if requested >= max_pages and len(pages) < detected:
@@ -169,9 +185,21 @@ def _crawl_sequential(
 
 
 # 取得入口頁已明確列出的 DYNA、數字頁碼與下一頁，並套用頁數上限。
-def _known_page_urls(html: str, current_url: str, max_pages: int) -> tuple[str, ...]:
+def _known_page_urls(
+    html: str,
+    current_url: str,
+    max_pages: int,
+    skip_dyna_page_one: bool,
+) -> tuple[str, ...]:
     candidates = [
-        *(url for _, url in dyna_page_urls(html, current_url)),
+        *(
+            url
+            for _, url in dyna_page_urls(
+                html,
+                current_url,
+                skip_page_one=skip_dyna_page_one,
+            )
+        ),
         *(url for _, url in numbered_page_urls(html, current_url)),
     ]
     next_url = next_page_url(html, current_url)
@@ -197,8 +225,14 @@ def _enqueue_pages(
     html: str,
     current_url: str,
     max_pages: int,
+    skip_dyna_page_one: bool,
 ) -> None:
-    for url in _known_page_urls(html, current_url, max_pages):
+    for url in _known_page_urls(
+        html,
+        current_url,
+        max_pages,
+        skip_dyna_page_one,
+    ):
         if len(queue) + len(visited) >= max_pages:
             break
         if url not in visited and url not in queue:
