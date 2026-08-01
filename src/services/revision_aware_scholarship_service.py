@@ -34,8 +34,9 @@ class RevisionAwareScholarshipService(ScholarshipService):
         processed: set[str] = set()
         for item in self.repository.list_by_hashes(self._current_hashes):
             fetch_result = self._fetch_audit_result(item)
-            revision_hash = build_revision_hash(fetch_result)
-            self.repository.register_revision(item.content_hash, revision_hash)
+            if fetch_result.source.status != "error":
+                revision_hash = build_revision_hash(fetch_result)
+                self.repository.register_revision(item.content_hash, revision_hash)
             processed.add(item.content_hash)
             if not self.repository.needs_evaluation(item.content_hash, profile_hash):
                 continue
@@ -75,5 +76,7 @@ class RevisionAwareScholarshipService(ScholarshipService):
 
     def _build_audit_record(self, item: Scholarship) -> AuditRecord:
         record = super()._build_audit_record(item)
+        if record.fetch_result.source.status == "error":
+            return record
         revision_hash = build_revision_hash(record.fetch_result)
         return replace(record, item=replace(record.item, revision_hash=revision_hash))
