@@ -2,6 +2,10 @@
 
 import ssl
 
+import httpx
+import pytest
+
+import src.collectors.http_client as http_client_module
 from src.collectors.http_client import (
     DetailSafeHttpClient,
     SafeHttpClient,
@@ -59,5 +63,74 @@ def test_detail_retry_accepts_any_https_domain_for_exact_error() -> None:
             "https://education.example.gov.tw/page",
             RuntimeError("certificate expired"),
         )
+    finally:
+        client.close()
+
+
+# timeout 前兩次失敗、第三次成功時應回傳內容並記錄重試網域。
+def test_get_text_retries_transient_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SafeHttpClient(10.0, "test")
+    calls = 0
+    sleeps: list[float] = []
+
+    def fake_get(_client: httpx.Client, _url: str) -> str:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise httpx.ReadTimeout("timed out")
+        return "ok"
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    monkeypatch.setattr(http_client_module.time, "sleep", sleeps.append)
+    try:
+        assert client.get_text("https://www.lhu.edu.tw/page") == "ok"
+        assert calls == 3
+        assert sleeps == [0.5, 1.0]
+        assert client.timeout_retry_hosts == {"www.lhu.edu.tw"}
+    finally:
+        client.close()
+
+
+# 三次 timeout 後仍必須拋出，不得把失敗改成成功或空頁。
+def test_get_text_raises_after_timeout_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SafeHttpClient(10.0, "test")
+    calls = 0
+
+    def fake_get(_client: httpx.Client, _url: str) -> str:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectTimeout("timed out")
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    monkeypatch.setattr(http_client_module.time, "sleep", lambda _seconds: None)
+    try:
+        with pytest.raises(httpx.ConnectTimeout):
+            client.get_text("https://www.lhu.edu.tw/page")
+        assert calls == 3
+    finally:
+        client.close()
+
+
+# 非 timeout transport error 不得進入一般重試，也不得繞過憑證限制。
+def test_get_text_does_not_retry_non_timeout_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = SafeHttpClient(10.0, "test")
+    calls = 0
+
+    def fake_get(_client: httpx.Client, _url: str) -> str:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("dns failure")
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    try:
+        with pytest.raises(httpx.ConnectError):
+            client.get_text("https://www.lhu.edu.tw/page")
+        assert calls == 1
     finally:
         client.close()

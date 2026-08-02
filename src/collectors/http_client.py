@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 import ssl
+import time
 from types import TracebackType
 from urllib.parse import urlparse
 
@@ -18,6 +19,8 @@ _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
     "missing subject key identifier",
 )
+_TRANSIENT_TIMEOUT_ATTEMPTS = 3
+_TRANSIENT_TIMEOUT_BACKOFF_SECONDS = (0.5, 1.0)
 
 
 # 建立仍保留 CA 與 hostname 驗證的舊憑證相容 context。
@@ -36,7 +39,7 @@ def _is_legacy_certificate_error(error: Exception) -> bool:
 
 
 class SafeHttpClient:
-    """先嚴格驗證，僅對允許網域的特定憑證錯誤安全重試。"""
+    """先嚴格驗證；timeout 有限重試，舊憑證僅允許安全相容模式。"""
 
     def __init__(self, timeout_seconds: float, user_agent: str) -> None:
         self.timeout_seconds = timeout_seconds
@@ -44,6 +47,7 @@ class SafeHttpClient:
         self._strict_client = self._build_client(True)
         self._legacy_client: httpx.Client | None = None
         self.fallback_hosts: set[str] = set()
+        self.timeout_retry_hosts: set[str] = set()
 
     # 建立共用連線池，避免每一頁重新建立 TCP/TLS 連線。
     def _build_client(self, verify: bool | ssl.SSLContext) -> httpx.Client:
@@ -57,11 +61,24 @@ class SafeHttpClient:
     # 下載 UTF-8/網站宣告編碼的 HTML 文字。
     def get_text(self, url: str) -> str:
         try:
-            return self._get(self._strict_client, url)
+            return self._get_with_timeout_retry(self._strict_client, url)
         except httpx.TransportError as error:
             if not self._can_use_legacy_context(url, error):
                 raise
-            return self._get(self._legacy_client_for(url), url)
+            return self._get_with_timeout_retry(self._legacy_client_for(url), url)
+
+    # timeout 通常是來源暫時性抖動；只重試固定次數，不重試憑證、DNS 或 HTTP 狀態。
+    def _get_with_timeout_retry(self, client: httpx.Client, url: str) -> str:
+        for attempt in range(_TRANSIENT_TIMEOUT_ATTEMPTS):
+            try:
+                return self._get(client, url)
+            except httpx.TimeoutException:
+                if attempt + 1 >= _TRANSIENT_TIMEOUT_ATTEMPTS:
+                    raise
+                host = urlparse(url).hostname or ""
+                self.timeout_retry_hosts.add(host)
+                time.sleep(_TRANSIENT_TIMEOUT_BACKOFF_SECONDS[attempt])
+        raise RuntimeError("timeout retry flow ended unexpectedly")
 
     # 以串流方式下載二進位正文或附件，並回報是否使用相容模式。
     @contextmanager
