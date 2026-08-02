@@ -12,7 +12,7 @@ RULES_STATUS_GENERIC_UNCONFIRMED = "generic_document_unconfirmed"
 
 @dataclass(frozen=True)
 class ResourceDiagnostic:
-    """單一來源或附件的下載與文字解析診斷。"""
+    """單一來源或附件的下載、正文政策與文字解析診斷。"""
 
     role: str
     requested_url: str
@@ -26,6 +26,11 @@ class ResourceDiagnostic:
     attachment_role: str = "unknown"
     attachment_label: str = ""
     ssl_compatibility_fallback: bool = False
+    extraction_policy: str = ""
+    extraction_policy_version: str = ""
+    extraction_policy_hash: str = ""
+    selected_selector: str = ""
+    heuristic_fallback: bool = False
 
 
 @dataclass(frozen=True)
