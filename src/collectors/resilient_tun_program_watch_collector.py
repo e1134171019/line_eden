@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from collections import defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from src.catalogs.live_program_sources import (
     live_monitorable_programs,
     live_resolved_programs,
 )
 from src.catalogs.tun_program_sources import ResolvedProgramSource
-from src.collectors.collection_diagnostics import CollectorDiagnostic
+from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.listing_paginator import ListingCrawlResult, ListingPage, crawl_listing_pages
 import src.collectors.tun_program_watch_collector as legacy
 from src.models.scholarship import Scholarship
@@ -76,28 +76,18 @@ class ResilientTunProgramWatchCollector(legacy.TunProgramWatchCollector):
         return records
 
 
+@dataclass(frozen=True)
 class _GroupResult:
     """單一主入口及其 fallback 的合併抓取結果。"""
 
-    def __init__(
-        self,
-        records: tuple[Scholarship, ...],
-        crawl: ListingCrawlResult,
-        counts: dict[str, int],
-        discovery: legacy.PageDiscoveryDiagnostic,
-        raw_node_matches: int,
-        actual_entry_urls: dict[str, str],
-        first_success_url: str,
-        fallback_used: bool,
-    ) -> None:
-        self.records = records
-        self.crawl = crawl
-        self.counts = counts
-        self.discovery = discovery
-        self.raw_node_matches = raw_node_matches
-        self.actual_entry_urls = actual_entry_urls
-        self.first_success_url = first_success_url
-        self.fallback_used = fallback_used
+    records: tuple[Scholarship, ...]
+    crawl: ListingCrawlResult
+    counts: dict[str, int]
+    discovery: legacy.PageDiscoveryDiagnostic
+    raw_node_matches: int
+    actual_entry_urls: dict[str, str]
+    first_success_url: str
+    fallback_used: bool
 
 
 # 同一主入口的 sibling programs 共用一次 fallback 鏈。
@@ -114,7 +104,7 @@ def _group_programs(
 def _collect_program_group(
     primary_url: str,
     programs: tuple[ResolvedProgramSource, ...],
-    collection_mode: object,
+    collection_mode: CollectionMode,
     max_pages: int,
     fetcher: legacy._ProgramPageFetcher,
 ) -> _GroupResult:
@@ -160,7 +150,11 @@ def _collect_program_group(
         if all(counts.get(item.program_id, 0) > 0 for item in programs):
             break
 
-    aggregate = _aggregate_crawls(crawls, primary_url, first_success_url)
+    fallback_used = bool(
+        (first_success_url and first_success_url != primary_url)
+        or any(url != primary_url for url in actual_entry_urls.values())
+    )
+    aggregate = _aggregate_crawls(crawls, fallback_used)
     return _GroupResult(
         tuple(records),
         aggregate,
@@ -169,7 +163,7 @@ def _collect_program_group(
         raw_node_matches,
         actual_entry_urls,
         first_success_url,
-        bool(first_success_url and first_success_url != primary_url),
+        fallback_used,
     )
 
 
@@ -193,8 +187,7 @@ def _candidate_urls(
 # 有任何成功入口時，以成功頁面為準；全部失敗才回報 fetch_failed。
 def _aggregate_crawls(
     attempts: list[tuple[str, ListingCrawlResult]],
-    primary_url: str,
-    first_success_url: str,
+    fallback_used: bool,
 ) -> ListingCrawlResult:
     successful = [(url, item) for url, item in attempts if item.pages]
     if not successful:
@@ -211,8 +204,7 @@ def _aggregate_crawls(
 
     pages = _unique_pages(successful)
     partial = any(item.completeness == "partial" for _, item in successful)
-    used_fallback = first_success_url != primary_url
-    stop_reason = "source_fallback_used" if used_fallback else "source_candidate_completed"
+    stop_reason = "source_fallback_used" if fallback_used else "source_candidate_completed"
     return ListingCrawlResult(
         pages,
         sum(item.pages_detected for _, item in successful),
