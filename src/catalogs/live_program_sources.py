@@ -43,6 +43,14 @@ _LIVE_OVERRIDES: dict[str, LiveSourceOverride] = {
         ),
         ("欣榮圖書館急難學生助學金", "欣榮急難學生助學金"),
     ),
+    "lijin-taoyuan": LiveSourceOverride(
+        "https://www.lijin.com.tw/Extend/Foundation/News",
+        "verified",
+        SourceUrlType.LIST,
+        ("https://www.lijin.com.tw/Extend/Foundation/Application",),
+        ("清寒獎助學金", "年度清寒獎助學金開放申請"),
+        SourceRisk.LOW,
+    ),
     "buddha-charity-progress": LiveSourceOverride(
         "https://www.cksh.tp.edu.tw/news/%E3%80%901142%E7%8D%8E%E5%8A%A9%E5%AD%B8%E9%87%91%E3%80%91%E8%AA%8C%E5%96%84%E6%B8%85%E5%AF%92%E5%AD%B8%E7%94%9F%E9%80%B2%E6%AD%A5%E7%8D%8E%E5%AD%B8%E9%87%91/",
         SOURCE_RELAY,
