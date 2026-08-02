@@ -167,7 +167,7 @@ def _explicit_field_exclusion(text: str, profile: StudentProfile) -> str | None:
         r"電機電子資訊類.{0,12}(?:不適用|不得申請|不接受)",
     )
     if any(re.search(pattern, text) for pattern in patterns):
-        return ["公告明確排除電機、電子或資訊相關專長。"]
+        return "公告明確排除電機、電子或資訊相關專長。"
     return None
 
 
