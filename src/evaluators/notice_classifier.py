@@ -76,9 +76,6 @@ def classify_notice(title: str, detail_text: str) -> str:
     normalized_text = " ".join(detail_text.split())
     if _contains_any(normalized_title, RESULT_MARKERS):
         return RESULT
-    # 標題已明確寫申請／報名／徵件時，正文中的歷史結果或相關連結不得否決。
-    if _contains_any(normalized_title, APPLICATION_MARKERS):
-        return APPLICATION
     preclassified = pre_classify(normalized_title, normalized_text)
     if preclassified is not None:
         return preclassified
@@ -88,6 +85,9 @@ def classify_notice(title: str, detail_text: str) -> str:
         return INFORMATION
     if _is_loan_notice(normalized_title):
         return LOAN
+    # 標題已明確寫申請／報名／徵件時，正文中的歷史結果或相關連結不得否決。
+    if _contains_any(normalized_title, APPLICATION_MARKERS):
+        return APPLICATION
     if _is_application_notice(normalized_title, normalized_text):
         return APPLICATION
     return UNKNOWN

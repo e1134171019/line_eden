@@ -42,6 +42,7 @@ class StudentProfile:
     household_size: int = 0
     has_received_similar_scholarship: bool | None = None
     can_obtain_recommendation: bool | None = None
+    special_statuses_confirmed: bool = True
 
     # 將背景與資格規則版本共同轉成不可逆指紋，規則更新後會自動重算。
     def fingerprint(self) -> str:
@@ -121,6 +122,7 @@ def _build_profile(data: dict[str, Any]) -> StudentProfile:
             data,
             "can_obtain_recommendation",
         ),
+        special_statuses_confirmed="special_statuses" in data,
     )
 
 

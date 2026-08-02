@@ -42,7 +42,10 @@ from src.evaluators.manual_check_extractor import (
 )
 from src.evaluators.match_context import filter_contextual_matches
 from src.evaluators.runtime_safety import find_deadline_exclusions, find_runtime_unknowns
-from src.evaluators.special_status_aliases import find_alias_exclusions
+from src.evaluators.special_status_aliases import (
+    find_alias_exclusions,
+    find_alias_unknowns,
+)
 from src.evaluators.supplemental_profile_rules import (
     find_supplemental_exclusions,
     find_supplemental_matches,
@@ -314,6 +317,7 @@ class EligibilityEvaluator:
         rules_status: str | None,
     ) -> list[str]:
         unknowns = find_unknowns(text, profile)
+        unknowns.extend(find_alias_unknowns(text, profile))
         unknowns = _filter_resolved_attachment_unknowns(unknowns, rules_status)
         status_reason = _rules_status_unknown_reason(rules_status)
         if status_reason:

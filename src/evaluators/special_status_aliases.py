@@ -13,16 +13,41 @@ STATUS_ALIASES = {
     "遭逢變故": ("遭逢變故", "突遭變故", "家庭變故"),
     "重大變故": ("重大變故", "家庭重大變故"),
     "重大疾病": ("重大疾病", "罹患重病"),
-    "身心障礙": ("身心障礙", "身障"),
+    "身心障礙": ("身心障礙", "身障", "肢體障礙", "肢障"),
     "原住民": ("原住民", "原住民族"),
     "失業勞工子女": ("失業勞工子女",),
+    "燒燙傷傷友": ("燒燙傷傷友", "燒燙傷者", "燒傷傷友", "燒傷者"),
+    "陽光傷友子女": ("陽光傷友子女", "傷友子女"),
     "顱顏患者": ("顱顏患者", "顱顏病友", "顱顏家庭子女"),
+    "心臟病童": (
+        "心臟病童",
+        "先天性心臟病童",
+        "接受心臟導管治療",
+        "接受心臟外科手術治療",
+    ),
     "癌友家庭子女": ("癌友家庭子女", "癌症家庭子女", "癌症病友子女"),
     "新住民子女": ("新住民子女", "新移民子女"),
     "警察子女": ("警察子女", "警眷子女"),
     "軍警消子女": ("軍警消子女", "軍人子女", "消防人員子女"),
 }
-PREFERENCE_WORDS = ("優先", "加分", "不限", "非必要")
+PREFERENCE_WORDS = (
+    "優先",
+    "優先考量",
+    "優先錄取",
+    "優先審核",
+    "同分優先",
+    "加分",
+    "酌予優先",
+    "不限",
+    "非必要",
+)
+AMBIGUOUS_WORDS = (
+    "以弱勢為原則",
+    "以經濟弱勢為原則",
+    "主要協助弱勢",
+    "主要提供弱勢",
+    "特別考量弱勢",
+)
 REQUIREMENT_WORDS = (
     "限",
     "僅限",
@@ -38,6 +63,7 @@ REQUIREMENT_WORDS = (
     "需為",
     "須具備",
     "需具備",
+    "至少符合",
     "申請人須",
     "申請者須",
     "具有",
@@ -46,36 +72,54 @@ REQUIREMENT_WORDS = (
 ANY_OF_WORDS = ("或", "任一", "擇一", "其中一項", "下列之一", "、")
 
 
-# 補足家庭與法定身分的常見同義詞及 any-of 排除判斷。
+# 對已確認身分的 profile 檢查必要特殊身分；優先條件不造成排除。
 def find_alias_exclusions(
     title: str,
     text: str,
     profile: StudentProfile,
 ) -> list[str]:
+    if not profile.special_statuses_confirmed:
+        return []
     owned = set(profile.special_statuses)
     title_reason = _title_exclusion(title, owned)
     if title_reason:
         return [title_reason]
-    for sentence in re.split(r"[。；;\n]", text):
-        normalized = " ".join(sentence.split())
-        if not normalized or _contains_preference(normalized):
+    for sentence in _sentences(text):
+        if _contains_preference(sentence) or _contains_ambiguous(sentence):
             continue
-        statuses = _mentioned_statuses(normalized)
-        if not statuses or not _contains_requirement(normalized):
+        statuses = _mentioned_statuses(sentence)
+        if not statuses or not _contains_requirement(sentence):
             continue
-        if len(statuses) > 1 and any(word in normalized for word in ANY_OF_WORDS):
-            if not any(_owns_status(owned, status) for status in statuses):
+        missing = tuple(status for status in statuses if not _owns_status(owned, status))
+        if not missing:
+            continue
+        if len(statuses) > 1 and any(word in sentence for word in ANY_OF_WORDS):
+            if len(missing) == len(statuses):
                 return [f"須具備以下任一身分：{'、'.join(statuses)}。"]
             continue
-        for status in statuses:
-            if not _owns_status(owned, status):
-                return [f"公告限定「{status}」身分。"]
+        return [f"公告限定「{missing[0]}」身分。"]
+    return []
+
+
+# 身分資料未確認或資格語意模糊時維持 review，不猜測符合或不符合。
+def find_alias_unknowns(text: str, profile: StudentProfile) -> list[str]:
+    owned = set(profile.special_statuses)
+    for sentence in _sentences(text):
+        statuses = _mentioned_statuses(sentence)
+        if not statuses or _contains_preference(sentence):
+            continue
+        if all(_owns_status(owned, status) for status in statuses):
+            continue
+        if _contains_ambiguous(sentence):
+            return ["公告對經濟或特殊身分的要求語意不明，需人工確認。"]
+        if _contains_requirement(sentence) and not profile.special_statuses_confirmed:
+            return ["公告要求經濟或特殊身分，但 profile.json 尚未確認相關身分。"]
     return []
 
 
 # 標題直接以特定身分命名且非優先條件時視為必要資格。
 def _title_exclusion(title: str, owned: set[str]) -> str | None:
-    if _contains_preference(title):
+    if _contains_preference(title) or _contains_ambiguous(title):
         return None
     for canonical, aliases in STATUS_ALIASES.items():
         if any(alias in title for alias in aliases) and not _owns_status(owned, canonical):
@@ -103,6 +147,20 @@ def _contains_requirement(text: str) -> bool:
     return any(word in text for word in REQUIREMENT_WORDS)
 
 
-# 判斷文字是否只是優先或非必要條件。
+# 判斷文字是否只是排序、加分或非必要條件。
 def _contains_preference(text: str) -> bool:
     return any(word in text for word in PREFERENCE_WORDS)
+
+
+# 判斷文字是否暗示弱勢導向，但未明確說明一般生能否申請。
+def _contains_ambiguous(text: str) -> bool:
+    return any(word in text for word in AMBIGUOUS_WORDS)
+
+
+# 保留單一條件句的語意範圍，避免跨段合併不同身分要求。
+def _sentences(text: str) -> tuple[str, ...]:
+    return tuple(
+        normalized
+        for item in re.split(r"[。；;\n]", text)
+        if (normalized := " ".join(item.split()))
+    )

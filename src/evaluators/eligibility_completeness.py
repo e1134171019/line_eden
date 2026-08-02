@@ -35,13 +35,15 @@ INCOMPATIBLE_DEPARTMENT_TERMS = (
 )
 
 
-# 將常見括號縮寫展開，避免低收入身分規則漏判。
+# 展開常見縮寫並統一大專在學用語，避免同義句型漏判。
 def normalize_eligibility_text(text: str) -> str:
     normalized = re.sub(
         r"低\s*[\(（]\s*中低\s*[\)）]\s*收入戶",
         "低收入戶及中低收入戶",
         text,
     )
+    normalized = normalized.replace("大專院校在學生", "大專院校在校生")
+    normalized = normalized.replace("大專校院在學生", "大專校院在校生")
     return " ".join(normalized.split())
 
 
@@ -69,7 +71,7 @@ def _program_exclusions(text: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if "進修" in profile.program_type and _explicitly_excludes(
         text,
-        ("進修部", "進修推廣部", "進修學士班", "進修學制", "學分班"),
+        ("進修部", "進修推廣部", "進修學士班", "進修學制"),
     ):
         reasons.append("公告明確排除進修部或進修推廣學制。")
     if profile.employed and _explicitly_excludes(
@@ -80,10 +82,12 @@ def _program_exclusions(text: str, profile: StudentProfile) -> list[str]:
     return reasons
 
 
-# 學士生遇到博士、碩士或研究生專屬公告時直接排除。
+# 學士生遇到國高中以下或研究所專屬公告時直接排除。
 def _degree_exclusions(title: str, text: str, profile: StudentProfile) -> list[str]:
     if profile.degree_level != "學士":
         return []
+    if _is_school_level_only(text):
+        return ["公告限定非大專學制。"]
     graduate_terms = ("博士生", "博士班", "碩士生", "碩士班", "研究生", "碩博士")
     bachelor_terms = ("大學生", "大學部", "學士班", "大專學生", "大專在校生")
     title_limited = _title_is_graduate_only(title, graduate_terms, bachelor_terms)
@@ -95,6 +99,17 @@ def _degree_exclusions(title: str, text: str, profile: StudentProfile) -> list[s
     if title_limited or text_limited:
         return ["公告限定研究所或博士生層級。"]
     return []
+
+
+# 僅列國小、國中、高中或高職，且未同列大專層級時視為非大專專屬。
+def _is_school_level_only(text: str) -> bool:
+    school_terms = ("國小", "國中", "高中", "高職")
+    college_terms = ("大專", "大學", "學士")
+    return any(
+        _sentence_requires_group(sentence, school_terms)
+        and not any(term in sentence for term in college_terms)
+        for sentence in _sentences(text)
+    )
 
 
 # 只有每個獎項片段都含研究生詞時，標題才代表研究所專屬。
@@ -139,7 +154,19 @@ def _department_exclusions(text: str, profile: StudentProfile) -> list[str]:
 # 建立目前背景可接受的科系與廣義工程領域詞。
 def _compatible_department_terms(profile: StudentProfile) -> set[str]:
     terms = set(profile.research_keywords)
-    terms.update((profile.department, "電子", "電機", "電力", "能源", "工程", "理工", "電資"))
+    terms.update(
+        (
+            profile.department,
+            "電子",
+            "電機",
+            "電力",
+            "能源",
+            "工程",
+            "理工",
+            "電資",
+            "資通訊",
+        )
+    )
     return {term for term in terms if term}
 
 
