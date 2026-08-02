@@ -77,11 +77,11 @@ _ORGANIZER_IDS = {
 
 _URL_TYPE_BY_ID = {
     "tf4dr-aid": SourceUrlType.LIST,
-    "foxconn-scholarship-whale": SourceUrlType.HOMEPAGE,
+    "foxconn-scholarship-whale": SourceUrlType.EVERGREEN,
     "avc-talented-student": SourceUrlType.EVERGREEN,
     "cfh-graduate": SourceUrlType.LIST,
     "cfh-university": SourceUrlType.LIST,
-    "kumota-flying": SourceUrlType.HOMEPAGE,
+    "kumota-flying": SourceUrlType.LIST,
     "lijin-taoyuan": SourceUrlType.LIST,
     "tcb-foundation": SourceUrlType.RELAY_LIST,
     "tainan-kaiji": SourceUrlType.RELAY_DETAIL,
@@ -118,13 +118,25 @@ _URL_TYPE_BY_ID = {
 
 # 只覆寫已核對的精準入口、正式轉載與核心來源。
 _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
+    "foxconn-scholarship-whale": (
+        "https://www.foxconnfoundation.org/plan/scholar/university",
+        OFFICIAL_VERIFIED,
+    ),
     "avc-talented-student": (
         "https://www.avcgroup.org/Scholar",
+        OFFICIAL_VERIFIED,
+    ),
+    "kumota-flying": (
+        "https://www.kumota.org/care/child-and-adolescent/",
         OFFICIAL_VERIFIED,
     ),
     "lijin-taoyuan": (
         "https://www.lijin.com.tw/Extend/Foundation/News",
         OFFICIAL_VERIFIED,
+    ),
+    "tcb-foundation": (
+        "https://student.nutc.edu.tw/p/403-1020-34-1.php?Lang=zh-tw",
+        SOURCE_RELAY,
     ),
     "wang-yun-wu-self-study": (
         "https://yunwu.org.tw/y/news/category/6",
@@ -162,10 +174,6 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.hk.edu.tw/remote/HKlf_1238963/",
         SOURCE_RELAY,
     ),
-    "tcb-foundation": (
-        "https://student.nutc.edu.tw/p/403-1020-34-2.php?Lang=zh-tw",
-        SOURCE_RELAY,
-    ),
     "tainan-kaiji": (
         "https://service.utaipei.edu.tw/p/404-1034-131943.php?Lang=zh-tw",
         SOURCE_RELAY,
@@ -187,9 +195,17 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
 }
 
 _FALLBACK_URLS = {
+    "foxconn-scholarship-whale": ("https://www.foxconnfoundation.org/",),
     "avc-talented-student": ("https://www.avcgroup.org/",),
+    "kumota-flying": (
+        "https://www.kumota.org/",
+        "https://www.kumota.org/care-detail/scholarship01__114/",
+    ),
     "lijin-taoyuan": (
         "https://www.lijin.com.tw/Extend/Foundation/Application",
+    ),
+    "tcb-foundation": (
+        "https://student.nutc.edu.tw/p/406-1020-117849%2Cr34.php?Lang=zh-tw",
     ),
     "wang-yun-wu-self-study": ("https://yunwu.org.tw/",),
     "it-social-care": ("https://itss.csroc.org.tw/",),
