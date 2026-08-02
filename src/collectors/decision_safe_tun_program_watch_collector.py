@@ -3,7 +3,7 @@
 from urllib.parse import urlparse
 
 from src.catalogs.tun_live_contracts import live_contract
-from src.catalogs.tun_program_sources import resolved_programs
+from src.catalogs.tun_program_sources import ResolvedProgramSource, resolved_programs
 from src.collectors.resilient_tun_program_watch_collector import (
     ResilientTunProgramWatchCollector,
 )
@@ -29,14 +29,14 @@ class DecisionSafeTunProgramWatchCollector(ResilientTunProgramWatchCollector):
 # force-replace 已指定正式辦法頁時，不得再把原舊入口當成新的申請公告。
 def _is_replaced_navigation_candidate(
     item: Scholarship,
-    source: object | None,
+    source: ResolvedProgramSource | None,
 ) -> bool:
     if source is None or not item.program_id:
         return False
     contract = live_contract(item.program_id)
     if not contract.force_replace or not contract.preferred_sources:
         return False
-    original_url = getattr(source, "official_url", "")
+    original_url = source.official_url
     if not original_url:
         return False
     preferred_urls = {
