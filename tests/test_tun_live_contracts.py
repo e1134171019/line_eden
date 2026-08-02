@@ -46,6 +46,28 @@ def test_failed_sources_have_cross_host_fallbacks() -> None:
         assert all(item.url.startswith("https://") for item in contract.preferred_sources)
 
 
+# 陽光兩方案應優先檢查官方公告列表，再退回可連線申請入口。
+def test_sunshine_contracts_prioritize_current_discovery() -> None:
+    for program_id in ("sunshine-scholarship", "sunshine-wanzu"):
+        contract = live_contract(program_id)
+        assert contract.preferred_sources[0].url == (
+            "https://www.sunshine.org.tw/news/announce"
+        )
+        assert contract.preferred_sources[0].source_url_type is SourceUrlType.LIST
+        assert contract.preferred_sources[1].url == "https://scls.sunshine.org.tw/"
+
+
+# 大鵬不得再先打已由 live runner 證明404的東華入口。
+def test_dapeng_uses_verified_live_detail_first() -> None:
+    contract = live_contract("dapeng-aid")
+
+    assert contract.preferred_sources[0].url == (
+        "https://www.ntin.edu.tw/news_detail.aspx?id=50777"
+    )
+    assert contract.preferred_sources[0].source_url_type is SourceUrlType.RELAY_DETAIL
+    assert "大鵬獎助學金" in contract.aliases
+
+
 # 三個 matcher miss 使用網站實際標題，不降低全域門檻。
 def test_matcher_miss_contracts_add_source_scoped_aliases() -> None:
     assert "第2學期助學金" in live_contract("tf4dr-aid").aliases
