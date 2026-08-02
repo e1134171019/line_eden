@@ -23,14 +23,9 @@ class LiveProgramContract:
     force_replace: bool = False
 
 
-# 只放 production 已證實需要特殊 live 契約的方案。
 LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
     "tf4dr-aid": LiveProgramContract(
-        aliases=(
-            "第1學期助學金",
-            "第2學期助學金",
-            "本會助學金",
-        ),
+        aliases=("第1學期助學金", "第2學期助學金", "本會助學金"),
         preferred_sources=(
             LiveSourceCandidate(
                 "https://www.tf4dr.org/posts",
@@ -92,19 +87,15 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "115年正式大學轉載；官方方案站在 runner 發生憑證鏈錯誤。",
             ),
             LiveSourceCandidate(
-                "https://osa.ndhu.edu.tw/p/406-1005-260310%2Cr402.php?Lang=zh-tw",
+                "https://www.ntin.edu.tw/news_detail.aspx?id=52376",
                 SourceUrlType.RELAY_DETAIL,
-                "115年第二個正式大學轉載備援。",
+                "115年第二個正式學校轉載備援。",
             ),
         ),
         force_replace=True,
     ),
     "sunshine-scholarship": LiveProgramContract(
-        aliases=(
-            "獎助學金申請說明",
-            "陽光獎助學金",
-            "陽光獎學金",
-        ),
+        aliases=("獎助學金申請說明", "陽光獎助學金", "陽光獎學金"),
         preferred_sources=(
             LiveSourceCandidate(
                 "https://www.sunshine.org.tw/news/announce",
@@ -112,9 +103,9 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "官方重要公告列表，優先用來發現新年度方案。",
             ),
             LiveSourceCandidate(
-                "https://scls.sunshine.org.tw/",
-                SourceUrlType.EVERGREEN,
-                "官方線上申請入口；主站暫時逾時時作安全回退。",
+                "https://service.utaipei.edu.tw/p/404-1034-125734.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "正式大學轉載，明列陽光與萬足兩項方案；作為可驗證歷史依據。",
             ),
         ),
         force_replace=True,
@@ -131,14 +122,9 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "官方重要公告列表，優先偵測新年度萬足方案。",
             ),
             LiveSourceCandidate(
-                "https://scls.sunshine.org.tw/",
-                SourceUrlType.EVERGREEN,
-                "官方申請入口；主站逾時時回報正常無當期公告。",
-            ),
-            LiveSourceCandidate(
                 "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01",
                 SourceUrlType.RELAY_DETAIL,
-                "最近一期正式大學轉載，保留歷史資格依據。",
+                "最近一期正式大學轉載，保留方案與資格依據。",
             ),
         ),
         force_replace=True,
@@ -154,26 +140,49 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
             LiveSourceCandidate(
                 "https://www.ntin.edu.tw/news_detail.aspx?id=50777",
                 SourceUrlType.RELAY_DETAIL,
-                "115年正式學校轉載；live runner 已驗證可連線並含完整資格。",
+                "115年正式學校轉載，含完整資格。",
             ),
             LiveSourceCandidate(
-                "https://www.osa.nchu.edu.tw/osa/laa/sys/modules/tadnews/index.php?nsn=4145",
+                "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
                 SourceUrlType.RELAY_DETAIL,
-                "115年正式大學轉載備援，正文直接列出五項申請條件。",
+                "115年正式大學轉載備援。",
+            ),
+        ),
+        force_replace=True,
+    ),
+    "hndasset-wenxiang": LiveProgramContract(
+        aliases=(
+            "文向教育基金會115年度文向獎學金",
+            "115年度文向獎學金",
+            "文向獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "115年度正式大學轉載，含本期資格、期限與附件。",
             ),
             LiveSourceCandidate(
-                "https://osa.ndhu.edu.tw/p/406-1005-254221%2Cr402.php?Lang=zh-tw",
+                "https://www.hndasset.com/csr-zh?lang=zh",
+                SourceUrlType.EVERGREEN,
+                "官方公益頁；舊 /csr/ 在 runner 發生 TLS 握手失敗。",
+            ),
+        ),
+        force_replace=True,
+    ),
+    "harmony-stability": LiveProgramContract(
+        aliases=("和諧安定獎學金", "114年度和諧安定獎學金"),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://www.hk.edu.tw/remote/HKlf_1238963/",
                 SourceUrlType.RELAY_DETAIL,
-                "搜尋索引仍可見，但 live runner 已回傳404，僅保留 provenance。",
+                "最新可驗證正式學校轉載；114年度公告已截止，仍可作方案存在與規則依據。",
             ),
         ),
         force_replace=True,
     ),
     "songliang-aid": LiveProgramContract(
-        aliases=(
-            "助學金實施辦法",
-            "松樑助學金實施辦法",
-        ),
+        aliases=("助學金實施辦法", "松樑助學金實施辦法"),
         preferred_sources=(
             LiveSourceCandidate(
                 "https://www.slceas.org.tw/index.php/scholarship/scholarship01",
@@ -186,6 +195,5 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
 }
 
 
-# 回傳方案的 production live 契約；未列入者使用一般來源契約。
 def live_contract(program_id: str) -> LiveProgramContract:
     return LIVE_PROGRAM_CONTRACTS.get(program_id, LiveProgramContract())
