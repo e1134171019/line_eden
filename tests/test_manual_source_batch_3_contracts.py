@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 
 from src.catalogs.tun_2025_program_catalog import OFFICIAL_VERIFIED
-from src.catalogs.tun_program_sources import SOURCE_RELAY, resolved_programs
+from src.catalogs.tun_program_sources import (
+    SOURCE_RELAY,
+    ResolvedProgramSource,
+    resolved_programs,
+)
 from src.models.source_quality import SourceRisk, SourceUrlType
 
 
 # 以 program_id 取得人工核對後的來源契約。
-def _sources() -> dict[str, object]:
+def _sources() -> dict[str, ResolvedProgramSource]:
     return {item.program_id: item for item in resolved_programs()}
 
 
