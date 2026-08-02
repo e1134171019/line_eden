@@ -80,3 +80,48 @@ def test_ambiguous_disadvantaged_wording_remains_review() -> None:
     assert find_alias_unknowns(text, profile) == [
         "公告對經濟或特殊身分的要求語意不明，需人工確認。"
     ]
+
+
+# 條件標題與身分分列多行時，仍須依「其中之一」解析為 any-of。
+def test_cross_line_any_of_status_group() -> None:
+    text = (
+        "申請資格\n"
+        "家庭經濟狀況符合下列條件其中之一：\n"
+        "低收入戶或中低收入戶。\n"
+        "家庭突遭變故。\n"
+        "特殊境遇家庭。"
+    )
+
+    assert find_alias_exclusions("助學金", text, _profile()) == [
+        "須具備以下任一身分：低收入戶、中低收入戶、特殊境遇家庭、遭逢變故。"
+    ]
+    assert find_alias_exclusions(
+        "助學金",
+        text,
+        _profile(statuses=("特殊境遇家庭",)),
+    ) == []
+
+
+# 「共同申請條件」代表 all-of；具有其中一項不得掩蓋另一項缺失。
+def test_cross_line_all_of_status_group() -> None:
+    text = (
+        "共同申請條件\n"
+        "具中華民國國籍。\n"
+        "家庭經濟弱勢，並經學校證明。\n"
+        "須具原住民身分。"
+    )
+
+    assert find_alias_exclusions(
+        "助學金",
+        text,
+        _profile(statuses=("經濟弱勢",)),
+    ) == ["公告限定「原住民」身分。"]
+
+
+# 頓號只是列舉符號，沒有任一、或、擇一等語意時不得自動視為 OR。
+def test_enumeration_punctuation_alone_is_not_any_of() -> None:
+    text = "申請資格須具備低收入戶、中低收入戶身分。"
+
+    assert find_alias_exclusions("助學金", text, _profile(statuses=("低收入戶",))) == [
+        "公告限定「中低收入戶」身分。"
+    ]
