@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-import sqlite3
 
 from src.models.scholarship import Scholarship
 from src.repositories.scholarship_repository import ScholarshipRepository
+from src.repositories.sqlite_connection import open_database
 
 
-# 建立測試用 Scholarship 物件。
 def _build_item(title: str, date_text: str, url: str) -> Scholarship:
     return Scholarship.from_raw("lhu", title, date_text, url)
 
 
-# 驗證資料寫入、去重與已通知標記流程。
 def test_repository_dedup_and_mark_notified(tmp_path: Path) -> None:
     repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     first = _build_item("A 獎學金公告", "2026-07-01", "https://example.com/a")
@@ -30,7 +28,6 @@ def test_repository_dedup_and_mark_notified(tmp_path: Path) -> None:
     assert [item.content_hash for item in repo.list_pending()] == [second.content_hash]
 
 
-# 驗證 baseline 與 notified 欄位分別保存狀態。
 def test_repository_baseline_state(tmp_path: Path) -> None:
     db_path = tmp_path / "data" / "scholarships.db"
     repo = ScholarshipRepository(db_path)
@@ -41,7 +38,7 @@ def test_repository_baseline_state(tmp_path: Path) -> None:
 
     assert marked == 1
     assert repo.list_pending() == []
-    with sqlite3.connect(db_path) as conn:
+    with open_database(db_path) as conn:
         row = conn.execute(
             "SELECT baseline_at, notified_at FROM scholarships WHERE content_hash = ?",
             [item.content_hash],
@@ -51,7 +48,6 @@ def test_repository_baseline_state(tmp_path: Path) -> None:
     assert row[1] is None
 
 
-# 驗證只有 eligible 狀態會進入預設推播清單。
 def test_repository_filters_notifiable_status(tmp_path: Path) -> None:
     repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     eligible = _build_item("適合獎學金", "2026-07-01", "https://example.com/eligible")
@@ -75,7 +71,6 @@ def test_repository_filters_notifiable_status(tmp_path: Path) -> None:
     assert default_items[0].eligibility_reason == "符合"
 
 
-# 驗證人工確認項與 review 類型可經 SQLite 往返。
 def test_repository_round_trips_manual_checks_and_review_kind(tmp_path: Path) -> None:
     repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     item = _build_item("成績人工確認獎學金", "2026-07-01", "https://example.com/manual")
@@ -96,7 +91,6 @@ def test_repository_round_trips_manual_checks_and_review_kind(tmp_path: Path) ->
     assert stored[0].review_kind == "semantic_ambiguous"
 
 
-# 驗證個人背景變更後既有公告會重新進入評估清單。
 def test_repository_re_evaluates_when_profile_changes(tmp_path: Path) -> None:
     repo = ScholarshipRepository(tmp_path / "data" / "scholarships.db")
     item = _build_item("背景重評獎學金", "2026-07-01", "https://example.com/profile")
