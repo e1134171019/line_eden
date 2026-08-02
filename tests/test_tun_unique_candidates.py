@@ -33,4 +33,5 @@ def test_nested_dom_nodes_count_as_one_unique_candidate() -> None:
     assert len(records) == 1
     assert unique_counts == {"energy": 1}
     assert records[0].match_method == "exact_alias"
-    assert records[0].match_score == 100
+    # exact alias 100，加上來源群組已確認 organizer scope 15。
+    assert records[0].match_score == 115
