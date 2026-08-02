@@ -10,12 +10,8 @@ from src.catalogs.tun_program_sources import (
 )
 from src.models.source_quality import SourceRisk, SourceUrlType, is_monitorable_url_type
 
-_SUNSHINE_ANNOUNCEMENT_URL = "https://www.sunshine.org.tw/news/announce/0/10"
-_SUNSHINE_APPLICATION_URL = "https://scls.sunshine.org.tw/"
-_SUNSHINE_RELAY_URL = (
-    "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01"
-)
-_SUNSHINE_ANNOUNCEMENT_FALLBACK = "https://www.sunshine.org.tw/news/announce/0/20"
+_SUNSHINE_RELAY_URL = "https://tcivs.tc.edu.tw/p/406-1081-517915%2Cr4173.php"
+_SUNSHINE_RELAY_FALLBACK = "https://www.fsvs.khc.edu.tw/p/16-1003-172326.php?Lang=zh-tw"
 
 
 @dataclass(frozen=True)
@@ -77,29 +73,21 @@ _LIVE_OVERRIDES: dict[str, LiveSourceOverride] = {
         ),
     ),
     "sunshine-scholarship": LiveSourceOverride(
-        _SUNSHINE_ANNOUNCEMENT_URL,
-        "verified",
-        SourceUrlType.LIST,
-        (
-            _SUNSHINE_APPLICATION_URL,
-            _SUNSHINE_RELAY_URL,
-            _SUNSHINE_ANNOUNCEMENT_FALLBACK,
-        ),
+        _SUNSHINE_RELAY_URL,
+        SOURCE_RELAY,
+        SourceUrlType.RELAY_DETAIL,
+        (_SUNSHINE_RELAY_FALLBACK,),
         ("陽光獎助學金",),
-        SourceRisk.LOW,
+        SourceRisk.MEDIUM,
         False,
     ),
     "sunshine-wanzu": LiveSourceOverride(
-        _SUNSHINE_ANNOUNCEMENT_URL,
-        "verified",
-        SourceUrlType.LIST,
-        (
-            _SUNSHINE_APPLICATION_URL,
-            _SUNSHINE_RELAY_URL,
-            _SUNSHINE_ANNOUNCEMENT_FALLBACK,
-        ),
+        _SUNSHINE_RELAY_URL,
+        SOURCE_RELAY,
+        SourceUrlType.RELAY_DETAIL,
+        (_SUNSHINE_RELAY_FALLBACK,),
         ("萬足獎助學金", "萬足燒傷勞工子女獎助學金"),
-        SourceRisk.LOW,
+        SourceRisk.MEDIUM,
         False,
     ),
     "lovepeace-disadvantaged": LiveSourceOverride(
