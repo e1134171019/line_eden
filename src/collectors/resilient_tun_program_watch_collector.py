@@ -220,7 +220,7 @@ def _shared_announcement_records(
             continue
         seen_details.add(detail_url)
         context = anchor.parent.get_text(" ", strip=True) if anchor.parent else title
-        published_date = legacy.parse_date(context)
+        published_date = legacy._extract_date(anchor, context) or ""
         for program in sunshine_programs:
             records.append(
                 Scholarship.from_raw(
