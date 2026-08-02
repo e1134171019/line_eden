@@ -41,6 +41,8 @@
 - 最近一期已過期而當年度尚未公告時，必須保留最近一期為 expired 或 stale，不得複製年份或虛構當期公告。
 - 來源契約至少記錄主入口、fallback、合法 host、預期發現方式、最後驗證日期與跨年度風險。
 - 同一方案的官方入口與當期轉載必須同時保留 provenance，不得因採用轉載而刪除官方佐證入口。
+- fallback 不得只保存為 metadata；主入口失敗時 collector 必須依序實際抓取 fallback，並在逐方案狀態記錄實際使用入口。
+- Production live contract 中 `fetch_failed`、`matcher_miss`、`match_ambiguous`、`source_structure_changed` 均屬嚴重狀態；任一存在時不得宣稱來源驗收完成。
 - SSL 相容模式不得使用 verify=False、CERT_NONE 或關閉 hostname 驗證。
 
 ## 資格判斷規範
@@ -69,6 +71,7 @@
 - 成績、排名或領域單一正向條件不得單獨產生 `eligible`。
 - 只有 `rules` 類附件可解除主要資格附件未知狀態。
 - 表單、證明書、切結書或其他次要附件不得取代主要申請辦法。
+- Structured 結果只有在逐條條件包含明確 `FAIL` 時，才能把 legacy 的 `eligible` 或 `review` 否決為 `ineligible`；不得把 legacy 反向提升成符合。
 - 資格規則語意變更時必須提升 `ELIGIBILITY_RULE_VERSION`，使未推播公告重新評估。
 
 ## 外部 AI 規範
