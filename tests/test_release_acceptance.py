@@ -52,8 +52,9 @@ def _record(
     legacy_status: str = "",
     structured_status: str = "",
 ) -> AuditRecord:
+    source = f"tun-program-{program_id}" if program_id else "fixture-relay"
     item = Scholarship.from_raw(
-        f"tun-program-{program_id or 'unassigned'}",
+        source,
         title or program_id,
         "2026-08-02",
         "https://example.test/detail",
