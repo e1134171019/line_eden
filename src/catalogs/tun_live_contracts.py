@@ -4,6 +4,12 @@ from dataclasses import dataclass
 
 from src.models.source_quality import SourceUrlType
 
+_SUNSHINE_LIST_URL = "https://www.sunshine.org.tw/news/announce"
+_SUNSHINE_RELAY_URL = (
+    "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01"
+)
+_SUNSHINE_APPLICATION_URL = "https://scls.sunshine.org.tw/"
+
 
 @dataclass(frozen=True)
 class LiveSourceCandidate:
@@ -104,17 +110,23 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
             "獎助學金申請說明",
             "陽光獎助學金",
             "陽光獎學金",
+            "年度獎助學金相關簡章開放下載",
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://www.sunshine.org.tw/news/announce",
+                _SUNSHINE_LIST_URL,
                 SourceUrlType.LIST,
-                "官方重要公告列表，優先用來發現新年度方案。",
+                "官方重要公告列表，優先發現新年度方案。",
             ),
             LiveSourceCandidate(
-                "https://scls.sunshine.org.tw/",
+                _SUNSHINE_RELAY_URL,
+                SourceUrlType.RELAY_DETAIL,
+                "最近一期正式大學轉載；主站 timeout 時仍可取得完整年度資格。",
+            ),
+            LiveSourceCandidate(
+                _SUNSHINE_APPLICATION_URL,
                 SourceUrlType.EVERGREEN,
-                "官方線上申請入口；主站暫時逾時時作安全回退。",
+                "官方線上申請入口，只作第三層回退。",
             ),
         ),
         force_replace=True,
@@ -123,22 +135,23 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         aliases=(
             "萬足燒傷勞工子女大專生獎助學金",
             "萬足燒傷勞工子女大專生獎助學金申請",
+            "年度獎助學金相關簡章開放下載",
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://www.sunshine.org.tw/news/announce",
+                _SUNSHINE_LIST_URL,
                 SourceUrlType.LIST,
                 "官方重要公告列表，優先偵測新年度萬足方案。",
             ),
             LiveSourceCandidate(
-                "https://scls.sunshine.org.tw/",
-                SourceUrlType.EVERGREEN,
-                "官方申請入口；主站逾時時回報正常無當期公告。",
+                _SUNSHINE_RELAY_URL,
+                SourceUrlType.RELAY_DETAIL,
+                "最近一期正式大學轉載，完整列出萬足方案資格。",
             ),
             LiveSourceCandidate(
-                "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01",
-                SourceUrlType.RELAY_DETAIL,
-                "最近一期正式大學轉載，保留歷史資格依據。",
+                _SUNSHINE_APPLICATION_URL,
+                SourceUrlType.EVERGREEN,
+                "官方申請入口，只作第三層回退。",
             ),
         ),
         force_replace=True,

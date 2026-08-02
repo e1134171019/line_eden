@@ -46,15 +46,22 @@ def test_failed_sources_have_cross_host_fallbacks() -> None:
         assert all(item.url.startswith("https://") for item in contract.preferred_sources)
 
 
-# 陽光兩方案應優先檢查官方公告列表，再退回可連線申請入口。
-def test_sunshine_contracts_prioritize_current_discovery() -> None:
+# 陽光兩方案先檢查官方列表；timeout 時先用正式年度轉載，不被申請殼截斷。
+def test_sunshine_contracts_prioritize_current_discovery_and_relay() -> None:
     for program_id in ("sunshine-scholarship", "sunshine-wanzu"):
         contract = live_contract(program_id)
         assert contract.preferred_sources[0].url == (
             "https://www.sunshine.org.tw/news/announce"
         )
         assert contract.preferred_sources[0].source_url_type is SourceUrlType.LIST
-        assert contract.preferred_sources[1].url == "https://scls.sunshine.org.tw/"
+        assert contract.preferred_sources[1].url == (
+            "https://announce.yzu.edu.tw/index.php/tw/st/"
+            "st-lgs20250828-1100-01"
+        )
+        assert contract.preferred_sources[1].source_url_type is (
+            SourceUrlType.RELAY_DETAIL
+        )
+        assert contract.preferred_sources[2].url == "https://scls.sunshine.org.tw/"
 
 
 # 大鵬不得再先打已由 live runner 證明404的東華入口。
