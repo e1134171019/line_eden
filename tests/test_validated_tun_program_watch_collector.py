@@ -38,7 +38,7 @@ def _state(candidate_count: int = 3) -> ProgramSourceState:
     return ProgramSourceState(
         program_id="songliang-aid",
         title="台灣松樑教育公益促進協會助學金",
-        official_url="https://www.slceas.org.tw/index.php/scholarship",
+        entry_url="https://www.slceas.org.tw/index.php/scholarship",
         status="matched",
         candidate_count=candidate_count,
         source_url_type=SourceUrlType.EVERGREEN,
