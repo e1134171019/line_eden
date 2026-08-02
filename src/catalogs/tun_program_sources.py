@@ -88,14 +88,14 @@ _URL_TYPE_BY_ID = {
     "songliang-aid": SourceUrlType.EVERGREEN,
     "wang-yun-wu-self-study": SourceUrlType.LIST,
     "rehe-association": SourceUrlType.RELAY_DETAIL,
-    "wisdomshare-service-learning": SourceUrlType.HOMEPAGE,
-    "hsinrong-emergency-aid": SourceUrlType.HOMEPAGE,
+    "wisdomshare-service-learning": SourceUrlType.EVERGREEN,
+    "hsinrong-emergency-aid": SourceUrlType.RELAY_LIST,
     "it-social-care": SourceUrlType.RELAY_DETAIL,
-    "you-care-hand-in-hand": SourceUrlType.HOMEPAGE,
-    "chiu-filial-piety": SourceUrlType.RELAY_DETAIL,
-    "buddha-charity-progress": SourceUrlType.HOMEPAGE,
+    "you-care-hand-in-hand": SourceUrlType.LIST,
+    "chiu-filial-piety": SourceUrlType.RELAY_LIST,
+    "buddha-charity-progress": SourceUrlType.ANNUAL_DETAIL,
     "yonglin-hope": SourceUrlType.CORE_COVERED,
-    "cdf-vocational": SourceUrlType.HOMEPAGE,
+    "cdf-vocational": SourceUrlType.EVERGREEN,
     "ht-emergency": SourceUrlType.HOMEPAGE,
     "ht-talented-long-term": SourceUrlType.HOMEPAGE,
     "ht-student-aid": SourceUrlType.HOMEPAGE,
@@ -142,9 +142,33 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://yunwu.org.tw/y/news/category/6",
         OFFICIAL_VERIFIED,
     ),
+    "wisdomshare-service-learning": (
+        "https://www.wisdomshare.com.tw/index.php?action=plan-detail&id=4",
+        OFFICIAL_VERIFIED,
+    ),
+    "hsinrong-emergency-aid": (
+        "https://osa.nfu.edu.tw/zh_tw/4/help",
+        SOURCE_RELAY,
+    ),
     "it-social-care": (
         "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01",
         SOURCE_RELAY,
+    ),
+    "you-care-hand-in-hand": (
+        "https://www.you-care.org.tw/List.aspx?mid=34",
+        OFFICIAL_VERIFIED,
+    ),
+    "chiu-filial-piety": (
+        "https://www.ymsh.tp.edu.tw/category/office/div_110/section_112/d1101_line/",
+        SOURCE_RELAY,
+    ),
+    "buddha-charity-progress": (
+        "https://www.buddha-charity.org/main.php?funName=news_content&id=114",
+        OFFICIAL_VERIFIED,
+    ),
+    "cdf-vocational": (
+        "https://www.cdffoundation.org/%E4%B8%AD%E8%8F%AF%E9%96%8B%E7%99%BC%E6%96%87%E6%95%99%E5%9F%BA%E9%87%91%E6%9C%83/%E4%B8%AD%E8%8F%AF%E9%96%8B%E7%99%BC%E6%8A%80%E8%97%9D%E8%81%B7%E8%83%BD%E7%8D%8E%E5%AD%B8%E9%87%91",
+        OFFICIAL_VERIFIED,
     ),
     "sunshine-scholarship": (
         "https://scholarship.sunshine.org.tw/?cat=1",
@@ -182,10 +206,6 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://service.utaipei.edu.tw/p/404-1034-125939.php?Lang=zh-tw",
         SOURCE_RELAY,
     ),
-    "chiu-filial-piety": (
-        "https://pyjh.chc.edu.tw/posts/1238",
-        SOURCE_RELAY,
-    ),
     "dapeng-aid": (
         "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
         SOURCE_RELAY,
@@ -208,7 +228,28 @@ _FALLBACK_URLS = {
         "https://student.nutc.edu.tw/p/406-1020-117849%2Cr34.php?Lang=zh-tw",
     ),
     "wang-yun-wu-self-study": ("https://yunwu.org.tw/",),
+    "wisdomshare-service-learning": (
+        "https://www.wisdomshare.com.tw/index.php?action=plan",
+        "https://www.wisdomshare.com.tw/",
+    ),
+    "hsinrong-emergency-aid": (
+        "https://www.hsinrong.org/",
+        "https://skjh.chc.edu.tw/posts/969",
+    ),
     "it-social-care": ("https://itss.csroc.org.tw/",),
+    "you-care-hand-in-hand": (
+        "https://www.you-care.org.tw/",
+        "https://www.you-care.org.tw/service/OnePage.aspx?id=1865&tid=133",
+    ),
+    "chiu-filial-piety": (
+        "https://pyjh.chc.edu.tw/posts/1238",
+        "https://skjh.chc.edu.tw/posts/970",
+    ),
+    "buddha-charity-progress": ("https://www.buddha-charity.org/",),
+    "cdf-vocational": (
+        "https://www.cdffoundation.org/scholarships",
+        "https://www.cdffoundation.org/",
+    ),
     "sunshine-scholarship": ("https://scholarship.sunshine.org.tw/",),
     "sunshine-wanzu": ("https://scholarship.sunshine.org.tw/",),
     "cy-arch-aid": ("https://www.cy-arch.com.tw/foundation",),

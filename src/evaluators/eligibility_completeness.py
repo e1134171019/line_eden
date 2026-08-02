@@ -33,6 +33,7 @@ INCOMPATIBLE_DEPARTMENT_TERMS = (
     "外文",
     "機械",
 )
+ELECTRONIC_PROFILE_TERMS = ("電子", "電機", "電力", "電資", "資通訊")
 
 
 # 展開常見縮寫並統一大專在學用語，避免同義句型漏判。
@@ -138,8 +139,11 @@ def _title_is_graduate_only(
     )
 
 
-# 電子工程背景遇到明確限定不相容科系的資格句時直接排除。
+# 電子工程背景遇到明確排除自身領域或限定不相容科系時直接排除。
 def _department_exclusions(text: str, profile: StudentProfile) -> list[str]:
+    explicit_reason = _explicit_field_exclusion(text, profile)
+    if explicit_reason:
+        return [explicit_reason]
     compatible = _compatible_department_terms(profile)
     for sentence in _sentences(text):
         if not _has_department_requirement_context(sentence):
@@ -151,6 +155,20 @@ def _department_exclusions(text: str, profile: StudentProfile) -> list[str]:
         if incompatible and not any(term in sentence for term in compatible):
             return [f"公告限定「{incompatible}」相關科系，與目前科系不符。"]
     return []
+
+
+# 公告明文寫「不包含電機電子資訊類」時，不得再以一般大專生判定符合。
+def _explicit_field_exclusion(text: str, profile: StudentProfile) -> str | None:
+    profile_text = " ".join((profile.department, *profile.research_keywords))
+    if not any(term in profile_text for term in ELECTRONIC_PROFILE_TERMS):
+        return None
+    patterns = (
+        r"(?:不含|不包括|不包含|排除).{0,20}電機.{0,6}電子.{0,6}資訊",
+        r"電機電子資訊類.{0,12}(?:不適用|不得申請|不接受)",
+    )
+    if any(re.search(pattern, text) for pattern in patterns):
+        return "公告明確排除電機、電子或資訊相關專長。"
+    return None
 
 
 # 建立目前背景可接受的科系與廣義工程領域詞。
