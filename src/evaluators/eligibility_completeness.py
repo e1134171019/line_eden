@@ -69,7 +69,7 @@ def _program_exclusions(text: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if "進修" in profile.program_type and _explicitly_excludes(
         text,
-        ("進修部", "進修推廣部", "進修學士班", "進修學制", "學分班"),
+        ("進修部", "進修推廣部", "進修學士班", "進修學制"),
     ):
         reasons.append("公告明確排除進修部或進修推廣學制。")
     if profile.employed and _explicitly_excludes(
