@@ -11,7 +11,7 @@ def test_yzu_policy_extracts_application_article_instead_of_navigation() -> None
         <h1>資訊人社會關懷獎學金</h1>
         <p>申請對象：大專校院資訊、統計、公共行政及法律相關科系在學學生。</p>
         <p>申請時間：自115年9月16日起至10月31日止。</p>
-        <p>申請方式：上網填報。</p>
+        <p>申請方式：上網填報，並依系統欄位完成提案內容與證明文件上傳。</p>
       </div>
     </body></html>
     """
