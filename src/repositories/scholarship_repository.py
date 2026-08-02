@@ -24,6 +24,9 @@ SCHEMA_COLUMNS = {
     "notified_at": "TEXT",
     "eligibility_status": "TEXT",
     "eligibility_reason": "TEXT",
+    "hard_eligibility_status": "TEXT NOT NULL DEFAULT ''",
+    "hard_eligibility_reason": "TEXT NOT NULL DEFAULT ''",
+    "action_status": "TEXT NOT NULL DEFAULT ''",
     "manual_checks": "TEXT NOT NULL DEFAULT '[]'",
     "review_kind": "TEXT NOT NULL DEFAULT ''",
     "exclusion_reason": "TEXT NOT NULL DEFAULT ''",
@@ -73,6 +76,9 @@ class ScholarshipRepository:
             notified_at TEXT,
             eligibility_status TEXT,
             eligibility_reason TEXT,
+            hard_eligibility_status TEXT NOT NULL DEFAULT '',
+            hard_eligibility_reason TEXT NOT NULL DEFAULT '',
+            action_status TEXT NOT NULL DEFAULT '',
             manual_checks TEXT NOT NULL DEFAULT '[]',
             review_kind TEXT NOT NULL DEFAULT '',
             exclusion_reason TEXT NOT NULL DEFAULT '',
@@ -92,6 +98,7 @@ class ScholarshipRepository:
                     conn.execute(f"ALTER TABLE scholarships ADD COLUMN {name} {definition}")
             self._fill_discovered_at(conn)
             self._fill_source_urls(conn)
+            self._backfill_eligibility_axes(conn)
             conn.commit()
 
     def _column_names(self, conn: sqlite3.Connection) -> set[str]:
@@ -112,6 +119,47 @@ class ScholarshipRepository:
         conn.execute(
             "UPDATE scholarships SET detail_url = source_url "
             "WHERE detail_url IS NULL OR detail_url = ''"
+        )
+
+    def _backfill_eligibility_axes(self, conn: sqlite3.Connection) -> None:
+        # 舊版 source_incomplete 曾覆寫硬性資格，必須清除 profile 讓它重跑。
+        conn.execute(
+            """
+            UPDATE scholarships
+            SET profile_hash = NULL, evaluated_at = NULL,
+                hard_eligibility_status = '', hard_eligibility_reason = '',
+                action_status = ''
+            WHERE review_kind = 'source_incomplete'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE scholarships
+            SET hard_eligibility_status = COALESCE(eligibility_status, ''),
+                hard_eligibility_reason = COALESCE(eligibility_reason, '')
+            WHERE hard_eligibility_status = ''
+              AND COALESCE(review_kind, '') != 'source_incomplete'
+            """
+        )
+        conn.execute(
+            """
+            UPDATE scholarships
+            SET action_status = CASE
+                WHEN notice_kind != 'application'
+                  OR application_status IN ('expired', 'stale_unknown', 'not_applicable')
+                    THEN 'not_actionable'
+                WHEN hard_eligibility_status = 'ineligible' THEN 'reject'
+                WHEN hard_eligibility_status = 'eligible'
+                  AND resolution_status = 'valid_application_detail'
+                    THEN 'apply_candidate'
+                WHEN hard_eligibility_status IN ('eligible', 'review')
+                  AND resolution_status != 'valid_application_detail'
+                    THEN 'verify_source'
+                WHEN hard_eligibility_status = 'review' THEN 'manual_review'
+                ELSE ''
+            END
+            WHERE action_status = '' AND hard_eligibility_status != ''
+            """
         )
 
     def _now_iso(self) -> str:
@@ -178,7 +226,8 @@ class ScholarshipRepository:
     def list_for_evaluation(self, profile_hash: str) -> list[Scholarship]:
         condition = (
             "notified_at IS NULL AND baseline_at IS NULL "
-            "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ?)"
+            "AND (eligibility_status IS NULL OR profile_hash IS NULL OR profile_hash != ? "
+            "OR hard_eligibility_status = '' OR action_status = '')"
         )
         return self._query_scholarships(self._select_query(condition), [profile_hash])
 
@@ -194,7 +243,8 @@ class ScholarshipRepository:
             "notified_at IS NULL AND baseline_at IS NULL AND profile_hash = ? "
             "AND notice_kind = 'application' "
             f"AND application_status IN ({period_placeholders}) "
-            f"AND eligibility_status IN ({eligibility_placeholders})"
+            f"AND hard_eligibility_status IN ({eligibility_placeholders}) "
+            "AND action_status IN ('apply_candidate', 'verify_source', 'manual_review')"
         )
         params = [profile_hash, *NOTIFIABLE_APPLICATION_STATUSES, *statuses]
         return self._query_scholarships(self._select_query(condition), params)
@@ -209,6 +259,8 @@ class ScholarshipRepository:
                COALESCE(notice_kind, 'unknown'),
                COALESCE(application_status, 'not_applicable'),
                COALESCE(eligibility_status, ''), COALESCE(eligibility_reason, ''),
+               COALESCE(hard_eligibility_status, ''),
+               COALESCE(hard_eligibility_reason, ''), COALESCE(action_status, ''),
                COALESCE(manual_checks, '[]'), COALESCE(review_kind, ''),
                COALESCE(exclusion_reason, '')
         FROM scholarships
@@ -245,9 +297,12 @@ class ScholarshipRepository:
             application_status=str(row[15]),
             eligibility_status=str(row[16]),
             eligibility_reason=str(row[17]),
-            manual_checks=_decode_manual_checks(str(row[18])),
-            review_kind=str(row[19]),
-            exclusion_reason=str(row[20]),
+            hard_eligibility_status=str(row[18]),
+            hard_eligibility_reason=str(row[19]),
+            action_status=str(row[20]),
+            manual_checks=_decode_manual_checks(str(row[21])),
+            review_kind=str(row[22]),
+            exclusion_reason=str(row[23]),
         )
 
     def mark_eligibility(
@@ -263,20 +318,29 @@ class ScholarshipRepository:
         review_kind: str = "",
         detail_evidence_score: int = 0,
         resolution_status: str = "",
+        hard_eligibility_status: str = "",
+        hard_eligibility_reason: str = "",
+        action_status: str = "",
     ) -> int:
+        hard_status = hard_eligibility_status or status
+        hard_reason = hard_eligibility_reason or reason
         query = """
         UPDATE scholarships
         SET notice_kind = ?, application_status = ?, eligibility_status = ?,
-            eligibility_reason = ?, manual_checks = ?, review_kind = ?,
-            detail_evidence_score = ?, resolution_status = ?,
+            eligibility_reason = ?, hard_eligibility_status = ?,
+            hard_eligibility_reason = ?, action_status = ?, manual_checks = ?,
+            review_kind = ?, detail_evidence_score = ?, resolution_status = ?,
             exclusion_reason = ?, profile_hash = ?, evaluated_at = ?
         WHERE content_hash = ? AND notified_at IS NULL AND baseline_at IS NULL
         """
         params = [
             notice_kind,
             application_status,
-            status,
-            reason,
+            hard_status,
+            hard_reason,
+            hard_status,
+            hard_reason,
+            action_status,
             _encode_manual_checks(manual_checks),
             review_kind,
             max(detail_evidence_score, 0),
@@ -294,7 +358,7 @@ class ScholarshipRepository:
     def count_eligibility(self, profile_hash: str, status: str) -> int:
         query = """
         SELECT COUNT(1) FROM scholarships
-        WHERE profile_hash = ? AND eligibility_status = ?
+        WHERE profile_hash = ? AND hard_eligibility_status = ?
           AND notified_at IS NULL AND baseline_at IS NULL
         """
         with sqlite3.connect(self.db_path) as conn:
