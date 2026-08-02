@@ -11,6 +11,10 @@ from src.catalogs.tun_program_sources import (
 from src.models.source_quality import SourceRisk, SourceUrlType, is_monitorable_url_type
 
 _SUNSHINE_ANNOUNCEMENT_URL = "https://www.sunshine.org.tw/news/announce/0/10"
+_SUNSHINE_APPLICATION_URL = "https://scls.sunshine.org.tw/"
+_SUNSHINE_RELAY_URL = (
+    "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01"
+)
 _SUNSHINE_ANNOUNCEMENT_FALLBACK = "https://www.sunshine.org.tw/news/announce/0/20"
 
 
@@ -76,7 +80,11 @@ _LIVE_OVERRIDES: dict[str, LiveSourceOverride] = {
         _SUNSHINE_ANNOUNCEMENT_URL,
         "verified",
         SourceUrlType.LIST,
-        (_SUNSHINE_ANNOUNCEMENT_FALLBACK,),
+        (
+            _SUNSHINE_APPLICATION_URL,
+            _SUNSHINE_RELAY_URL,
+            _SUNSHINE_ANNOUNCEMENT_FALLBACK,
+        ),
         ("陽光獎助學金",),
         SourceRisk.LOW,
         False,
@@ -85,7 +93,11 @@ _LIVE_OVERRIDES: dict[str, LiveSourceOverride] = {
         _SUNSHINE_ANNOUNCEMENT_URL,
         "verified",
         SourceUrlType.LIST,
-        (_SUNSHINE_ANNOUNCEMENT_FALLBACK,),
+        (
+            _SUNSHINE_APPLICATION_URL,
+            _SUNSHINE_RELAY_URL,
+            _SUNSHINE_ANNOUNCEMENT_FALLBACK,
+        ),
         ("萬足獎助學金", "萬足燒傷勞工子女獎助學金"),
         SourceRisk.LOW,
         False,
