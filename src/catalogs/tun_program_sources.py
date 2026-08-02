@@ -1,32 +1,145 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import replace
+from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from src.catalogs.tun_2025_program_catalog import (
     OFFICIAL_VERIFIED,
     TUN_2025_PROGRAMS,
     ScholarshipProgramWatch,
 )
+from src.models.source_quality import (
+    BLOCKED_URL_TYPES,
+    SourceRisk,
+    SourceUrlType,
+    is_monitorable_url_type,
+)
 
 SOURCE_RELAY = "institutional_relay"
 SOURCE_CORE = "covered_by_core_source"
 SOURCE_PENDING = "pending"
+VERIFIED_AT = "2026-08-02"
 
 
-# 直接官方入口失效時，以主辦單位新頁面取代；沒有公開官網者使用政府／學校正式轉載。
+@dataclass(frozen=True)
+class ResolvedProgramSource(ScholarshipProgramWatch):
+    """保留原方案欄位，追加可供 collector 執行的來源品質契約。"""
+
+    organizer_id: str = ""
+    source_url_type: SourceUrlType = SourceUrlType.PENDING
+    allowed_hosts: tuple[str, ...] = tuple()
+    expected_discovery: str = ""
+    update_risk: SourceRisk = SourceRisk.HIGH
+    fallback_urls: tuple[str, ...] = tuple()
+    last_verified_at: str = ""
+
+
+_ORGANIZER_IDS = {
+    "tf4dr-aid": "tf4dr-foundation",
+    "foxconn-scholarship-whale": "foxconn-education-foundation",
+    "avc-talented-student": "avc-education-foundation",
+    "cfh-graduate": "cfh-foundation",
+    "cfh-university": "cfh-foundation",
+    "kumota-flying": "kumota-foundation",
+    "lijin-taoyuan": "lijin-foundation",
+    "tcb-foundation": "tcb-foundation",
+    "tainan-kaiji": "tainan-kaiji",
+    "songliang-aid": "slceas",
+    "wang-yun-wu-self-study": "wang-yun-wu-foundation",
+    "rehe-association": "rehe-association",
+    "wisdomshare-service-learning": "wisdomshare-foundation",
+    "hsinrong-emergency-aid": "hsinrong-foundation",
+    "it-social-care": "csroc",
+    "you-care-hand-in-hand": "puren-foundation",
+    "chiu-filial-piety": "chiu-foundation",
+    "buddha-charity-progress": "buddha-charity-foundation",
+    "yonglin-hope": "yonglin-foundation",
+    "cdf-vocational": "cdf-foundation",
+    "ht-emergency": "ht-foundation",
+    "ht-talented-long-term": "ht-foundation",
+    "ht-student-aid": "ht-foundation",
+    "cht-fang-hsien-chi": "cht-foundation",
+    "heart-child": "ccft-foundation",
+    "sunshine-scholarship": "sunshine-foundation",
+    "sunshine-wanzu": "sunshine-foundation",
+    "cfh-disabled-family": "cfh-foundation",
+    "lovepeace-disadvantaged": "lovepeace-foundation",
+    "dapeng-aid": "dapeng-foundation",
+    "hndasset-wenxiang": "wenxiang-foundation",
+    "cy-arch-aid": "cy-arch-foundation",
+    "lihpao-fullon": "lihpao-foundation",
+    "gfc-scholarship": "gfc-foundation",
+    "auden-innovation-research": "auden-foundation",
+    "auden-university-talent": "auden-foundation",
+    "harmony-stability": "harmony-stability",
+    "taishin-youth-volunteer": "taishin-charity",
+}
+
+_URL_TYPE_BY_ID = {
+    "tf4dr-aid": SourceUrlType.LIST,
+    "foxconn-scholarship-whale": SourceUrlType.HOMEPAGE,
+    "avc-talented-student": SourceUrlType.EVERGREEN,
+    "cfh-graduate": SourceUrlType.LIST,
+    "cfh-university": SourceUrlType.LIST,
+    "kumota-flying": SourceUrlType.HOMEPAGE,
+    "lijin-taoyuan": SourceUrlType.LIST,
+    "tcb-foundation": SourceUrlType.RELAY_LIST,
+    "tainan-kaiji": SourceUrlType.RELAY_DETAIL,
+    "songliang-aid": SourceUrlType.EVERGREEN,
+    "wang-yun-wu-self-study": SourceUrlType.LIST,
+    "rehe-association": SourceUrlType.RELAY_DETAIL,
+    "wisdomshare-service-learning": SourceUrlType.HOMEPAGE,
+    "hsinrong-emergency-aid": SourceUrlType.HOMEPAGE,
+    "it-social-care": SourceUrlType.RELAY_DETAIL,
+    "you-care-hand-in-hand": SourceUrlType.HOMEPAGE,
+    "chiu-filial-piety": SourceUrlType.RELAY_DETAIL,
+    "buddha-charity-progress": SourceUrlType.HOMEPAGE,
+    "yonglin-hope": SourceUrlType.CORE_COVERED,
+    "cdf-vocational": SourceUrlType.HOMEPAGE,
+    "ht-emergency": SourceUrlType.HOMEPAGE,
+    "ht-talented-long-term": SourceUrlType.HOMEPAGE,
+    "ht-student-aid": SourceUrlType.HOMEPAGE,
+    "cht-fang-hsien-chi": SourceUrlType.EVERGREEN,
+    "heart-child": SourceUrlType.EVERGREEN,
+    "sunshine-scholarship": SourceUrlType.LIST,
+    "sunshine-wanzu": SourceUrlType.LIST,
+    "cfh-disabled-family": SourceUrlType.LIST,
+    "lovepeace-disadvantaged": SourceUrlType.HOMEPAGE,
+    "dapeng-aid": SourceUrlType.RELAY_DETAIL,
+    "hndasset-wenxiang": SourceUrlType.CORE_COVERED,
+    "cy-arch-aid": SourceUrlType.EVERGREEN,
+    "lihpao-fullon": SourceUrlType.EVERGREEN,
+    "gfc-scholarship": SourceUrlType.LIST,
+    "auden-innovation-research": SourceUrlType.LIST,
+    "auden-university-talent": SourceUrlType.LIST,
+    "harmony-stability": SourceUrlType.RELAY_DETAIL,
+    "taishin-youth-volunteer": SourceUrlType.HOMEPAGE,
+}
+
+# 只覆寫已核對的精準入口、正式轉載與核心來源。
 _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
-    # 主辦單位頁在 Runner 憑證鏈失敗，改用 115 年大學正式公告。
+    "avc-talented-student": (
+        "https://www.avcgroup.org/Scholar",
+        OFFICIAL_VERIFIED,
+    ),
+    "lijin-taoyuan": (
+        "https://www.lijin.com.tw/Extend/Foundation/News",
+        OFFICIAL_VERIFIED,
+    ),
+    "wang-yun-wu-self-study": (
+        "https://yunwu.org.tw/y/news/category/6",
+        OFFICIAL_VERIFIED,
+    ),
     "it-social-care": (
         "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01",
         SOURCE_RELAY,
     ),
-    # 使用陽光基金會 2026 獎助學金申請專站，不走舊 WordPress 憑證鏈。
     "sunshine-scholarship": (
-        "https://scls.sunshine.org.tw/",
+        "https://scholarship.sunshine.org.tw/?cat=1",
         OFFICIAL_VERIFIED,
     ),
     "sunshine-wanzu": (
-        "https://scls.sunshine.org.tw/",
+        "https://scholarship.sunshine.org.tw/?cat=1",
         OFFICIAL_VERIFIED,
     ),
     "auden-innovation-research": (
@@ -38,15 +151,17 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         OFFICIAL_VERIFIED,
     ),
     "heart-child": (
-        "https://www.ccft.org.tw/OnePage.aspx?tid=148",
+        "https://www.ccft.org.tw/OnePage.aspx?tid=128",
         OFFICIAL_VERIFIED,
     ),
-    # 主辦單位舊文章已 404，改用正式學校轉載頁。
+    "cy-arch-aid": (
+        "https://www.cy-arch.com.tw/foundation/scholarship",
+        OFFICIAL_VERIFIED,
+    ),
     "harmony-stability": (
         "https://www.hk.edu.tw/remote/HKlf_1238963/",
         SOURCE_RELAY,
     ),
-    # 舊單篇公告已下架，改監測校方持續更新的校外獎學金列表。
     "tcb-foundation": (
         "https://student.nutc.edu.tw/p/403-1020-34-2.php?Lang=zh-tw",
         SOURCE_RELAY,
@@ -67,70 +182,142 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
         SOURCE_RELAY,
     ),
-    # 兩項主辦單位官網在 GitHub Runner TLS／握手失敗；既有教育部圓夢助學網已監測。
     "yonglin-hope": ("", SOURCE_CORE),
     "hndasset-wenxiang": ("", SOURCE_CORE),
 }
 
+_FALLBACK_URLS = {
+    "avc-talented-student": ("https://www.avcgroup.org/",),
+    "lijin-taoyuan": (
+        "https://www.lijin.com.tw/Extend/Foundation/Application",
+    ),
+    "wang-yun-wu-self-study": ("https://yunwu.org.tw/",),
+    "it-social-care": ("https://itss.csroc.org.tw/",),
+    "sunshine-scholarship": ("https://scholarship.sunshine.org.tw/",),
+    "sunshine-wanzu": ("https://scholarship.sunshine.org.tw/",),
+    "cy-arch-aid": ("https://www.cy-arch.com.tw/foundation",),
+    "lihpao-fullon": ("https://www.lihpao.org.tw/active.php",),
+    "auden-innovation-research": ("https://www.auden.com.tw/",),
+    "auden-university-talent": ("https://www.auden.com.tw/",),
+}
 
-def resolved_programs() -> tuple[ScholarshipProgramWatch, ...]:
-    """套用經真實 smoke 與官方資料核對後的來源設定。"""
+_RISK_BY_TYPE = {
+    SourceUrlType.LIST: SourceRisk.LOW,
+    SourceUrlType.EVERGREEN: SourceRisk.LOW,
+    SourceUrlType.RELAY_LIST: SourceRisk.MEDIUM,
+    SourceUrlType.HOMEPAGE: SourceRisk.MEDIUM,
+    SourceUrlType.ANNUAL_DETAIL: SourceRisk.HIGH,
+    SourceUrlType.RELAY_DETAIL: SourceRisk.HIGH,
+    SourceUrlType.APPLICATION_PORTAL: SourceRisk.CRITICAL,
+    SourceUrlType.CORE_COVERED: SourceRisk.LOW,
+    SourceUrlType.PENDING: SourceRisk.CRITICAL,
+    SourceUrlType.WRONG: SourceRisk.CRITICAL,
+}
 
-    resolved: list[ScholarshipProgramWatch] = []
-    for item in TUN_2025_PROGRAMS:
-        override = _SOURCE_OVERRIDES.get(item.program_id)
-        if override is None:
-            resolved.append(item)
-            continue
-        url, status = override
-        resolved.append(replace(item, official_url=url, official_status=status))
-    return tuple(resolved)
+_EXPECTED_BY_TYPE = {
+    SourceUrlType.LIST: "列表應持續出現新年度申請與結果公告。",
+    SourceUrlType.EVERGREEN: "固定方案頁應更新年度辦法、期限或附件。",
+    SourceUrlType.ANNUAL_DETAIL: "年度單篇可作本期正文，跨年度必須重新發現。",
+    SourceUrlType.RELAY_LIST: "正式機構轉載列表應持續出現新年度公告。",
+    SourceUrlType.RELAY_DETAIL: "年度轉載單篇可作本期正文，跨年度必須重新發現。",
+    SourceUrlType.HOMEPAGE: "首頁必須二次發現方案頁或年度公告連結。",
+    SourceUrlType.APPLICATION_PORTAL: "申請系統只可作送件入口，不得作公告發現來源。",
+    SourceUrlType.CORE_COVERED: "由核心來源涵蓋，不重複請求。",
+    SourceUrlType.PENDING: "尚未找到可靠入口。",
+    SourceUrlType.WRONG: "入口與方案無關，禁止產生正式候選。",
+}
 
 
-def monitorable_programs() -> tuple[ScholarshipProgramWatch, ...]:
-    """回傳本群組會直接下載的官方或正式機構轉載入口。"""
+# 合併 URL 與 fallback 的合法 host。
+def _allowed_hosts(primary_url: str, fallbacks: tuple[str, ...]) -> tuple[str, ...]:
+    hosts = {
+        host
+        for url in (primary_url, *fallbacks)
+        if (host := urlparse(url).hostname)
+    }
+    return tuple(sorted(hosts))
 
+
+# 將目錄項目與品質 metadata 合併為同一個可執行來源物件。
+def _resolve(item: ScholarshipProgramWatch) -> ResolvedProgramSource:
+    primary_url, status = _SOURCE_OVERRIDES.get(
+        item.program_id,
+        (item.official_url, item.official_status),
+    )
+    url_type = _URL_TYPE_BY_ID[item.program_id]
+    fallbacks = _FALLBACK_URLS.get(item.program_id, tuple())
+    return ResolvedProgramSource(
+        item.program_id,
+        item.title,
+        item.organizer,
+        item.aliases,
+        primary_url,
+        status,
+        _ORGANIZER_IDS[item.program_id],
+        url_type,
+        _allowed_hosts(primary_url, fallbacks),
+        f"{item.title}：{_EXPECTED_BY_TYPE[url_type]}",
+        _RISK_BY_TYPE[url_type],
+        fallbacks,
+        VERIFIED_AT,
+    )
+
+
+# 回傳完成 URL 品質分類的 38 項方案。
+def resolved_programs() -> tuple[ResolvedProgramSource, ...]:
+    return tuple(_resolve(item) for item in TUN_2025_PROGRAMS)
+
+
+# 回傳本群組會直接下載的官方或正式機構轉載入口。
+def monitorable_programs() -> tuple[ResolvedProgramSource, ...]:
     return tuple(
         item
         for item in resolved_programs()
         if item.official_status in {OFFICIAL_VERIFIED, SOURCE_RELAY}
+        and is_monitorable_url_type(item.source_url_type)
     )
 
 
-def core_covered_programs() -> tuple[ScholarshipProgramWatch, ...]:
-    """回傳已由六核心來源中的教育部圓夢助學網涵蓋的方案。"""
-
+# 回傳已由六核心來源涵蓋的方案。
+def core_covered_programs() -> tuple[ResolvedProgramSource, ...]:
     return tuple(
         item for item in resolved_programs() if item.official_status == SOURCE_CORE
     )
 
 
-def unresolved_programs() -> tuple[ScholarshipProgramWatch, ...]:
-    """回傳仍沒有可靠官方或正式轉載來源的方案。"""
-
+# 回傳沒有可靠入口或被品質模型阻擋的方案。
+def unresolved_programs() -> tuple[ResolvedProgramSource, ...]:
     return tuple(
-        item for item in resolved_programs() if item.official_status == SOURCE_PENDING
+        item
+        for item in resolved_programs()
+        if item.official_status == SOURCE_PENDING
+        or item.source_url_type in {SourceUrlType.PENDING, SourceUrlType.WRONG}
     )
 
 
+# 驗證 URL host、類型與 38 項覆蓋完整性。
 def validate_resolved_sources() -> None:
-    """38 項都必須具有直接監測、核心來源覆蓋或明確待查狀態。"""
+    catalog_ids = {item.program_id for item in TUN_2025_PROGRAMS}
+    for mapping in (_ORGANIZER_IDS, _URL_TYPE_BY_ID):
+        if set(mapping) != catalog_ids:
+            raise ValueError("38 項來源品質 metadata 未完整覆蓋目錄")
+    for item in resolved_programs():
+        _validate_source(item)
 
-    programs = resolved_programs()
-    if len(programs) != 38:
-        raise ValueError("解析後方案數量必須為 38。")
-    for item in programs:
-        if item.official_status in {OFFICIAL_VERIFIED, SOURCE_RELAY}:
-            if not item.official_url.startswith(("https://", "http://")):
-                raise ValueError(f"可監測方案缺少網址：{item.program_id}")
-        elif item.official_status == SOURCE_CORE:
-            if item.official_url:
-                raise ValueError(f"核心來源覆蓋方案不得重複請求：{item.program_id}")
-        elif item.official_status == SOURCE_PENDING:
-            if item.official_url:
-                raise ValueError(f"待查方案不得偽造網址：{item.program_id}")
-        else:
-            raise ValueError(f"未知來源狀態：{item.program_id}")
+
+# 驗證單一來源不會把登入、錯頁或不合法 host 當成正式入口。
+def _validate_source(item: ResolvedProgramSource) -> None:
+    if not item.organizer_id or not item.expected_discovery or not item.last_verified_at:
+        raise ValueError(f"來源品質欄位不完整：{item.program_id}")
+    if item.source_url_type in BLOCKED_URL_TYPES:
+        if item.source_url_type == SourceUrlType.CORE_COVERED and item.official_url:
+            raise ValueError(f"核心來源覆蓋不得重複請求：{item.program_id}")
+        return
+    if not item.official_url.startswith(("https://", "http://")):
+        raise ValueError(f"可監測方案缺少網址：{item.program_id}")
+    host = urlparse(item.official_url).hostname or ""
+    if host not in item.allowed_hosts:
+        raise ValueError(f"入口 host 未列入 allowed_hosts：{item.program_id}")
 
 
 validate_resolved_sources()
