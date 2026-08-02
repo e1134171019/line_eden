@@ -3,11 +3,15 @@
 import re
 
 from src.evaluators.attachment_requirement import detect_attachment_requirement
+from src.evaluators.match_context import DEFAULT_FIELD_TERMS
 from src.profiles.student_profile import StudentProfile
 
-EXCLUSIVE_WORDS = r"(?:限|僅限|只限|申請對象(?:為|限於)?|申請資格(?:為|限於)?|資格限於)"
+EXCLUSIVE_WORDS = (
+    r"(?:限|僅限|只限|申請對象(?:為|限於)?|申請資格(?:為|限於)?|資格限於)"
+)
 PREFERENCE_WORDS = ("優先", "優先考量", "加分", "酌予優先", "不限")
 CONTRAST_MARKERS = ("但是", "但", "惟", "然而", "不過", "反之")
+EXCLUSION_MARKERS = ("不含", "不包括", "不受理", "不接受", "排除", "不得為")
 SPECIAL_STATUSES = (
     "原住民",
     "低收入戶",
@@ -18,10 +22,32 @@ SPECIAL_STATUSES = (
     "清寒",
 )
 TAIWAN_REGIONS = (
-    "基隆市", "臺北市", "台北市", "新北市", "桃園市", "新竹市", "新竹縣",
-    "苗栗縣", "臺中市", "台中市", "彰化縣", "南投縣", "雲林縣", "嘉義市",
-    "嘉義縣", "臺南市", "台南市", "高雄市", "屏東縣", "宜蘭縣", "花蓮縣",
-    "臺東縣", "台東縣", "澎湖縣", "金門縣", "連江縣",
+    "基隆市",
+    "臺北市",
+    "台北市",
+    "新北市",
+    "桃園市",
+    "新竹市",
+    "新竹縣",
+    "苗栗縣",
+    "臺中市",
+    "台中市",
+    "彰化縣",
+    "南投縣",
+    "雲林縣",
+    "嘉義市",
+    "嘉義縣",
+    "臺南市",
+    "台南市",
+    "高雄市",
+    "屏東縣",
+    "宜蘭縣",
+    "花蓮縣",
+    "臺東縣",
+    "台東縣",
+    "澎湖縣",
+    "金門縣",
+    "連江縣",
 )
 
 
@@ -69,7 +95,12 @@ def _check_program(text: str, title: str, profile: StudentProfile) -> list[str]:
     if "進修" in profile.program_type:
         if _explicitly_excludes(text, ("進修部", "進修學制")):
             reasons.append("公告明確排除進修部。")
-        elif _group_is_exclusive(text, title, ("日間部",), ("進修部", "進修學制")):
+        elif _group_is_exclusive(
+            text,
+            title,
+            ("日間部",),
+            ("進修部", "進修學制"),
+        ):
             reasons.append("公告限定日間部，與目前學制不符。")
     if profile.employed and _explicitly_excludes(text, ("在職學生", "在職者")):
         reasons.append("公告明確排除在職學生。")
@@ -80,7 +111,12 @@ def _check_degree(text: str, title: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     bachelor = ("大學生", "大學部", "學士班", "大專學生", "大專在校生")
     graduate = ("研究生", "碩士班", "博士班", "碩博士")
-    if profile.degree_level == "學士" and _group_is_exclusive(text, title, graduate, bachelor):
+    if profile.degree_level == "學士" and _group_is_exclusive(
+        text,
+        title,
+        graduate,
+        bachelor,
+    ):
         reasons.append("公告限定研究所層級。")
     school = ("高中生", "高職生", "國中生", "國小生")
     if _group_is_exclusive(text, title, school, bachelor):
@@ -92,7 +128,11 @@ def _check_year(text: str, title: str, profile: StudentProfile) -> list[str]:
     reasons: list[str] = []
     if profile.year > 1 and _term_is_required(text, title, ("新生", "大一")):
         reasons.append("公告限定新生或大一學生。")
-    if profile.year < 4 and _term_is_required(text, title, ("應屆畢業生", "應屆畢業")):
+    if profile.year < 4 and _term_is_required(
+        text,
+        title,
+        ("應屆畢業生", "應屆畢業"),
+    ):
         reasons.append("公告限定應屆畢業生。")
     return reasons
 
@@ -148,7 +188,7 @@ def _check_residence(text: str, profile: StudentProfile) -> list[str]:
 
 
 def _field_matches(text: str, profile: StudentProfile) -> list[str]:
-    keywords = set(profile.research_keywords) | {"電子", "電機", "電力", "能源"}
+    keywords = set(profile.research_keywords) | set(DEFAULT_FIELD_TERMS)
     if any(keyword and keyword in text for keyword in keywords):
         return ["公告領域與電子／電力相關背景相符。"]
     return []
@@ -219,13 +259,22 @@ def _title_requires_group(
     if _contains_preference(title) or any(group in title for group in included):
         return False
     awards = ("獎學金", "助學金", "就學貸款", "補助")
-    return any(target in title for target in targets) and any(word in title for word in awards)
+    return any(target in title for target in targets) and any(
+        word in title for word in awards
+    )
 
 
 def _sentence_includes_groups(sentence: str, groups: tuple[str, ...]) -> bool:
-    if not any(group in sentence for group in groups):
-        return False
-    return not _explicitly_excludes(sentence, groups)
+    exclusion_index = _first_marker_index(sentence, EXCLUSION_MARKERS)
+    for group in groups:
+        group_index = sentence.find(group)
+        if group_index < 0:
+            continue
+        if exclusion_index < 0 or group_index < exclusion_index:
+            return True
+        if not _explicitly_excludes(sentence, (group,)):
+            return True
+    return False
 
 
 def _sentence_requires_group(sentence: str, targets: tuple[str, ...]) -> bool:
@@ -256,6 +305,11 @@ def _sentence_requires_group(sentence: str, targets: tuple[str, ...]) -> bool:
 def _before_contrast(text: str) -> str:
     indexes = [text.find(marker) for marker in CONTRAST_MARKERS if marker in text]
     return text[:min(indexes)] if indexes else text
+
+
+def _first_marker_index(text: str, markers: tuple[str, ...]) -> int:
+    indexes = [text.find(marker) for marker in markers if marker in text]
+    return min(indexes) if indexes else -1
 
 
 def _explicitly_excludes(text: str, terms: tuple[str, ...]) -> bool:
@@ -290,7 +344,7 @@ def _extract_score(text: str, labels: tuple[str, ...]) -> float | None:
 
 
 def _extract_rank(text: str) -> tuple[str, float] | None:
-    label = r"(?:班級排名|班排名|成績排名|學業排名)"
+    label = r"(?:班級排名|班排名|成績排名|學業排名|系所排名)"
     percent = re.search(rf"{label}.{{0,10}}前\s*(\d+(?:\.\d+)?)\s*%", text)
     if percent:
         return "percent", float(percent.group(1))
@@ -317,8 +371,22 @@ def _requires_attachment(text: str) -> bool:
 
 
 def _is_general_college_notice(text: str) -> bool:
-    terms = ("大專院校學生", "大專校院學生", "大專在校生", "大學生", "在校學生")
-    return any(term in text for term in terms)
+    direct_terms = (
+        "大專院校學生",
+        "大專校院學生",
+        "大專院校在校生",
+        "大專校院在校生",
+        "大專在校生",
+        "大學生",
+        "在校學生",
+    )
+    if any(term in text for term in direct_terms):
+        return True
+    pattern = (
+        r"大專(?:院校|校院).{0,32}(?:學士班|大學部).{0,20}"
+        r"(?:在學學生|在校生|學生)"
+    )
+    return bool(re.search(pattern, text))
 
 
 def _contains_preference(text: str) -> bool:
