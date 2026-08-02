@@ -7,6 +7,15 @@ from src.profiles.student_profile import StudentProfile
 FIELD_REASON = "公告領域與電子／電力相關背景相符。"
 SCHOOL_REASON = "公告適用學校與目前就讀學校相符。"
 DEPARTMENT_REASON = "公告指定科系與目前科系相符。"
+DEFAULT_FIELD_TERMS = (
+    "電子",
+    "電機",
+    "電力",
+    "能源",
+    "電資",
+    "資通訊",
+    "資訊通訊",
+)
 FIELD_CONTEXT = ("科系", "學系", "系所", "領域", "主修", "專業", "研究", "相關科")
 QUALIFICATION_CONTEXT = ("申請", "資格", "對象", "限", "就讀", "在校生")
 NOISE_TERMS = ("電子郵件", "電子信箱", "電子檔", "電子化")
@@ -29,7 +38,7 @@ def filter_contextual_matches(
 
 # 判斷專業關鍵字是否出現在標題或資格語境中。
 def _has_field_context(title: str, detail_text: str, profile: StudentProfile) -> bool:
-    keywords = set(profile.research_keywords) | {"電子", "電機", "電力", "能源"}
+    keywords = set(profile.research_keywords) | set(DEFAULT_FIELD_TERMS)
     clean_title = _remove_noise(title)
     if any(keyword and keyword in clean_title for keyword in keywords):
         return True
