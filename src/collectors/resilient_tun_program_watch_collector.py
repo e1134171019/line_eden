@@ -7,10 +7,12 @@ from src.catalogs.live_tun_sources import (
     live_monitorable_programs,
     live_resolved_programs,
 )
-from src.catalogs.tun_program_sources import core_covered_programs
+from src.catalogs.tun_program_sources import (
+    ResolvedProgramSource,
+    core_covered_programs,
+)
 from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
 from src.collectors.tun_program_watch_collector import (
-    PageDiscoveryDiagnostic,
     ProgramSourceState,
     TunProgramWatchCollector,
     _ProgramPageFetcher,
@@ -114,12 +116,12 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
 
     def _crawl_program_fallbacks(
         self,
-        program: object,
+        program: ResolvedProgramSource,
         primary_crawl: ListingCrawlResult,
         fetcher: _ProgramPageFetcher,
-    ) -> tuple[object, ListingCrawlResult, bool]:
+    ) -> tuple[ResolvedProgramSource, ListingCrawlResult, bool]:
         errors = list(primary_crawl.errors)
-        for fallback_url in getattr(program, "fallback_urls", tuple()):
+        for fallback_url in program.fallback_urls:
             fallback_crawl = self._crawl(fallback_url, fetcher)
             if fallback_crawl.pages:
                 return replace(program, official_url=fallback_url), fallback_crawl, True
@@ -129,7 +131,7 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
 
 # 對一個實際成功或最終失敗的入口執行候選抽取與狀態更新。
 def _process_group(
-    programs: tuple[object, ...],
+    programs: tuple[ResolvedProgramSource, ...],
     entry_url: str,
     crawl: ListingCrawlResult,
     states: dict[str, ProgramSourceState],
