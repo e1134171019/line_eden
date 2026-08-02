@@ -236,20 +236,26 @@ def test_live_titles_match_program(program_id: str, title: str) -> None:
     assert match_program(title, program).matched is True
 
 
-def test_sunshine_shared_announcement_fans_out_to_both_programs() -> None:
+def test_sunshine_relay_with_attachments_fans_out_to_both_programs() -> None:
+    page_url = "https://tcivs.tc.edu.tw/p/406-1081-517915%2Cr4173.php"
     html = """
-    <div class="news-row">
-      <a href="/news/announce/news20250814">
-        〖重要提醒〗114年度獎助學金相關簡章開放下載
-      </a>
-      <span>2025.08.14</span>
-    </div>
+    <html>
+      <head><title>財團法人陽光社會福利基金會</title></head>
+      <body>
+        <a href="/var/file/81/1081/img/114-scholarship.pdf">
+          114年度獎助學金申請簡章.pdf
+        </a>
+        <a href="/var/file/81/1081/img/wanzu.pdf">
+          萬足燒傷勞工子女-大專生獎助學金申請簡章.pdf
+        </a>
+      </body>
+    </html>
     """
 
     records = resilient._shared_announcement_records(
         html,
-        "https://www.sunshine.org.tw/news/announce/0/10",
-        "https://www.sunshine.org.tw/news/announce/0/10",
+        page_url,
+        page_url,
         _sunshine_programs(),
     )
 
@@ -258,34 +264,22 @@ def test_sunshine_shared_announcement_fans_out_to_both_programs() -> None:
         "sunshine-wanzu",
     }
     assert {item.match_method for item in records} == {"shared_announcement"}
-    assert {item.detail_url for item in records} == {
-        "https://www.sunshine.org.tw/news/announce/news20250814"
-    }
+    assert {item.detail_url for item in records} == {page_url}
 
 
-def test_sunshine_application_page_fans_out_when_main_site_times_out() -> None:
-    html = """
-    <html>
-      <head><title>陽光基金會獎助學金申請系統</title></head>
-      <body><div id="app"></div></body>
-    </html>
-    """
+def test_sunshine_application_shell_is_not_a_configured_discovery_source() -> None:
+    programs = {item.program_id: item for item in live_resolved_programs()}
 
-    records = resilient._shared_announcement_records(
-        html,
-        "https://scls.sunshine.org.tw/",
-        "https://scls.sunshine.org.tw/",
-        _sunshine_programs(),
-    )
-
-    assert {item.program_id for item in records} == {
-        "sunshine-scholarship",
-        "sunshine-wanzu",
-    }
-    assert {item.match_method for item in records} == {"shared_application_page"}
-    assert {item.detail_url for item in records} == {
-        "https://scls.sunshine.org.tw/"
-    }
+    for program_id in ("sunshine-scholarship", "sunshine-wanzu"):
+        program = programs[program_id]
+        assert program.official_url == (
+            "https://tcivs.tc.edu.tw/p/406-1081-517915%2Cr4173.php"
+        )
+        assert program.source_url_type == SourceUrlType.RELAY_DETAIL
+        assert program.fallback_urls == (
+            "https://www.fsvs.khc.edu.tw/p/16-1003-172326.php?Lang=zh-tw",
+        )
+        assert all("scls.sunshine.org.tw" not in url for url in program.fallback_urls)
 
 
 def test_live_source_overrides_replace_broken_primary_urls() -> None:
@@ -295,18 +289,6 @@ def test_live_source_overrides_replace_broken_primary_urls() -> None:
         "https://www.cksh.tp.edu.tw/"
     )
     assert programs["yonglin-hope"].source_url_type == SourceUrlType.RELAY_LIST
-    assert programs["sunshine-scholarship"].official_url == (
-        "https://www.sunshine.org.tw/news/announce/0/10"
-    )
-    sunshine_fallbacks = programs["sunshine-scholarship"].fallback_urls
-    assert sunshine_fallbacks[0] == "https://scls.sunshine.org.tw/"
-    assert (
-        "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01"
-        in sunshine_fallbacks
-    )
-    assert sunshine_fallbacks[-1] == (
-        "https://www.sunshine.org.tw/news/announce/0/20"
-    )
     assert programs["lovepeace-disadvantaged"].source_url_type == (
         SourceUrlType.RELAY_DETAIL
     )
