@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -m src.automation.line_audit_report > line-report.log 2>&1
+          python -m src.automation.line_audit_bundle > line-report.log 2>&1
           exit_code=$?
           set -e
           cat line-report.log
@@ -182,6 +182,8 @@ jobs:
           path: |
             artifacts/structured-shadow-audit.csv
             artifacts/structured-shadow-audit.json
+            artifacts/source-health.json
+            artifacts/pipeline-rejections.json
           if-no-files-found: ignore
           retention-days: 30
 
