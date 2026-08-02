@@ -79,7 +79,7 @@ def _program_exclusions(text: str, profile: StudentProfile) -> list[str]:
         reasons.append("公告明確排除進修部或進修推廣學制。")
     if profile.employed and _explicitly_excludes(
         text,
-        ("在職專班", "在職班", "在職學生", "在職者"),
+        ("在職專班", "在職班", "在職學生", "在職進修學生", "在職者"),
     ):
         reasons.append("公告明確排除在職專班或在職學生。")
     return reasons
