@@ -21,6 +21,7 @@ class LiveSourceOverride:
     fallback_urls: tuple[str, ...] = tuple()
     aliases: tuple[str, ...] = tuple()
     update_risk: SourceRisk = SourceRisk.MEDIUM
+    inherit_existing_fallbacks: bool = True
 
 
 # 只放 production 已證實失敗或 matcher 漏抓的來源。
@@ -69,26 +70,22 @@ _LIVE_OVERRIDES: dict[str, LiveSourceOverride] = {
         ),
     ),
     "sunshine-scholarship": LiveSourceOverride(
-        "https://www.sunshine.org.tw/news/announce",
+        "https://www.sunshine.org.tw/news/announce/0/10",
         "verified",
         SourceUrlType.LIST,
-        (
-            "https://scls.sunshine.org.tw/",
-            "https://scholarship.sunshine.org.tw/?cat=1",
-        ),
+        ("https://www.sunshine.org.tw/news/announce/0/20",),
         ("陽光獎助學金",),
         SourceRisk.LOW,
+        False,
     ),
     "sunshine-wanzu": LiveSourceOverride(
-        "https://www.sunshine.org.tw/news/announce",
+        "https://www.sunshine.org.tw/news/announce/0/10",
         "verified",
         SourceUrlType.LIST,
-        (
-            "https://scls.sunshine.org.tw/",
-            "https://scholarship.sunshine.org.tw/?p=996",
-        ),
+        ("https://www.sunshine.org.tw/news/announce/0/20",),
         ("萬足獎助學金", "萬足燒傷勞工子女獎助學金"),
         SourceRisk.LOW,
+        False,
     ),
     "lovepeace-disadvantaged": LiveSourceOverride(
         "https://service.utaipei.edu.tw/p/404-1034-125916.php?Lang=zh-tw",
@@ -133,10 +130,11 @@ def _apply_override(item: ResolvedProgramSource) -> ResolvedProgramSource:
     override = _LIVE_OVERRIDES.get(item.program_id)
     if override is None:
         return item
+    inherited = item.fallback_urls if override.inherit_existing_fallbacks else tuple()
     fallbacks = tuple(
         dict.fromkeys(
             url
-            for url in (*override.fallback_urls, *item.fallback_urls)
+            for url in (*override.fallback_urls, *inherited)
             if url and url != override.primary_url
         )
     )
