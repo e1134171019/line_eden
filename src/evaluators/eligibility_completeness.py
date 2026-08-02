@@ -35,13 +35,15 @@ INCOMPATIBLE_DEPARTMENT_TERMS = (
 )
 
 
-# 將常見括號縮寫展開，避免低收入身分規則漏判。
+# 展開常見縮寫並統一大專在學用語，避免同義句型漏判。
 def normalize_eligibility_text(text: str) -> str:
     normalized = re.sub(
         r"低\s*[\(（]\s*中低\s*[\)）]\s*收入戶",
         "低收入戶及中低收入戶",
         text,
     )
+    normalized = normalized.replace("大專院校在學生", "大專院校在校生")
+    normalized = normalized.replace("大專校院在學生", "大專校院在校生")
     return " ".join(normalized.split())
 
 
