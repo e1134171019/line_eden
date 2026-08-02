@@ -66,6 +66,8 @@ class Scholarship:
     program_id: str = ""
     entry_url: str = ""
     detail_url: str = ""
+    announcement_id: str = ""
+    revision_hash: str = ""
     match_method: str = ""
     match_score: int = 0
     matched_alias: str = ""
