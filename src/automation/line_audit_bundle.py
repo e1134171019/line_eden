@@ -18,6 +18,7 @@ from src.automation.structured_shadow_artifact import write_structured_shadow_ar
 from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCollector
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
+from src.services.structured_ineligible_veto import apply_veto_to_audit_result
 
 
 # 一次產生 LINE、structured、source health 與 rejection 四組輸出。
@@ -25,7 +26,7 @@ def main() -> None:
     validate_settings()
     validate_gemini_settings()
     service = build_service(mode=RunMode.AUDIT, use_gemini=True)
-    result = service.audit()
+    result = apply_veto_to_audit_result(service.audit())
     if not isinstance(service.collector, ExpandedScholarshipCollector):
         raise RuntimeError("LINE audit bundle 需要 ExpandedScholarshipCollector")
 
