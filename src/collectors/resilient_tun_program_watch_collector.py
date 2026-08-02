@@ -15,6 +15,7 @@ from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.listing_paginator import ListingCrawlResult, ListingPage, crawl_listing_pages
 import src.collectors.tun_program_watch_collector as legacy
 from src.models.scholarship import Scholarship
+from src.models.source_quality import SourceUrlType
 
 _SHARED_SUNSHINE_PROGRAM_IDS = {
     "sunshine-scholarship",
@@ -23,6 +24,7 @@ _SHARED_SUNSHINE_PROGRAM_IDS = {
 _SHARED_SUNSHINE_ANNOUNCEMENT_TERMS = (
     "年度獎助學金相關簡章開放下載",
     "年度獎助學金申請公告",
+    "年度獎助學金申請簡章",
 )
 _SUNSHINE_APPLICATION_HOST = "scls.sunshine.org.tw"
 
@@ -204,6 +206,10 @@ def _shared_announcement_records(
     soup = BeautifulSoup(html, "html.parser")
     records: list[Scholarship] = []
     seen_details: set[str] = set()
+    relay_detail = all(
+        item.source_url_type == SourceUrlType.RELAY_DETAIL
+        for item in sunshine_programs
+    )
     for anchor in soup.select("a[href]"):
         title = " ".join(anchor.get_text(" ", strip=True).split())
         matched_term = next(
@@ -216,8 +222,9 @@ def _shared_announcement_records(
         )
         if not matched_term:
             continue
-        detail_url = urljoin(page_url, str(anchor.get("href", "")))
-        if not detail_url or detail_url in seen_details:
+        linked_url = urljoin(page_url, str(anchor.get("href", "")))
+        detail_url = page_url if relay_detail else linked_url
+        if not linked_url or detail_url in seen_details:
             continue
         seen_details.add(detail_url)
         context = anchor.parent.get_text(" ", strip=True) if anchor.parent else title
@@ -243,7 +250,7 @@ def _shared_announcement_records(
     )
 
 
-# 官方 SCLS 申請說明本身就是兩方案共同入口，不要求頁內再有公告連結。
+# SCLS 或含兩方案附件的正式轉載頁可直接成為共同入口。
 def _direct_sunshine_application_records(
     soup: BeautifulSoup,
     page_url: str,
@@ -270,7 +277,7 @@ def _direct_sunshine_application_records(
         entry_url,
         page_url,
         "shared_application_page",
-        "官方共同申請說明",
+        "共同申請說明",
     )
 
 
