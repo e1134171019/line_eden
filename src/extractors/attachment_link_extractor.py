@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass
+import re
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
@@ -8,7 +9,7 @@ from bs4 import BeautifulSoup, Tag
 from config import ATTACHMENT_SCOPE_MAX_DEPTH
 from src.extractors.announcement_content_extractor import select_announcement_root
 
-SUPPORTED_SUFFIXES = (".pdf", ".docx")
+SUPPORTED_SUFFIXES = (".pdf", ".docx", ".doc", ".odt")
 DOCUMENT_LABELS = ("附件", "附檔", "下載", "辦法", "簡章", "資格", "評選", "推薦書")
 HIGH_VALUE_LABELS = ("辦法", "資格", "簡章", "評選", "規定", "要點", "申請須知")
 FORM_LABELS = ("申請表", "推薦書", "報名表")
@@ -19,6 +20,7 @@ GENERIC_ATTACHMENT = "generic_attachment"
 APPLICATION_FORM = "application_form"
 SUPPORTING_DOCUMENT = "supporting_document"
 UNRELATED = "unrelated"
+_URL_IN_SCRIPT = re.compile(r"['\"](?P<url>https?://[^'\"]+|/[^'\"]+)['\"]")
 
 
 @dataclass(frozen=True)
@@ -103,15 +105,27 @@ def _collect_links(root: Tag | None, base_url: str) -> list[tuple[int, str, str,
         return []
     seen: set[str] = set()
     records: list[tuple[int, str, str, str]] = []
-    for link in root.select("a[href]"):
-        url = urljoin(base_url, link.get("href", "").strip())
-        label = " ".join(link.get_text(" ", strip=True).split())
-        if url in seen or not _is_supported_document(url, label):
-            continue
-        seen.add(url)
-        role = classify_attachment_role(label)
-        records.append((_attachment_score(url, label, role), url, label, role))
+    for node in root.select("a, button, [data-url], [data-href], [onclick]"):
+        label = " ".join(node.get_text(" ", strip=True).split())
+        for raw_url in _candidate_urls(node):
+            url = urljoin(base_url, raw_url.strip())
+            if url in seen or not _is_supported_document(url, label):
+                continue
+            seen.add(url)
+            role = classify_attachment_role(label)
+            records.append((_attachment_score(url, label, role), url, label, role))
     return records
+
+
+def _candidate_urls(node: Tag) -> tuple[str, ...]:
+    values: list[str] = []
+    for attribute in ("href", "data-url", "data-href", "data-file"):
+        raw = str(node.get(attribute, "")).strip()
+        if raw and not raw.lower().startswith(("javascript:", "mailto:", "tel:")):
+            values.append(raw)
+    onclick = str(node.get("onclick", ""))
+    values.extend(match.group("url") for match in _URL_IN_SCRIPT.finditer(onclick))
+    return tuple(dict.fromkeys(values))
 
 
 def classify_attachment_role(label: str) -> str:
@@ -127,16 +141,20 @@ def classify_attachment_role(label: str) -> str:
 
 
 def _is_supported_document(url: str, label: str) -> bool:
-    path = urlparse(url).path.lower()
+    parsed = urlparse(url)
+    path = parsed.path.lower()
     if path.endswith(SUPPORTED_SUFFIXES):
         return True
+    if parsed.hostname in {"drive.google.com", "docs.google.com"}:
+        return any(marker in label for marker in DOCUMENT_LABELS)
     normalized_label = label.lower().rstrip("。．. ")
     has_suffix = normalized_label.endswith(SUPPORTED_SUFFIXES)
     return has_suffix and any(marker in label for marker in DOCUMENT_LABELS)
 
 
 def _attachment_score(url: str, label: str, role: str) -> int:
-    score = 10 if urlparse(url).path.lower().endswith(".pdf") else 5
+    path = urlparse(url).path.lower()
+    score = 10 if path.endswith(".pdf") else 7 if path.endswith(".odt") else 5
     role_bonus = {
         RULES: 80,
         GENERIC_ATTACHMENT: 50,

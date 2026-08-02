@@ -2,12 +2,16 @@
 
 from io import BytesIO
 from urllib.parse import urlparse
+from xml.etree import ElementTree
+from zipfile import BadZipFile, ZipFile
 
 from docx import Document
 from pypdf import PdfReader
 
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+ODT_MIME = "application/vnd.oasis.opendocument.text"
+DOC_MIME = "application/msword"
 
 
 # 依內容類型或網址副檔名判斷可解析文件格式。
@@ -18,10 +22,14 @@ def detect_document_kind(content_type: str, source_url: str) -> str:
         return "pdf"
     if normalized_type == DOCX_MIME or suffix.endswith(".docx"):
         return "docx"
+    if normalized_type == ODT_MIME or suffix.endswith(".odt"):
+        return "odt"
+    if normalized_type == DOC_MIME or suffix.endswith(".doc"):
+        return "doc_legacy"
     return "unsupported"
 
 
-# 將支援的 PDF 或 DOCX 位元內容轉成純文字。
+# 將支援的 PDF、DOCX 或 ODT 位元內容轉成純文字。
 def extract_document_text(
     content: bytes,
     content_type: str,
@@ -33,6 +41,10 @@ def extract_document_text(
         return _extract_pdf_text(content, max_pdf_pages)
     if kind == "docx":
         return _extract_docx_text(content)
+    if kind == "odt":
+        return _extract_odt_text(content)
+    if kind == "doc_legacy":
+        raise ValueError("舊式 DOC 無法安全解析，需轉成 PDF、DOCX 或人工確認")
     raise ValueError("不支援的附件格式")
 
 
@@ -50,10 +62,29 @@ def _extract_pdf_text(content: bytes, max_pages: int) -> str:
 def _extract_docx_text(content: bytes) -> str:
     document = Document(BytesIO(content))
     paragraphs = [paragraph.text for paragraph in document.paragraphs]
-    table_text = [cell.text for table in document.tables for row in table.rows for cell in row.cells]
+    table_text = [
+        cell.text
+        for table in document.tables
+        for row in table.rows
+        for cell in row.cells
+    ]
     text = _normalize_text("\n".join([*paragraphs, *table_text]))
     if not text:
         raise ValueError("DOCX 沒有可擷取文字")
+    return text
+
+
+# 從 ODT 壓縮檔中的 content.xml 擷取文字節點。
+def _extract_odt_text(content: bytes) -> str:
+    try:
+        with ZipFile(BytesIO(content)) as archive:
+            xml_content = archive.read("content.xml")
+    except (BadZipFile, KeyError) as error:
+        raise ValueError("ODT 結構無效或缺少 content.xml") from error
+    root = ElementTree.fromstring(xml_content)
+    text = _normalize_text(" ".join(value for value in root.itertext() if value))
+    if not text:
+        raise ValueError("ODT 沒有可擷取文字")
     return text
 
 
