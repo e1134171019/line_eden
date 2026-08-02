@@ -94,17 +94,17 @@ _URL_TYPE_BY_ID = {
     "you-care-hand-in-hand": SourceUrlType.LIST,
     "chiu-filial-piety": SourceUrlType.RELAY_LIST,
     "buddha-charity-progress": SourceUrlType.ANNUAL_DETAIL,
-    "yonglin-hope": SourceUrlType.CORE_COVERED,
+    "yonglin-hope": SourceUrlType.EVERGREEN,
     "cdf-vocational": SourceUrlType.EVERGREEN,
-    "ht-emergency": SourceUrlType.HOMEPAGE,
-    "ht-talented-long-term": SourceUrlType.HOMEPAGE,
-    "ht-student-aid": SourceUrlType.HOMEPAGE,
+    "ht-emergency": SourceUrlType.EVERGREEN,
+    "ht-talented-long-term": SourceUrlType.EVERGREEN,
+    "ht-student-aid": SourceUrlType.EVERGREEN,
     "cht-fang-hsien-chi": SourceUrlType.EVERGREEN,
     "heart-child": SourceUrlType.EVERGREEN,
     "sunshine-scholarship": SourceUrlType.LIST,
     "sunshine-wanzu": SourceUrlType.LIST,
     "cfh-disabled-family": SourceUrlType.LIST,
-    "lovepeace-disadvantaged": SourceUrlType.HOMEPAGE,
+    "lovepeace-disadvantaged": SourceUrlType.LIST,
     "dapeng-aid": SourceUrlType.RELAY_DETAIL,
     "hndasset-wenxiang": SourceUrlType.CORE_COVERED,
     "cy-arch-aid": SourceUrlType.EVERGREEN,
@@ -166,8 +166,24 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.buddha-charity.org/main.php?funName=news_content&id=114",
         OFFICIAL_VERIFIED,
     ),
+    "yonglin-hope": (
+        "https://www.yonglin.org.tw/project/education/detail/28",
+        OFFICIAL_VERIFIED,
+    ),
     "cdf-vocational": (
         "https://www.cdffoundation.org/%E4%B8%AD%E8%8F%AF%E9%96%8B%E7%99%BC%E6%96%87%E6%95%99%E5%9F%BA%E9%87%91%E6%9C%83/%E4%B8%AD%E8%8F%AF%E9%96%8B%E7%99%BC%E6%8A%80%E8%97%9D%E8%81%B7%E8%83%BD%E7%8D%8E%E5%AD%B8%E9%87%91",
+        OFFICIAL_VERIFIED,
+    ),
+    "ht-emergency": (
+        "https://www.ht.org.tw/p1_religion_5_24.htm",
+        OFFICIAL_VERIFIED,
+    ),
+    "ht-talented-long-term": (
+        "https://www.ht.org.tw/religion178.htm",
+        OFFICIAL_VERIFIED,
+    ),
+    "ht-student-aid": (
+        "https://www.ht.org.tw/religion154.htm",
         OFFICIAL_VERIFIED,
     ),
     "sunshine-scholarship": (
@@ -194,6 +210,10 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.cy-arch.com.tw/foundation/scholarship",
         OFFICIAL_VERIFIED,
     ),
+    "lovepeace-disadvantaged": (
+        "https://www.lovepeace.org.tw/Download.php?CataP=7&N_Key=192",
+        OFFICIAL_VERIFIED,
+    ),
     "harmony-stability": (
         "https://www.hk.edu.tw/remote/HKlf_1238963/",
         SOURCE_RELAY,
@@ -210,7 +230,6 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
         SOURCE_RELAY,
     ),
-    "yonglin-hope": ("", SOURCE_CORE),
     "hndasset-wenxiang": ("", SOURCE_CORE),
 }
 
@@ -246,12 +265,41 @@ _FALLBACK_URLS = {
         "https://skjh.chc.edu.tw/posts/970",
     ),
     "buddha-charity-progress": ("https://www.buddha-charity.org/",),
+    "yonglin-hope": (
+        "https://www.yonglin.org.tw/project/education",
+        "https://www.yonglin.org.tw/?id=1346&start=2",
+    ),
     "cdf-vocational": (
         "https://www.cdffoundation.org/scholarships",
         "https://www.cdffoundation.org/",
     ),
+    "ht-emergency": (
+        "https://www.ht.org.tw/religion13.htm",
+        "https://www.ht.org.tw/faq289.htm",
+    ),
+    "ht-talented-long-term": (
+        "https://www.ht.org.tw/religion177.htm",
+        "https://www.ht.org.tw/faq285.htm",
+    ),
+    "ht-student-aid": (
+        "https://www.ht.org.tw/religion153.htm",
+        "https://www.ht.org.tw/news454.htm",
+        "https://www.ht.org.tw/faq282.htm",
+    ),
     "sunshine-scholarship": ("https://scholarship.sunshine.org.tw/",),
-    "sunshine-wanzu": ("https://scholarship.sunshine.org.tw/",),
+    "sunshine-wanzu": (
+        "https://scholarship.sunshine.org.tw/",
+        "https://scholarship.sunshine.org.tw/?p=996",
+    ),
+    "cfh-disabled-family": (
+        "https://www.cfh.org.tw/?page_id=133",
+        "https://www.cfh.org.tw/?p=27239",
+    ),
+    "lovepeace-disadvantaged": (
+        "https://www.lovepeace.org.tw/",
+        "https://www.lovepeace.org.tw/Policy.php?CataP=4&N_Key=189",
+        "https://service.utaipei.edu.tw/p/404-1034-125916.php?Lang=zh-tw",
+    ),
     "cy-arch-aid": ("https://www.cy-arch.com.tw/foundation",),
     "lihpao-fullon": ("https://www.lihpao.org.tw/active.php",),
     "auden-innovation-research": ("https://www.auden.com.tw/",),

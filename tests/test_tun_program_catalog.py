@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from src.catalogs.tun_2025_program_catalog import (
+    OFFICIAL_VERIFIED,
     TUN_2025_PROGRAMS,
     TUN_DISCOVERY_URL,
 )
@@ -26,8 +27,8 @@ def test_resolved_sources_cover_all_38_programs() -> None:
     programs = resolved_programs()
 
     assert len(programs) == 38
-    assert len(monitorable_programs()) == 36
-    assert len(core_covered_programs()) == 2
+    assert len(monitorable_programs()) == 37
+    assert len(core_covered_programs()) == 1
     assert unresolved_programs() == tuple()
     assert all(item.organizer_id for item in programs)
     assert all(item.expected_discovery for item in programs)
@@ -61,9 +62,11 @@ def test_source_kinds_are_explicit() -> None:
     assert by_id["tcb-foundation"].source_url_type == SourceUrlType.RELAY_LIST
     assert by_id["it-social-care"].official_status == SOURCE_RELAY
     assert by_id["it-social-care"].source_url_type == SourceUrlType.RELAY_DETAIL
-    assert by_id["yonglin-hope"].official_status == SOURCE_CORE
-    assert by_id["yonglin-hope"].source_url_type == SourceUrlType.CORE_COVERED
-    assert by_id["yonglin-hope"].official_url == ""
+    assert by_id["yonglin-hope"].official_status == OFFICIAL_VERIFIED
+    assert by_id["yonglin-hope"].source_url_type == SourceUrlType.EVERGREEN
+    assert by_id["yonglin-hope"].official_url.endswith(
+        "/project/education/detail/28"
+    )
     assert by_id["hndasset-wenxiang"].official_status == SOURCE_CORE
     assert by_id["hndasset-wenxiang"].official_url == ""
 

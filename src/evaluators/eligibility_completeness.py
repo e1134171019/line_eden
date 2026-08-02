@@ -79,7 +79,7 @@ def _program_exclusions(text: str, profile: StudentProfile) -> list[str]:
         reasons.append("公告明確排除進修部或進修推廣學制。")
     if profile.employed and _explicitly_excludes(
         text,
-        ("在職專班", "在職班", "在職學生", "在職者"),
+        ("在職專班", "在職班", "在職學生", "在職進修學生", "在職者"),
     ):
         reasons.append("公告明確排除在職專班或在職學生。")
     return reasons
@@ -212,7 +212,10 @@ def _sentence_requires_group(sentence: str, terms: tuple[str, ...]) -> bool:
 def _explicitly_excludes(text: str, terms: tuple[str, ...]) -> bool:
     pattern = "|".join(re.escape(term) for term in terms)
     prefix = rf"(?:不含|不包括|不受理|不接受|排除|不得為).{{0,18}}(?:{pattern})"
-    suffix = rf"(?:{pattern}).{{0,18}}(?:不得申請|不予受理|不適用)"
+    suffix = (
+        rf"(?:{pattern}).{{0,24}}"
+        r"(?:不得申請|不予受理|不適用|不列入|不列為)"
+    )
     return bool(re.search(prefix, text) or re.search(suffix, text))
 
 
