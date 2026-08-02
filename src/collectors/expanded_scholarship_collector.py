@@ -16,6 +16,9 @@ from src.collectors.lhu_collector import (
 )
 from src.collectors.moe_overseas_collector import MoeOverseasCollector
 from src.collectors.multi_source_collector import MultiSourceCollector
+from src.collectors.resilient_tun_program_watch_collector import (
+    ResilientTunProgramWatchCollector,
+)
 from src.collectors.tun_program_watch_collector import (
     ProgramSourceState,
     TunProgramWatchCollector,
@@ -48,7 +51,7 @@ class ExpandedScholarshipCollector(LhuCollector):
         self.tun_collector: TunProgramWatchCollector | None = None
 
     def collect(self) -> list[Scholarship]:
-        self.tun_collector = TunProgramWatchCollector(
+        self.tun_collector = ResilientTunProgramWatchCollector(
             self.timeout_seconds,
             self.user_agent,
             self.collection_mode,
