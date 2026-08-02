@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+from src.models.eligibility_axes import derive_action_status
 from src.models.scholarship import Scholarship
 
 SCHEMA_COLUMNS = {
@@ -324,6 +325,12 @@ class ScholarshipRepository:
     ) -> int:
         hard_status = hard_eligibility_status or status
         hard_reason = hard_eligibility_reason or reason
+        effective_action = action_status or derive_action_status(
+            hard_status,
+            resolution_status,
+            notice_kind,
+            application_status,
+        )
         query = """
         UPDATE scholarships
         SET notice_kind = ?, application_status = ?, eligibility_status = ?,
@@ -340,7 +347,7 @@ class ScholarshipRepository:
             hard_reason,
             hard_status,
             hard_reason,
-            action_status,
+            effective_action,
             _encode_manual_checks(manual_checks),
             review_kind,
             max(detail_evidence_score, 0),
