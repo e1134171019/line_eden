@@ -44,6 +44,8 @@ def normalize_eligibility_text(text: str) -> str:
     )
     normalized = normalized.replace("大專院校在學生", "大專院校在校生")
     normalized = normalized.replace("大專校院在學生", "大專校院在校生")
+    normalized = normalized.replace("大學院校在學生", "大專院校在校生")
+    normalized = normalized.replace("大學院校學生", "大專院校學生")
     return " ".join(normalized.split())
 
 
