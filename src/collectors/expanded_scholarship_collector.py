@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from collections import Counter
+
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.helpdreams_collector import HelpDreamsCollector
@@ -14,9 +16,13 @@ from src.collectors.lhu_collector import (
 )
 from src.collectors.moe_overseas_collector import MoeOverseasCollector
 from src.collectors.multi_source_collector import MultiSourceCollector
-from src.collectors.tun_program_watch_collector import TunProgramWatchCollector
+from src.collectors.tun_program_watch_collector import (
+    ProgramSourceState,
+    TunProgramWatchCollector,
+)
 from src.collectors.xinzhuang_awards_collector import XinzhuangAwardsCollector
 from src.models.scholarship import Scholarship
+from src.models.source_quality import SourceRisk
 
 
 class ExpandedScholarshipCollector(LhuCollector):
@@ -88,9 +94,22 @@ class ExpandedScholarshipCollector(LhuCollector):
         self.multi_source = MultiSourceCollector(collectors)
         return self.multi_source.collect()
 
-    # 六個來源群組摘要後追加 38 項 TUN 方案的逐項狀態。
+    # 六個來源群組摘要後追加 URL 品質與 38 項 TUN 逐項狀態。
     def source_summary_lines(self) -> list[str]:
         lines = super().source_summary_lines()
         if self.tun_collector is not None:
+            states = self.tun_collector.program_states
+            lines.append(_tun_quality_summary(states))
             lines.extend(self.tun_collector.program_status_lines())
         return lines
+
+
+# 彙整 URL 類型與高風險來源數，避免 HTTP 健康被誤認為品質合格。
+def _tun_quality_summary(states: tuple[ProgramSourceState, ...]) -> str:
+    types = Counter(item.source_url_type.value for item in states)
+    type_text = "／".join(f"{name} {count}" for name, count in sorted(types.items()))
+    high_risk = sum(
+        item.update_risk in {SourceRisk.HIGH, SourceRisk.CRITICAL}
+        for item in states
+    )
+    return f"TUN URL品質：{type_text}；高風險 {high_risk}"
