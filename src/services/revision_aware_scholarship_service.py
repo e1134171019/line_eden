@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from typing import Any
+
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult
 from src.models.announcement_revision import (
     build_announcement_id,
@@ -9,17 +11,19 @@ from src.models.scholarship import Scholarship
 from src.repositories.announcement_revision_repository import (
     AnnouncementRevisionRepository,
 )
-from src.services.scholarship_service import ScholarshipService, ServiceResult
+from src.services.scholarship_service import (
+    EvaluationOutcome,
+    ScholarshipService,
+    ServiceResult,
+)
 
 
 class RevisionAwareScholarshipService(ScholarshipService):
     """在既有 ScholarshipService 前加一層薄 revision 觀察，不複製判斷流程。"""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.revision_repository = AnnouncementRevisionRepository(
-            self.repository.db_path
-        )
+        self.revision_repository = AnnouncementRevisionRepository(self.repository.db_path)
         self._revision_fetch_cache: dict[str, DetailFetchResult] = {}
 
     def run(self, dry_run: bool) -> ServiceResult:
@@ -45,7 +49,7 @@ class RevisionAwareScholarshipService(ScholarshipService):
                 build_revision_hash(item, fetch_result),
             )
 
-    def _evaluate_item(self, item: Scholarship):  # type: ignore[no-untyped-def]
+    def _evaluate_item(self, item: Scholarship) -> EvaluationOutcome:
         fetch_result = self._revision_fetch_cache.get(item.content_hash)
         if fetch_result is None:
             return super()._evaluate_item(item)
