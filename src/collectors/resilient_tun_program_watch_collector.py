@@ -7,6 +7,7 @@ from src.catalogs.runtime_program_sources import (
     runtime_resolved_programs,
 )
 from src.catalogs.tun_program_sources import ResolvedProgramSource
+from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
 from src.collectors.tun_program_watch_collector import (
     ProgramSourceState,
@@ -98,7 +99,7 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
 # 主入口完全失敗時，才依資料契約順序嘗試 fallback。
 def _crawl_with_fallback(
     programs: tuple[ResolvedProgramSource, ...],
-    collection_mode: object,
+    collection_mode: CollectionMode,
     max_pages: int,
     fetcher: _ProgramPageFetcher,
 ) -> tuple[str, ListingCrawlResult, tuple[tuple[str, ListingCrawlResult], ...]]:
@@ -106,7 +107,7 @@ def _crawl_with_fallback(
     for url in _source_candidates(programs):
         crawl = crawl_listing_pages(
             url,
-            collection_mode,  # type: ignore[arg-type]
+            collection_mode,
             max_pages,
             fetcher.fetch_one,
             fetcher.fetch_many,
