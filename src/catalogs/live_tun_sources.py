@@ -10,6 +10,13 @@ from src.catalogs.tun_program_sources import (
 )
 from src.models.source_quality import SourceUrlType
 
+CURRENT_ANNOUNCEMENT_REQUIRED_IDS = frozenset(
+    {
+        "buddha-charity-progress",
+        "sunshine-scholarship",
+    }
+)
+
 
 @dataclass(frozen=True)
 class LiveSourceOverride:
