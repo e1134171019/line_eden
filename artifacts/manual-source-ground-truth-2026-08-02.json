@@ -10,6 +10,7 @@
   "programs": [
     {
       "program_id": "auden-university-talent",
+      "record_id": "auden-university-talent",
       "program_name": "耀登炳南大專校院優秀人才獎學金",
       "official_url": "https://www.auden.com.tw/2026scholarship/",
       "cycle": "2026",
@@ -24,6 +25,7 @@
     },
     {
       "program_id": "kumota-flying",
+      "record_id": "kumota-flying",
       "program_name": "雲田乘風飛揚獎助學金",
       "official_url": "https://www.kumota.org/care-detail/scholarship01__114/",
       "cycle": "114年度",
@@ -37,6 +39,7 @@
     },
     {
       "program_id": "it-social-care",
+      "record_id": "it-social-care",
       "program_name": "資訊人社會關懷獎學金",
       "official_url": "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01",
       "cycle": "2026",
@@ -51,6 +54,7 @@
     },
     {
       "program_id": "ht-emergency",
+      "record_id": "ht-emergency",
       "program_name": "行天宮急難濟助",
       "official_url": "https://www.ht.org.tw/p1_religion_5_24.htm",
       "cycle": "evergreen_policy",
@@ -66,6 +70,7 @@
     },
     {
       "program_id": "cdf-vocational",
+      "record_id": "cdf-vocational",
       "program_name": "中華開發技藝職能獎學金",
       "official_url": "https://www.cdffoundation.org/中華開發文教基金會/中華開發技藝職能獎學金",
       "cycle": "current_evergreen_program",
@@ -81,6 +86,7 @@
     },
     {
       "program_id": "taishin-youth-volunteer",
+      "record_id": "taishin-youth-volunteer",
       "program_name": "台新青少年志工菁英獎",
       "official_url": "https://www.taishinyouth.org.tw/apply2.php",
       "cycle": "第27屆",
@@ -93,7 +99,8 @@
       "expected_program_behavior": "有效申請頁應主導同方案結果；網站地圖不得成為來源不完整阻擋項。"
     },
     {
-      "program_id": "huayan-lotus-scholarship",
+      "program_id": null,
+      "record_id": "lhu-huayan-lotus-115-57",
       "program_name": "華嚴蓮社大專學生佛學慈孝獎學金",
       "official_url": "https://activity.lhu.edu.tw/p/404-1051-37351.php?Lang=zh-tw",
       "cycle": "115年第57屆",
@@ -106,7 +113,8 @@
       "expected_program_behavior": "附件位於正文相鄰模組時仍須被發現與解析。"
     },
     {
-      "program_id": "lee-chang-yung-scholarship",
+      "program_id": null,
+      "record_id": "lhu-lee-chang-yung-current-relay",
       "program_name": "李長榮教育基金會獎學金",
       "official_url": "https://activity.lhu.edu.tw/",
       "cycle": "current_or_recent_relay",
@@ -120,6 +128,7 @@
     },
     {
       "program_id": "cht-fang-hsien-chi",
+      "record_id": "cht-fang-hsien-chi",
       "program_name": "中華電信方賢齊先生獎學金",
       "official_url": "https://www.chtf.org.tw/news/912",
       "cycle": "115學年度",
