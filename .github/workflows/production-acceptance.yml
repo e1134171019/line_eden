@@ -1,0 +1,166 @@
+name: Production acceptance audit
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-acceptance.yml"
+      - "config.py"
+      - "main.py"
+      - "requirements.txt"
+      - "src/**"
+      - "tests/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  production-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      STUDENT_PROFILE_B64: ${{ secrets.STUDENT_PROFILE_B64 }}
+      STATE_PASSPHRASE: ${{ secrets.STATE_PASSPHRASE }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TZ: Asia/Taipei
+
+    steps:
+      - name: Checkout candidate branch
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install runtime dependencies
+        run: python -m pip install --quiet -r requirements.txt
+
+      - name: Validate audit secrets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+
+          required = (
+              "GEMINI_API_KEY",
+              "STUDENT_PROFILE_B64",
+              "STATE_PASSPHRASE",
+          )
+          missing = [name for name in required if not os.getenv(name, "").strip()]
+          if missing:
+              raise SystemExit(f"缺少 GitHub Actions Secrets：{', '.join(missing)}")
+          print("Production acceptance Secrets 檢查完成。")
+          PY
+
+      - name: Find latest main cloud state
+        id: latest_state
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=scholarship-agent-state&per_page=100" \
+              --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .workflow_run.id'
+          )"
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "找不到 main 的雲端狀態；請先執行 initialize。" >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "將從 workflow run $run_id 還原正式狀態。"
+
+      - name: Download encrypted cloud state
+        uses: actions/download-artifact@v5
+        with:
+          name: scholarship-agent-state
+          path: cloud-state
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.latest_state.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decrypt cloud state
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          test -f cloud-state/scholarship-state.tar.gz.gpg
+          printf '%s' "$STATE_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 \
+              --output cloud-state/scholarship-state.tar.gz \
+              --decrypt cloud-state/scholarship-state.tar.gz.gpg
+          tar -xzf cloud-state/scholarship-state.tar.gz
+          test -f data/scholarships.db
+          rm -f cloud-state/scholarship-state.tar.gz
+
+      - name: Build private profile file
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          raw = base64.b64decode(os.environ["STUDENT_PROFILE_B64"], validate=True)
+          json.loads(raw.decode("utf-8"))
+          Path("profile.json").write_bytes(raw)
+          print("profile.json 已由 GitHub Secret 建立。")
+          PY
+
+      - name: Run production acceptance without LINE
+        id: acceptance
+        shell: bash
+        run: |
+          set +e
+          python -m src.automation.production_acceptance_audit \
+            > production-acceptance.log 2>&1
+          exit_code=$?
+          set -e
+          cat production-acceptance.log
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+      - name: Upload production acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-acceptance-${{ github.run_id }}
+          path: |
+            production-acceptance.log
+            artifacts/structured-shadow-audit.csv
+            artifacts/structured-shadow-audit.json
+            artifacts/source-health.json
+            artifacts/pipeline-rejections.json
+            artifacts/production-acceptance.json
+            artifacts/production-acceptance.csv
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Clear private profile
+        if: always()
+        shell: bash
+        run: rm -f profile.json
+
+      - name: Enforce production acceptance
+        if: always()
+        shell: bash
+        run: |
+          exit_code="${{ steps.acceptance.outputs.exit_code }}"
+          if [[ -z "$exit_code" ]]; then
+            echo "Production acceptance 未產生 exit code。" >&2
+            exit 1
+          fi
+          exit "$exit_code"
