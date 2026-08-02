@@ -8,7 +8,6 @@ from src.catalogs.tun_program_sources import ResolvedProgramSource, resolved_pro
 from src.collectors.collection_diagnostics import CollectorDiagnostic
 from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
 from src.collectors.tun_program_watch_collector import (
-    PageDiscoveryDiagnostic,
     ProgramSourceState,
     TunProgramWatchCollector,
     _ProgramPageFetcher,
@@ -54,6 +53,8 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
             current = original_states[program_id]
             if current.status not in _RETRYABLE_STATUSES and not contract.force_replace:
                 continue
+            if contract.force_replace:
+                records = _replace_program_records(records, program_id, tuple(), True)
             attempt = self._retry_program(source, retry_stats)
             if attempt is None:
                 continue
@@ -63,7 +64,7 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
                     records,
                     program_id,
                     attempt.records,
-                    contract.force_replace,
+                    False,
                 )
 
         self.program_states = tuple(
@@ -265,7 +266,7 @@ def _unique_records(records: list[Scholarship]) -> list[Scholarship]:
     return list(unique.values())
 
 
-# 以最後逐方案狀態重建群組成功數，不再保留已被 fallback 修復的 partial。
+# 以最後逐方案狀態重建群組成功數，不得掩蓋原本的分頁 partial。
 def _rebuild_diagnostic(
     base: CollectorDiagnostic,
     states: tuple[ProgramSourceState, ...],
@@ -273,8 +274,6 @@ def _rebuild_diagnostic(
 ) -> CollectorDiagnostic:
     failures = [item for item in states if item.status in _RETRYABLE_STATUSES]
     completeness = "partial" if failures else base.completeness
-    if not failures and base.completeness == "partial":
-        completeness = "complete"
     errors = "｜".join(
         f"{item.program_id}:{item.status}:{item.reason}" for item in failures[:10]
     )
@@ -282,6 +281,12 @@ def _rebuild_diagnostic(
     succeeded = base.pages_succeeded + stats.pages_succeeded
     parsed = base.parsed_rows + stats.parsed_records
     raw = base.raw_rows + stats.raw_matches
+    if failures:
+        stop_reason = "program_watch_live_contract_partial"
+    elif base.completeness in {"complete", "incremental"}:
+        stop_reason = "program_watch_live_contract_passed"
+    else:
+        stop_reason = base.stop_reason
     return replace(
         base,
         completeness=completeness,
@@ -291,12 +296,8 @@ def _rebuild_diagnostic(
         raw_rows=raw,
         parsed_rows=parsed,
         rejected_rows=max(raw - parsed, 0),
-        stop_reason=(
-            "program_watch_live_contract_passed"
-            if not failures
-            else "program_watch_live_contract_partial"
-        ),
-        error=errors,
+        stop_reason=stop_reason,
+        error=errors or base.error,
         ssl_compatibility_fallback=(
             base.ssl_compatibility_fallback or stats.ssl_fallback
         ),
