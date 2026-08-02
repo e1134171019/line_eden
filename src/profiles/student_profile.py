@@ -42,6 +42,9 @@ class StudentProfile:
     household_size: int = 0
     has_received_similar_scholarship: bool | None = None
     can_obtain_recommendation: bool | None = None
+    has_student_loan: bool | None = None
+    has_qualifying_volunteer_service: bool | None = None
+    birth_date: str = ""
     special_statuses_confirmed: bool = True
 
     # 將背景與資格規則版本共同轉成不可逆指紋，規則更新後會自動重算。
@@ -122,6 +125,12 @@ def _build_profile(data: dict[str, Any]) -> StudentProfile:
             data,
             "can_obtain_recommendation",
         ),
+        has_student_loan=_optional_bool(data, "has_student_loan"),
+        has_qualifying_volunteer_service=_optional_bool(
+            data,
+            "has_qualifying_volunteer_service",
+        ),
+        birth_date=str(data.get("birth_date", "")).strip(),
         special_statuses_confirmed="special_statuses" in data,
     )
 
