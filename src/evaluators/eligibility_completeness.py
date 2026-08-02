@@ -212,7 +212,10 @@ def _sentence_requires_group(sentence: str, terms: tuple[str, ...]) -> bool:
 def _explicitly_excludes(text: str, terms: tuple[str, ...]) -> bool:
     pattern = "|".join(re.escape(term) for term in terms)
     prefix = rf"(?:不含|不包括|不受理|不接受|排除|不得為).{{0,18}}(?:{pattern})"
-    suffix = rf"(?:{pattern}).{{0,18}}(?:不得申請|不予受理|不適用)"
+    suffix = (
+        rf"(?:{pattern}).{{0,24}}"
+        r"(?:不得申請|不予受理|不適用|不列入|不列為)"
+    )
     return bool(re.search(prefix, text) or re.search(suffix, text))
 
 
