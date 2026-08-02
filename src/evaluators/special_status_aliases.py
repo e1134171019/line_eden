@@ -74,6 +74,8 @@ REQUIREMENT_WORDS = (
     "僅限",
     "申請對象",
     "申請資格",
+    "申請條件",
+    "共同申請條件",
     "資格條件",
     "救助對象",
     "補助對象",
@@ -100,6 +102,13 @@ ANY_OF_WORDS = (
     "其中之一",
     "下列之一",
     "各款情形之一",
+)
+_GROUP_HEADER_WORDS = (
+    "申請資格",
+    "申請條件",
+    "共同申請條件",
+    "符合下列",
+    "符合以下",
 )
 _GROUP_LOOKAHEAD = 8
 
@@ -142,8 +151,13 @@ def find_alias_unknowns(text: str, profile: StudentProfile) -> list[str]:
     groups = _required_status_groups(text)
     if groups and not profile.special_statuses_confirmed:
         return ["公告要求經濟或特殊身分，但 profile.json 尚未確認相關身分。"]
-    for statuses in groups:
-        if any(_owns_status(owned, status) for status in statuses):
+    for any_of, statuses in groups:
+        satisfied = (
+            any(_owns_status(owned, status) for status in statuses)
+            if any_of
+            else all(_owns_status(owned, status) for status in statuses)
+        )
+        if satisfied:
             continue
         if not profile.special_statuses_confirmed:
             return ["公告要求經濟或特殊身分，但 profile.json 尚未確認相關身分。"]
@@ -160,14 +174,12 @@ def find_alias_unknowns(text: str, profile: StudentProfile) -> list[str]:
     return []
 
 
-# 解析跨行「符合下列其中之一」條列，避免只讀到標題卻漏掉後續身分。
-def _required_status_groups(text: str) -> tuple[tuple[str, ...], ...]:
+# 解析跨行資格條列，回傳是否 any-of 與條列提及的身分。
+def _required_status_groups(text: str) -> tuple[tuple[bool, tuple[str, ...]], ...]:
     sentences = _sentences(text)
-    groups: list[tuple[str, ...]] = []
+    groups: list[tuple[bool, tuple[str, ...]]] = []
     for index, sentence in enumerate(sentences):
-        if _mentioned_statuses(sentence):
-            continue
-        if not _contains_requirement(sentence) or not _contains_any_of(sentence):
+        if _mentioned_statuses(sentence) or not _is_group_header(sentence):
             continue
         statuses: list[str] = []
         for following in sentences[index + 1 : index + 1 + _GROUP_LOOKAHEAD]:
@@ -178,17 +190,26 @@ def _required_status_groups(text: str) -> tuple[tuple[str, ...], ...]:
             if statuses:
                 break
         if statuses:
-            groups.append(tuple(statuses))
+            groups.append((_contains_any_of(sentence), tuple(statuses)))
     return tuple(groups)
 
 
-# 已確認沒有任一條列身分時，回傳 any-of 硬性不符。
+# 已確認未滿足跨行資格條列時，依 any-of 或 all-of 回傳硬性不符。
 def _group_exclusion(text: str, owned: set[str]) -> str | None:
-    for statuses in _required_status_groups(text):
-        if any(_owns_status(owned, status) for status in statuses):
-            continue
-        return f"須具備以下任一身分：{'、'.join(statuses)}。"
+    for any_of, statuses in _required_status_groups(text):
+        if any_of:
+            if any(_owns_status(owned, status) for status in statuses):
+                continue
+            return f"須具備以下任一身分：{'、'.join(statuses)}。"
+        missing = tuple(status for status in statuses if not _owns_status(owned, status))
+        if missing:
+            return f"公告限定「{missing[0]}」身分。"
     return None
+
+
+# 判斷文字是否為後續條列的資格標題。
+def _is_group_header(text: str) -> bool:
+    return _contains_requirement(text) and any(word in text for word in _GROUP_HEADER_WORDS)
 
 
 # 標題直接以特定身分命名且非優先條件時視為必要資格。
