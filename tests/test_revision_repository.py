@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-import sqlite3
 
 from src.models.scholarship import Scholarship
 from src.repositories.announcement_revision_repository import (
@@ -11,6 +10,7 @@ from src.repositories.announcement_revision_repository import (
     AnnouncementRevisionRepository,
 )
 from src.repositories.scholarship_repository import ScholarshipRepository
+from src.repositories.sqlite_connection import open_database
 
 
 def _stored_item(repository: ScholarshipRepository) -> Scholarship:
@@ -39,13 +39,11 @@ def test_first_revision_is_baseline_and_unchanged_does_not_reopen(tmp_path: Path
     repository = ScholarshipRepository(db_path)
     item = _stored_item(repository)
     revisions = AnnouncementRevisionRepository(db_path)
-
     first = revisions.observe(item.content_hash, "announcement-1", "revision-a")
     same = revisions.observe(item.content_hash, "announcement-1", "revision-a")
-
     assert first.status == REVISION_BASELINED
     assert same.status == REVISION_UNCHANGED
-    with sqlite3.connect(db_path) as conn:
+    with open_database(db_path) as conn:
         row = conn.execute(
             "SELECT notified_at, hard_eligibility_status FROM scholarships "
             "WHERE content_hash = ?",
@@ -62,12 +60,10 @@ def test_changed_revision_reopens_evaluation_and_notification(tmp_path: Path) ->
     item = _stored_item(repository)
     revisions = AnnouncementRevisionRepository(db_path)
     revisions.observe(item.content_hash, "announcement-1", "revision-a")
-
     changed = revisions.observe(item.content_hash, "announcement-1", "revision-b")
-
     assert changed.status == REVISION_CHANGED
     assert changed.previous_hash == "revision-a"
-    with sqlite3.connect(db_path) as conn:
+    with open_database(db_path) as conn:
         row = conn.execute(
             """
             SELECT notified_at, baseline_at, profile_hash,
