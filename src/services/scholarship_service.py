@@ -39,7 +39,8 @@ from src.formatters.scholarship_message_formatter import (
     split_scholarships,
 )
 from src.models.eligibility_axes import (
-    NOT_ACTIONABLE,
+    APPLY_CANDIDATE,
+    MANUAL_REVIEW,
     VERIFY_SOURCE,
     derive_action_status,
 )
@@ -225,6 +226,7 @@ class ScholarshipService:
             record.item.notice_kind == APPLICATION for record in records
         )
         non_actionable_periods = {EXPIRED, STALE_UNKNOWN}
+        actionable_statuses = {APPLY_CANDIDATE, VERIFY_SOURCE, MANUAL_REVIEW}
         pipeline = PipelineCounts(
             raw_collected=len(raw),
             relevance_accepted=len(collected),
@@ -236,8 +238,7 @@ class ScholarshipService:
             notifiable=sum(
                 record.item.notice_kind == APPLICATION
                 and record.item.application_status not in non_actionable_periods
-                and record.item.action_status
-                in {"apply_candidate", "verify_source", "manual_review"}
+                and record.item.action_status in actionable_statuses
                 for record in records
             ),
         )
