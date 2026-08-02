@@ -58,6 +58,9 @@ from src.services.gemini_fallback_service import (
     GeminiUsageLimiter,
 )
 from src.services.gemini_text_analysis_service import GeminiTextAnalysisService
+from src.services.revision_aware_scholarship_service import (
+    RevisionAwareScholarshipService,
+)
 from src.services.scholarship_service import AuditResult, ScholarshipService, ServiceResult
 
 Notifier = Callable[[str], None]
@@ -131,13 +134,13 @@ def build_service(
     mode: RunMode = RunMode.LIVE,
     use_gemini: bool = False,
 ) -> ScholarshipService:
-    """建立具備學生背景、正文擷取與資格判斷的完整服務。"""
+    """建立具備學生背景、正文擷取、revision 與資格判斷的完整服務。"""
     if not mode.requires_profile:
         raise ValueError("基準模式必須使用 build_baseline_service()")
 
     profile = load_student_profile(PROFILE_PATH)
     gemini_fallback, gemini_text_analysis = _build_gemini_services(use_gemini)
-    return ScholarshipService(
+    return RevisionAwareScholarshipService(
         _build_collector(mode),
         _build_repository(),
         build_notifier(mode),
