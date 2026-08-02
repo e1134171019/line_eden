@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from dataclasses import replace
-
 from src.catalogs.tun_live_contracts import LiveSourceCandidate
 from src.catalogs.tun_program_sources import resolved_programs
 from src.collectors.collection_diagnostics import CollectorDiagnostic
