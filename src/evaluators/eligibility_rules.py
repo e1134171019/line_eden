@@ -134,6 +134,9 @@ def _check_year(text: str, title: str, profile: StudentProfile) -> list[str]:
         ("應屆畢業生", "應屆畢業"),
     ):
         reasons.append("公告限定應屆畢業生。")
+    minimum_year = _extract_minimum_college_year(text)
+    if minimum_year is not None and profile.year < minimum_year:
+        reasons.append(f"公告限定大學 {minimum_year} 年級以上。")
     return reasons
 
 
@@ -329,6 +332,16 @@ def _term_is_required(text: str, title: str, terms: tuple[str, ...]) -> bool:
     )
 
 
+# 擷取「大二含以上」等最低大學年級限制。
+def _extract_minimum_college_year(text: str) -> int | None:
+    year_terms = ((4, "大四"), (3, "大三"), (2, "大二"))
+    for year, term in year_terms:
+        pattern = rf"(?:大學校院|大專院校|大專校院|大學部).{{0,20}}{term}(?:含)?以上"
+        if re.search(pattern, text):
+            return year
+    return None
+
+
 def _extract_score(text: str, labels: tuple[str, ...]) -> float | None:
     label = "|".join(re.escape(item) for item in labels)
     score = r"(\d{1,3}(?:\.\d+)?)"
@@ -384,11 +397,11 @@ def _is_general_college_notice(text: str) -> bool:
     )
     if any(term in text for term in direct_terms):
         return True
-    pattern = (
-        r"大專(?:院校|校院).{0,32}(?:學士班|大學部).{0,20}"
-        r"(?:在學學生|在校生|學生)"
+    patterns = (
+        r"大專(?:院校|校院).{0,32}(?:學士班|大學部).{0,20}(?:在學學生|在校生|學生)",
+        r"(?:大學校院|大專院校|大專校院).{0,24}大[二三四](?:含)?以上.{0,24}(?:在學生|在校生|學生)",
     )
-    return bool(re.search(pattern, text))
+    return any(re.search(pattern, text) for pattern in patterns)
 
 
 def _contains_preference(text: str) -> bool:
