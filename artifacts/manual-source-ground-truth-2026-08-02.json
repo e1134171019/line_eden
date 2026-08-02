@@ -1,0 +1,136 @@
+{
+  "schema_version": "manual-source-ground-truth-v1",
+  "verified_at": "2026-08-02",
+  "scope": "第一批 production 阻擋項；只保存公開來源事實，不保存私人學生 profile。",
+  "rules": {
+    "independence": "本檔由人工閱讀官方頁面、正式校方轉載及附件後建立，不使用 evaluator 輸出作為正確答案。",
+    "current_cycle": "2026 年等同民國 115 年；明示 114 年度且無 115 年更新者視為歷史方案。",
+    "release_use": "程式結果必須與本檔的來源狀態、公告年度、官方入口及必要條件一致。"
+  },
+  "programs": [
+    {
+      "program_id": "auden-university-talent",
+      "program_name": "耀登炳南大專校院優秀人才獎學金",
+      "official_url": "https://www.auden.com.tw/2026scholarship/",
+      "cycle": "2026",
+      "source_status": "current_application",
+      "evidence_status": "complete",
+      "public_facts": [
+        "申請對象包含大學生及研究生。",
+        "不含學士班一年級新生、休學生、延畢生、學分班及空中大學學生。",
+        "公告正文與兩個附件可成功取得。"
+      ],
+      "expected_program_behavior": "不得把排除大一新生解讀成只允許大一。"
+    },
+    {
+      "program_id": "kumota-flying",
+      "program_name": "雲田乘風飛揚獎助學金",
+      "official_url": "https://www.kumota.org/care-detail/scholarship01__114/",
+      "cycle": "114年度",
+      "source_status": "historical_cycle",
+      "evidence_status": "complete_for_cycle_classification",
+      "public_facts": [
+        "官方頁面明示 114 年度。",
+        "2026 年為民國 115 年。"
+      ],
+      "expected_program_behavior": "不得列為 2026 年可行動公告；應標記 stale_unknown 或其他非可行動歷史狀態。"
+    },
+    {
+      "program_id": "it-social-care",
+      "program_name": "資訊人社會關懷獎學金",
+      "official_url": "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01",
+      "cycle": "2026",
+      "source_status": "current_application",
+      "evidence_status": "complete",
+      "public_facts": [
+        "申請對象為資訊、統計、公共行政、法律及相關領域之在學學生。",
+        "申請期間為 2026-09-16 至 2026-10-31。",
+        "採線上申請。"
+      ],
+      "expected_program_behavior": "正文擷取必須包含申請對象、期間及申請方式，不得只取得導覽文字。"
+    },
+    {
+      "program_id": "ht-emergency",
+      "program_name": "行天宮急難濟助",
+      "official_url": "https://www.ht.org.tw/p1_religion_5_24.htm",
+      "cycle": "evergreen_policy",
+      "source_status": "current_evergreen_policy",
+      "evidence_status": "complete",
+      "public_facts": [
+        "濟助對象包含國小至大專校院學生。",
+        "急難事件發生日起六個月內提出。",
+        "由學校或相關單位填具申請書並檢附文件。",
+        "辦法列有不適用或排除情形。"
+      ],
+      "expected_program_behavior": "不得因使用「濟助對象」與「應備資料」等用詞而判為導覽頁。"
+    },
+    {
+      "program_id": "cdf-vocational",
+      "program_name": "中華開發技藝職能獎學金",
+      "official_url": "https://www.cdffoundation.org/中華開發文教基金會/中華開發技藝職能獎學金",
+      "cycle": "current_evergreen_program",
+      "source_status": "current_application",
+      "evidence_status": "complete",
+      "public_facts": [
+        "申請人須具中華民國國籍。",
+        "對象包含高中職及大專校院學生。",
+        "支持藝術、體育及技藝職能領域。",
+        "電機、電子及資訊相關領域不屬本方案支持範圍。"
+      ],
+      "expected_program_behavior": "電子工程系應由正式辦法得到不符合；校方轉載缺附件不得推翻正式來源。"
+    },
+    {
+      "program_id": "taishin-youth-volunteer",
+      "program_name": "台新青少年志工菁英獎",
+      "official_url": "https://www.taishinyouth.org.tw/apply2.php",
+      "cycle": "第27屆",
+      "source_status": "current_application",
+      "evidence_status": "complete",
+      "public_facts": [
+        "官方申請頁包含本屆申請規則。",
+        "網站地圖 map.php 不是申請公告。"
+      ],
+      "expected_program_behavior": "有效申請頁應主導同方案結果；網站地圖不得成為來源不完整阻擋項。"
+    },
+    {
+      "program_id": "huayan-lotus-scholarship",
+      "program_name": "華嚴蓮社大專學生佛學慈孝獎學金",
+      "official_url": "https://activity.lhu.edu.tw/p/404-1051-37351.php?Lang=zh-tw",
+      "cycle": "115年第57屆",
+      "source_status": "current_application",
+      "evidence_status": "complete_via_attachment",
+      "public_facts": [
+        "龍華科技大學公告頁含正式 PDF 附件。",
+        "申請期間為 2026-08-20 至 2026-09-20。"
+      ],
+      "expected_program_behavior": "附件位於正文相鄰模組時仍須被發現與解析。"
+    },
+    {
+      "program_id": "lee-chang-yung-scholarship",
+      "program_name": "李長榮教育基金會獎學金",
+      "official_url": "https://activity.lhu.edu.tw/",
+      "cycle": "current_or_recent_relay",
+      "source_status": "requires_exact_current_notice_confirmation",
+      "evidence_status": "partial",
+      "public_facts": [
+        "校方公告頁宣告詳細資格在附件。",
+        "既有正文不足以單獨判定全部資格。"
+      ],
+      "expected_program_behavior": "必須取得正式附件或可驗證官方辦法；不得由短正文直接判定。"
+    },
+    {
+      "program_id": "cht-fang-hsien-chi",
+      "program_name": "中華電信方賢齊先生獎學金",
+      "official_url": "https://www.chtf.org.tw/news/912",
+      "cycle": "115學年度",
+      "source_status": "current_application",
+      "evidence_status": "current_title_and_deadline_confirmed_rules_incomplete",
+      "public_facts": [
+        "官方頁面標題明示 115 學年度開放申請。",
+        "當期完整資格條件尚未由目前 collector 取得。",
+        "不得直接沿用 114 學年度條件作為 115 學年度人工正確答案。"
+      ],
+      "expected_program_behavior": "在取得 115 學年度正式辦法前維持來源不完整阻擋。"
+    }
+  ]
+}
