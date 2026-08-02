@@ -1,4 +1,5 @@
-2026-08-02T13:59:30+08:00
-reason=validate-production-live-contract-v14-final
-source_contract_run=30734802272
-expected_severe_program_count=0
+2026-08-02T14:15:35+08:00
+reason=merge-pr98-after-strict-38-source-and-production-acceptance
+required_live_contract=38-of-38
+required_songliang_status=ineligible
+required_hard_conflicts=0
