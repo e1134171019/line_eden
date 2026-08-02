@@ -22,7 +22,12 @@ class LiveSourceOverride:
 
 _LIVE_SOURCE_OVERRIDES: dict[str, LiveSourceOverride] = {
     "buddha-charity-progress": LiveSourceOverride(
+        primary_url=(
+            "https://service.utaipei.edu.tw/p/404-1034-130714.php?Lang=zh-tw"
+        ),
+        source_url_type=SourceUrlType.RELAY_DETAIL,
         fallback_urls=(
+            "https://www.buddha-charity.org/main.php?funName=news_content&id=114",
             "https://www.buddha-charity.org/main.php?funName=news_content&id=109",
             "https://www.buddha-charity.org/",
         ),
@@ -79,6 +84,10 @@ _LIVE_ALIASES: dict[str, tuple[str, ...]] = {
     "lovepeace-disadvantaged": (
         "祥和文教基金會獎助學金",
         "祥和文教基金會獎助學金申請辦法",
+    ),
+    "sunshine-scholarship": (
+        "獎助學金申請說明",
+        "陽光獎助學金申請說明",
     ),
 }
 
