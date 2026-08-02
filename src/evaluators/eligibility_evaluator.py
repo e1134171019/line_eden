@@ -74,6 +74,7 @@ _SAFE_RULES_STATUSES = {
 
 def _normalize_rule_text(text: str) -> str:
     normalized = normalize_eligibility_text(normalize_text(text))
+    normalized = normalized.replace("參選資格", "申請資格")
     return re.sub(r"(不得低於|至少|須達|需達|達)\s+(?=\d)", r"\1", normalized)
 
 

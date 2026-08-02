@@ -6,7 +6,6 @@ from src.catalogs.tun_2025_program_catalog import (
     TUN_DISCOVERY_URL,
 )
 from src.catalogs.tun_program_sources import (
-    SOURCE_CORE,
     SOURCE_RELAY,
     core_covered_programs,
     monitorable_programs,
@@ -22,13 +21,13 @@ def test_tun_catalog_contains_exactly_38_unique_programs() -> None:
     assert len({item.program_id for item in TUN_2025_PROGRAMS}) == 38
 
 
-# URL 品質模型必須完整覆蓋 38 項，不得留下隱含預設值。
+# URL 品質模型必須完整覆蓋 38 項，且全部已有可監測入口。
 def test_resolved_sources_cover_all_38_programs() -> None:
     programs = resolved_programs()
 
     assert len(programs) == 38
-    assert len(monitorable_programs()) == 37
-    assert len(core_covered_programs()) == 1
+    assert len(monitorable_programs()) == 38
+    assert core_covered_programs() == tuple()
     assert unresolved_programs() == tuple()
     assert all(item.organizer_id for item in programs)
     assert all(item.expected_discovery for item in programs)
@@ -43,6 +42,7 @@ def test_every_program_has_url_type_and_update_risk() -> None:
     assert all(isinstance(item.update_risk, SourceRisk) for item in programs)
     assert all(item.source_url_type != SourceUrlType.PENDING for item in programs)
     assert all(item.source_url_type != SourceUrlType.WRONG for item in programs)
+    assert all(item.source_url_type != SourceUrlType.CORE_COVERED for item in programs)
 
 
 # TUN 是發現線索，不得被當成正式資格或截止日來源。
@@ -54,7 +54,7 @@ def test_tun_page_is_discovery_reference_only() -> None:
     )
 
 
-# 正式轉載與核心來源覆蓋必須明確標記，不能冒充主辦單位官網。
+# 官方來源與正式轉載必須明確標記，不能互相冒充。
 def test_source_kinds_are_explicit() -> None:
     by_id = {item.program_id: item for item in resolved_programs()}
 
@@ -62,13 +62,11 @@ def test_source_kinds_are_explicit() -> None:
     assert by_id["tcb-foundation"].source_url_type == SourceUrlType.RELAY_LIST
     assert by_id["it-social-care"].official_status == SOURCE_RELAY
     assert by_id["it-social-care"].source_url_type == SourceUrlType.RELAY_DETAIL
+    assert by_id["dapeng-aid"].official_status == SOURCE_RELAY
+    assert by_id["dapeng-aid"].source_url_type == SourceUrlType.RELAY_DETAIL
     assert by_id["yonglin-hope"].official_status == OFFICIAL_VERIFIED
-    assert by_id["yonglin-hope"].source_url_type == SourceUrlType.EVERGREEN
-    assert by_id["yonglin-hope"].official_url.endswith(
-        "/project/education/detail/28"
-    )
-    assert by_id["hndasset-wenxiang"].official_status == SOURCE_CORE
-    assert by_id["hndasset-wenxiang"].official_url == ""
+    assert by_id["hndasset-wenxiang"].official_status == OFFICIAL_VERIFIED
+    assert by_id["hndasset-wenxiang"].official_url == "https://www.hndasset.com/csr/"
 
 
 # 已核對的錯誤或低品質入口必須換成精準列表／常設頁。
@@ -90,11 +88,11 @@ def test_verified_entry_corrections_are_applied() -> None:
     assert by_id["cy-arch-aid"].official_url == (
         "https://www.cy-arch.com.tw/foundation/scholarship"
     )
-    assert by_id["sunshine-scholarship"].official_url == (
-        "https://scholarship.sunshine.org.tw/?cat=1"
+    assert by_id["lihpao-fullon"].official_url == (
+        "https://www.lihpao.org.tw/active_detail.php?no=95"
     )
-    assert by_id["heart-child"].official_url == (
-        "https://www.ccft.org.tw/OnePage.aspx?tid=128"
+    assert by_id["taishin-youth-volunteer"].official_url == (
+        "https://www.taishinyouth.org.tw/apply2.php"
     )
 
 
@@ -104,6 +102,8 @@ def test_url_quality_risk_matches_source_shape() -> None:
 
     assert by_id["dapeng-aid"].source_url_type == SourceUrlType.RELAY_DETAIL
     assert by_id["dapeng-aid"].update_risk == SourceRisk.HIGH
+    assert by_id["harmony-stability"].source_url_type == SourceUrlType.ANNUAL_DETAIL
+    assert by_id["harmony-stability"].update_risk == SourceRisk.HIGH
     assert by_id["auden-university-talent"].source_url_type == SourceUrlType.LIST
     assert by_id["auden-university-talent"].update_risk == SourceRisk.LOW
     assert by_id["cy-arch-aid"].source_url_type == SourceUrlType.EVERGREEN
