@@ -2,9 +2,8 @@
 
 from dataclasses import replace
 
-from src.catalogs.live_tun_sources import (
-    live_resolved_programs,
-)
+from src.catalogs.live_tun_sources import live_resolved_programs
+from src.catalogs.tun_program_sources import ResolvedProgramSource
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.listing_paginator import ListingCrawlResult, ListingPage
 from src.collectors.resilient_tun_program_watch_collector import (
@@ -26,7 +25,7 @@ from src.services.structured_ineligible_veto import apply_veto_to_audit_result
 from src.services.structured_shadow_comparison import StructuredShadowComparison
 
 
-def _program(program_id: str):
+def _program(program_id: str) -> ResolvedProgramSource:
     return next(item for item in live_resolved_programs() if item.program_id == program_id)
 
 
@@ -34,6 +33,7 @@ def test_live_source_overrides_avoid_known_production_failures() -> None:
     yonglin = _program("yonglin-hope")
     sunshine = _program("sunshine-scholarship")
     wanzu = _program("sunshine-wanzu")
+    lovepeace = _program("lovepeace-disadvantaged")
     dapeng = _program("dapeng-aid")
 
     assert yonglin.source_url_type is SourceUrlType.RELAY_DETAIL
@@ -42,6 +42,8 @@ def test_live_source_overrides_avoid_known_production_failures() -> None:
     assert sunshine.official_url == "https://scls.sunshine.org.tw/"
     assert wanzu.source_url_type is SourceUrlType.RELAY_DETAIL
     assert "announce.yzu.edu.tw" in wanzu.official_url
+    assert lovepeace.source_url_type is SourceUrlType.EVERGREEN
+    assert "lovepeace.org.tw" in lovepeace.official_url
     assert "osa.ndhu.edu.tw" in dapeng.official_url
 
 
@@ -119,6 +121,46 @@ def test_resilient_collector_uses_fallback_when_primary_fails(monkeypatch) -> No
     assert collector.program_states[0].status == "matched"
     assert collector.program_states[0].entry_url == "https://fallback.example/list"
     assert "已使用 fallback" in collector.program_states[0].reason
+
+
+def test_evergreen_page_creates_direct_candidate_without_named_link(monkeypatch) -> None:
+    import src.collectors.resilient_tun_program_watch_collector as module
+
+    program = replace(
+        _program("sunshine-scholarship"),
+        official_url="https://evergreen.example/program",
+        fallback_urls=tuple(),
+    )
+    monkeypatch.setattr(module, "live_monitorable_programs", lambda: (program,))
+    monkeypatch.setattr(module, "live_resolved_programs", lambda: (program,))
+
+    def fake_crawl(url, *_args, **_kwargs):
+        return ListingCrawlResult(
+            (ListingPage(url, "<main>2026 年申請說明與資格辦法</main>"),),
+            1,
+            1,
+            1,
+            "complete",
+            "all_detected_pages_completed",
+            tuple(),
+        )
+
+    monkeypatch.setattr(module, "crawl_listing_pages", fake_crawl)
+    collector = ResilientTunProgramWatchCollector(
+        1.0,
+        "test-agent",
+        CollectionMode.FULL_AUDIT,
+        2,
+        1,
+    )
+
+    records = collector.collect()
+
+    assert len(records) == 1
+    assert records[0].program_id == "sunshine-scholarship"
+    assert records[0].match_method == "source_contract_direct"
+    assert collector.program_states[0].status == "matched"
+    assert collector.program_states[0].match_method == "source_contract_direct"
 
 
 def test_structured_hard_failure_vetoes_legacy_eligible() -> None:
