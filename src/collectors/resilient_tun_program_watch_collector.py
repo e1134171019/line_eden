@@ -13,6 +13,8 @@ from src.catalogs.tun_program_sources import (
 )
 from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
 from src.collectors.tun_program_watch_collector import (
+    PageDiscoveryDiagnostic,
+    ProgramMatchObservation,
     ProgramSourceState,
     TunProgramWatchCollector,
     _ProgramPageFetcher,
@@ -27,6 +29,10 @@ from src.collectors.tun_program_watch_collector import (
     _update_program_states,
 )
 from src.models.scholarship import Scholarship
+from src.models.source_quality import allows_direct_candidate
+
+_DIRECT_MATCH_METHOD = "source_contract_direct"
+_DIRECT_MATCH_SCORE = 100
 
 
 class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
@@ -154,8 +160,70 @@ def _process_group(
         _merge_counts(counts, page_counts)
         diagnostic = _merge_discovery_diagnostics(diagnostic, page_diagnostic)
         _append_unique(records, seen_records, found)
+    direct_matches, diagnostic = _append_direct_candidate_if_allowed(
+        programs,
+        entry_url,
+        crawl,
+        counts,
+        diagnostic,
+        records,
+        seen_records,
+    )
+    raw_node_matches += direct_matches
     _update_program_states(states, programs, crawl, counts, diagnostic)
     return raw_node_matches
+
+
+# 固定方案頁與單篇公告成功下載時，不強迫頁內再出現同名導覽連結。
+def _append_direct_candidate_if_allowed(
+    programs: tuple[ResolvedProgramSource, ...],
+    entry_url: str,
+    crawl: ListingCrawlResult,
+    counts: dict[str, int],
+    diagnostic: PageDiscoveryDiagnostic,
+    records: list[Scholarship],
+    seen_records: set[str],
+) -> tuple[int, PageDiscoveryDiagnostic]:
+    if len(programs) != 1 or not crawl.pages:
+        return 0, diagnostic
+    program = programs[0]
+    if counts.get(program.program_id) or not allows_direct_candidate(
+        program.source_url_type
+    ):
+        return 0, diagnostic
+    page_url = crawl.pages[0].url
+    candidate = Scholarship.from_raw(
+        f"tun-program-{program.program_id}",
+        program.title,
+        "",
+        page_url,
+        program_id=program.program_id,
+        entry_url=entry_url,
+        detail_url=page_url,
+        match_method=_DIRECT_MATCH_METHOD,
+        match_score=_DIRECT_MATCH_SCORE,
+        matched_alias=program.title,
+    )
+    before = len(records)
+    _append_unique(records, seen_records, [candidate])
+    if len(records) == before:
+        return 0, diagnostic
+    counts[program.program_id] = 1
+    observations = dict(diagnostic.observations)
+    current = observations.get(program.program_id, ProgramMatchObservation())
+    observations[program.program_id] = ProgramMatchObservation(
+        current.raw_candidates + 1,
+        current.ambiguous_candidates,
+        max(current.top_score, _DIRECT_MATCH_SCORE),
+        current.second_best_score,
+        _DIRECT_MATCH_METHOD,
+        current.competing_program_id,
+    )
+    return 1, PageDiscoveryDiagnostic(
+        observations,
+        diagnostic.generic_candidates,
+        diagnostic.link_candidates,
+    )
 
 
 # fallback 成功必須在逐方案狀態中留下可稽核軌跡。
