@@ -64,11 +64,12 @@ _RUNTIME_SOURCE_PATCHES: dict[
         ),
     ),
     "sunshine-wanzu": (
-        "https://www.sunshine.org.tw/news/announce",
+        "https://scls.sunshine.org.tw/",
         OFFICIAL_VERIFIED,
-        SourceUrlType.LIST,
-        SourceRisk.LOW,
+        SourceUrlType.EVERGREEN,
+        SourceRisk.MEDIUM,
         (
+            "https://www.sunshine.org.tw/news/announce",
             "https://scholarship.sunshine.org.tw/?cat=1",
             "https://scholarship.sunshine.org.tw/?p=996",
         ),
@@ -84,12 +85,14 @@ _RUNTIME_SOURCE_PATCHES: dict[
         ),
     ),
     "dapeng-aid": (
-        "https://nfuosa.nfu.edu.tw/scholarship-news/181-life/sact-scholarship/scholarshipcc.html",
+        "https://osa.ndhu.edu.tw/p/406-1005-254221%2Cr402.php?Lang=zh-tw",
         SOURCE_RELAY,
-        SourceUrlType.RELAY_LIST,
-        SourceRisk.MEDIUM,
+        SourceUrlType.RELAY_DETAIL,
+        SourceRisk.HIGH,
         (
-            "https://nfuosa.nfu.edu.tw/%E6%9C%80%E6%96%B0%E6%B6%88%E6%81%AF/181-life/sact-scholarship/scholarshipcc/9722-115%E5%B9%B4%E7%AC%AC1%E6%AC%A1%E5%A4%A7%E9%B5%AC%E7%A7%91%E6%8A%80%E6%85%88%E5%96%84%E5%9F%BA%E9%87%91%E6%9C%83%E7%8D%8E%E5%8A%A9%E5%AD%B8%E9%87%91.html",
+            "https://www.ntin.edu.tw/news_detail.aspx?id=50777",
+            "https://www.osa.nchu.edu.tw/osa/laa/sys/modules/tadnews/index.php?nsn=4145",
+            "https://studentaff.ctu.edu.tw/p/404-1003-47891.php?Lang=zh-tw",
             "https://www.edu.tw/helpdreams/Grants_Content.aspx?n=2BBF7170197CE7D3&s=68651C4217F75095&sms=0A01A72AAB9E5CD4",
         ),
     ),
@@ -128,6 +131,11 @@ _RUNTIME_ALIASES: dict[str, tuple[str, ...]] = {
     "lovepeace-disadvantaged": (
         "祥和文教基金會優秀清寒獎學金獎助學金",
         "優秀清寒獎學金獎助學金",
+    ),
+    "dapeng-aid": (
+        "大鵬科技慈善基金會115年第一次獎助學金",
+        "大鵬科技慈善基金會115年第1次獎助學金",
+        "大鵬獎助學金",
     ),
 }
 
