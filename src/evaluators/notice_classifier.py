@@ -76,6 +76,9 @@ def classify_notice(title: str, detail_text: str) -> str:
     normalized_text = " ".join(detail_text.split())
     if _contains_any(normalized_title, RESULT_MARKERS):
         return RESULT
+    # 標題已明確寫申請／報名／徵件時，正文中的歷史結果或相關連結不得否決。
+    if _contains_any(normalized_title, APPLICATION_MARKERS):
+        return APPLICATION
     preclassified = pre_classify(normalized_title, normalized_text)
     if preclassified is not None:
         return preclassified
@@ -137,12 +140,10 @@ def _is_loan_notice(title: str) -> bool:
     return "就學貸款" in title and any(marker in title for marker in ("申辦", "申請"))
 
 
-# 判斷標題或正文是否具有當期獎助申請行動訊號。
+# 判斷正文是否具有當期獎助申請行動訊號。
 def _is_application_notice(title: str, detail_text: str) -> bool:
     if _contains_any(detail_text, RESULT_MARKERS):
         return False
-    if _contains_any(title, APPLICATION_MARKERS):
-        return True
     if _contains_any(detail_text, APPLICATION_MARKERS):
         return True
     return _contains_any(title, AWARD_MARKERS)
