@@ -31,7 +31,10 @@ def test_extract_docx_paragraphs_and_tables() -> None:
 
 # 驗證 PDF 文字會依頁數上限擷取。
 def test_extract_pdf_respects_page_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    pages = [SimpleNamespace(extract_text=lambda value=value: value) for value in ("第一頁", "第二頁")]
+    pages = [
+        SimpleNamespace(extract_text=lambda value=value: value)
+        for value in ("第一頁", "第二頁")
+    ]
     monkeypatch.setattr(extractor, "PdfReader", lambda _: SimpleNamespace(pages=pages))
 
     text = extractor.extract_document_text(
@@ -58,11 +61,18 @@ def test_empty_pdf_text_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
 
-# 驗證舊版 DOC 不會被錯當成 DOCX。
-def test_legacy_doc_is_unsupported() -> None:
+# 驗證舊版 DOC 有明確類型與錯誤，不會被錯當成 DOCX。
+def test_legacy_doc_is_explicitly_unsupported() -> None:
     kind = extractor.detect_document_kind(
         "application/msword",
         "https://example.com/form.doc",
     )
 
-    assert kind == "unsupported"
+    assert kind == "doc_legacy"
+    with pytest.raises(ValueError, match="舊式 DOC"):
+        extractor.extract_document_text(
+            b"legacy-binary",
+            extractor.DOC_MIME,
+            "https://example.com/form.doc",
+            max_pdf_pages=10,
+        )
