@@ -7,6 +7,7 @@ import sqlite3
 
 from src.models.eligibility_axes import derive_action_status
 from src.models.scholarship import Scholarship
+from src.repositories.sqlite_connection import open_database
 
 SCHEMA_COLUMNS = {
     "category": "TEXT NOT NULL DEFAULT 'other'",
@@ -87,12 +88,11 @@ class ScholarshipRepository:
             evaluated_at TEXT
         )
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(query)
-            conn.commit()
 
     def _migrate_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             existing = self._column_names(conn)
             for name, definition in SCHEMA_COLUMNS.items():
                 if name not in existing:
@@ -100,7 +100,6 @@ class ScholarshipRepository:
             self._fill_discovered_at(conn)
             self._fill_source_urls(conn)
             self._backfill_eligibility_axes(conn)
-            conn.commit()
 
     def _column_names(self, conn: sqlite3.Connection) -> set[str]:
         rows = conn.execute("PRAGMA table_info(scholarships)").fetchall()
@@ -123,7 +122,6 @@ class ScholarshipRepository:
         )
 
     def _backfill_eligibility_axes(self, conn: sqlite3.Connection) -> None:
-        # 舊版 source_incomplete 曾覆寫硬性資格，必須清除 profile 讓它重跑。
         conn.execute(
             """
             UPDATE scholarships
@@ -167,7 +165,7 @@ class ScholarshipRepository:
         return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     def is_empty(self) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute("SELECT COUNT(1) FROM scholarships").fetchone()
         return bool(row and row[0] == 0)
 
@@ -176,7 +174,7 @@ class ScholarshipRepository:
             return set()
         placeholders = ",".join(["?"] * len(content_hashes))
         query = f"SELECT content_hash FROM scholarships WHERE content_hash IN ({placeholders})"
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(query, content_hashes).fetchall()
         return {row[0] for row in rows}
 
@@ -193,9 +191,8 @@ class ScholarshipRepository:
             exclusion_reason
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             cursor = conn.executemany(query, rows)
-            conn.commit()
         return max(cursor.rowcount, 0)
 
     def _discovery_row(self, item: Scholarship) -> tuple[object, ...]:
@@ -274,7 +271,7 @@ class ScholarshipRepository:
         query: str,
         params: list[str],
     ) -> list[Scholarship]:
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._to_scholarship(row) for row in rows]
 
@@ -357,9 +354,8 @@ class ScholarshipRepository:
             self._now_iso(),
             content_hash,
         ]
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             cursor = conn.execute(query, params)
-            conn.commit()
         return max(cursor.rowcount, 0)
 
     def count_eligibility(self, profile_hash: str, status: str) -> int:
@@ -368,7 +364,7 @@ class ScholarshipRepository:
         WHERE profile_hash = ? AND hard_eligibility_status = ?
           AND notified_at IS NULL AND baseline_at IS NULL
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute(query, [profile_hash, status]).fetchone()
         return int(row[0]) if row else 0
 
@@ -386,9 +382,8 @@ class ScholarshipRepository:
             f"UPDATE scholarships SET {column} = ? "
             f"WHERE content_hash IN ({placeholders}) AND {column} IS NULL"
         )
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             cursor = conn.execute(query, [self._now_iso(), *content_hashes])
-            conn.commit()
         return max(cursor.rowcount, 0)
 
 
