@@ -263,6 +263,31 @@ def test_sunshine_shared_announcement_fans_out_to_both_programs() -> None:
     }
 
 
+def test_sunshine_application_page_fans_out_when_main_site_times_out() -> None:
+    html = """
+    <html>
+      <head><title>陽光基金會獎助學金申請系統</title></head>
+      <body><div id="app"></div></body>
+    </html>
+    """
+
+    records = resilient._shared_announcement_records(
+        html,
+        "https://scls.sunshine.org.tw/",
+        "https://scls.sunshine.org.tw/",
+        _sunshine_programs(),
+    )
+
+    assert {item.program_id for item in records} == {
+        "sunshine-scholarship",
+        "sunshine-wanzu",
+    }
+    assert {item.match_method for item in records} == {"shared_application_page"}
+    assert {item.detail_url for item in records} == {
+        "https://scls.sunshine.org.tw/"
+    }
+
+
 def test_live_source_overrides_replace_broken_primary_urls() -> None:
     programs = {item.program_id: item for item in live_resolved_programs()}
 
@@ -273,12 +298,14 @@ def test_live_source_overrides_replace_broken_primary_urls() -> None:
     assert programs["sunshine-scholarship"].official_url == (
         "https://www.sunshine.org.tw/news/announce/0/10"
     )
-    assert programs["sunshine-scholarship"].fallback_urls == (
-        "https://www.sunshine.org.tw/news/announce/0/20",
+    sunshine_fallbacks = programs["sunshine-scholarship"].fallback_urls
+    assert sunshine_fallbacks[0] == "https://scls.sunshine.org.tw/"
+    assert (
+        "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01"
+        in sunshine_fallbacks
     )
-    assert all(
-        "scls.sunshine.org.tw" not in url
-        for url in programs["sunshine-scholarship"].fallback_urls
+    assert sunshine_fallbacks[-1] == (
+        "https://www.sunshine.org.tw/news/announce/0/20"
     )
     assert programs["lovepeace-disadvantaged"].source_url_type == (
         SourceUrlType.RELAY_DETAIL
