@@ -91,6 +91,9 @@ DATE_PATTERN = re.compile(
     r"(?:(?P<year_value>20\d{2}|\d{3})(?:年|[\-/.]))?"
     r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
 )
+NAMED_CYCLE_PATTERN = re.compile(
+    r"(?<!\d)(?P<year>20\d{2}|1\d{2})\s*(?:學年度|年度)"
+)
 _DATE_TOKEN = (
     r"(?:(?:20\d{2}|\d{3})(?:年|[\-/.]))?"
     r"\d{1,2}(?:月|[\-/.])\d{1,2}日?"
@@ -183,11 +186,22 @@ def classify_application_period(
         return ApplicationPeriod(start, deadline, UPCOMING)
     if deadline is not None:
         return ApplicationPeriod(start, deadline, OPEN)
+    if _is_historical_named_cycle(text, current):
+        return ApplicationPeriod(start, None, STALE_UNKNOWN)
     if any(marker in text for marker in EVERGREEN_MARKERS):
         return ApplicationPeriod(start, None, EVERGREEN)
     if _is_stale_unknown(text, published_date, current):
         return ApplicationPeriod(start, None, STALE_UNKNOWN)
     return ApplicationPeriod(start, None, DEADLINE_UNKNOWN)
+
+
+# 明示為舊年度的固定方案頁，即使缺少截止日期也不得視為當期可申請。
+def _is_historical_named_cycle(text: str, current: date) -> bool:
+    cycle_years = []
+    for match in NAMED_CYCLE_PATTERN.finditer(text):
+        value = int(match.group("year"))
+        cycle_years.append(value + 1911 if value < 1000 else value)
+    return bool(cycle_years) and max(cycle_years) < current.year
 
 
 # 發布時間已久且正文沒有當年度訊號時，避免當成目前可申請的期限未知公告。
