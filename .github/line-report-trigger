@@ -1,4 +1,6 @@
-2026-08-02T13:59:30+08:00
-reason=validate-production-live-contract-v14-final
-source_contract_run=30734802272
+2026-08-02T14:29:30+08:00
+reason=validate-eligibility-v14-auden-songliang
+source_contract_run=30735724687
 expected_severe_program_count=0
+expected_auden_university_status=eligible
+expected_songliang_actionable=false
