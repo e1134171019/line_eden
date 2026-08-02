@@ -2,6 +2,9 @@
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from urllib.parse import urljoin
+
+from bs4 import BeautifulSoup
 
 from src.catalogs.live_program_sources import (
     live_monitorable_programs,
@@ -12,6 +15,15 @@ from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.listing_paginator import ListingCrawlResult, ListingPage, crawl_listing_pages
 import src.collectors.tun_program_watch_collector as legacy
 from src.models.scholarship import Scholarship
+
+_SHARED_SUNSHINE_PROGRAM_IDS = {
+    "sunshine-scholarship",
+    "sunshine-wanzu",
+}
+_SHARED_SUNSHINE_ANNOUNCEMENT_TERMS = (
+    "年度獎助學金相關簡章開放下載",
+    "年度獎助學金申請公告",
+)
 
 
 class ResilientTunProgramWatchCollector(legacy.TunProgramWatchCollector):
@@ -138,6 +150,14 @@ def _collect_program_group(
                     programs,
                 )
             )
+            shared = _shared_announcement_records(
+                page.html,
+                page.url,
+                source_url,
+                programs,
+            )
+            _append_shared_records(found, page_counts, shared)
+            matched += len(shared)
             raw_node_matches += matched
             legacy._merge_counts(counts, page_counts)
             discovery = legacy._merge_discovery_diagnostics(
@@ -165,6 +185,74 @@ def _collect_program_group(
         first_success_url,
         fallback_used,
     )
+
+
+# 陽光年度簡章同時涵蓋兩個方案；不得用 sibling competition 只保留一個。
+def _shared_announcement_records(
+    html: str,
+    page_url: str,
+    entry_url: str,
+    programs: tuple[ResolvedProgramSource, ...],
+) -> list[Scholarship]:
+    sunshine_programs = tuple(
+        item for item in programs if item.program_id in _SHARED_SUNSHINE_PROGRAM_IDS
+    )
+    if len(sunshine_programs) != len(_SHARED_SUNSHINE_PROGRAM_IDS):
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    records: list[Scholarship] = []
+    seen_details: set[str] = set()
+    for anchor in soup.select("a[href]"):
+        title = " ".join(anchor.get_text(" ", strip=True).split())
+        matched_term = next(
+            (
+                term
+                for term in _SHARED_SUNSHINE_ANNOUNCEMENT_TERMS
+                if term in title
+            ),
+            "",
+        )
+        if not matched_term:
+            continue
+        detail_url = urljoin(page_url, str(anchor.get("href", "")))
+        if not detail_url or detail_url in seen_details:
+            continue
+        seen_details.add(detail_url)
+        context = anchor.parent.get_text(" ", strip=True) if anchor.parent else title
+        published_date = legacy.parse_date(context)
+        for program in sunshine_programs:
+            records.append(
+                Scholarship.from_raw(
+                    source=f"tun-program-{program.program_id}",
+                    title=title,
+                    published_date=published_date,
+                    source_url=detail_url,
+                    program_id=program.program_id,
+                    entry_url=entry_url,
+                    detail_url=detail_url,
+                    match_method="shared_announcement",
+                    match_score=100,
+                    matched_alias=matched_term,
+                )
+            )
+    return records
+
+
+# 合併共同公告時，避免與一般 matcher 已找到的同方案同明細重複。
+def _append_shared_records(
+    found: list[Scholarship],
+    page_counts: dict[str, int],
+    shared: list[Scholarship],
+) -> None:
+    existing = {(item.program_id, item.detail_url) for item in found}
+    for item in shared:
+        key = (item.program_id, item.detail_url)
+        if key in existing:
+            continue
+        existing.add(key)
+        found.append(item)
+        page_counts[item.program_id] = page_counts.get(item.program_id, 0) + 1
 
 
 # 主入口優先，其後合併 sibling programs 的 fallback 並去重。
