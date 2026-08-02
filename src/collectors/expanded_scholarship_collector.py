@@ -4,6 +4,9 @@ from collections import Counter
 
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.decision_safe_tun_program_watch_collector import (
+    DecisionSafeTunProgramWatchCollector,
+)
 from src.collectors.helpdreams_collector import HelpDreamsCollector
 from src.collectors.indigenous_grant_collector import IndigenousGrantCollector
 from src.collectors.lhu_collector import (
@@ -16,9 +19,6 @@ from src.collectors.lhu_collector import (
 )
 from src.collectors.moe_overseas_collector import MoeOverseasCollector
 from src.collectors.multi_source_collector import MultiSourceCollector
-from src.collectors.resilient_tun_program_watch_collector import (
-    ResilientTunProgramWatchCollector,
-)
 from src.collectors.tun_program_watch_collector import ProgramSourceState
 from src.collectors.xinzhuang_awards_collector import XinzhuangAwardsCollector
 from src.models.scholarship import Scholarship
@@ -45,10 +45,10 @@ class ExpandedScholarshipCollector(LhuCollector):
             max_pages,
         )
         self.fetch_workers = fetch_workers
-        self.tun_collector: ResilientTunProgramWatchCollector | None = None
+        self.tun_collector: DecisionSafeTunProgramWatchCollector | None = None
 
     def collect(self) -> list[Scholarship]:
-        self.tun_collector = ResilientTunProgramWatchCollector(
+        self.tun_collector = DecisionSafeTunProgramWatchCollector(
             self.timeout_seconds,
             self.user_agent,
             self.collection_mode,
