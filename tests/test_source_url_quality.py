@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from src.catalogs.tun_program_sources import ResolvedProgramSource, resolved_programs
+from src.collectors.expanded_scholarship_collector import _tun_quality_summary
 from src.collectors.tun_program_watch_collector import (
     ProgramSourceState,
     TunProgramWatchCollector,
@@ -93,6 +94,34 @@ def test_program_status_lines_include_url_type_and_risk() -> None:
 
     assert "URL類型 url_list" in line
     assert "風險 low" in line
+
+
+# 來源摘要必須分開顯示 URL 類型分布與高風險數量。
+def test_url_quality_summary_counts_types_and_high_risk() -> None:
+    states = (
+        ProgramSourceState(
+            "list",
+            "列表方案",
+            "https://example.test/news",
+            "configured",
+            source_url_type=SourceUrlType.LIST,
+            update_risk=SourceRisk.LOW,
+        ),
+        ProgramSourceState(
+            "relay",
+            "轉載方案",
+            "https://example.test/detail",
+            "configured",
+            source_url_type=SourceUrlType.RELAY_DETAIL,
+            update_risk=SourceRisk.HIGH,
+        ),
+    )
+
+    line = _tun_quality_summary(states)
+
+    assert "url_list 1" in line
+    assert "url_relay_detail 1" in line
+    assert "高風險 1" in line
 
 
 # 38 項品質契約不得把申請系統或錯頁當作主要監測入口。
