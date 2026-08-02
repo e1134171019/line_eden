@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.catalogs.live_tun_sources import CURRENT_ANNOUNCEMENT_REQUIRED_IDS
 from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCollector
 from src.collectors.multi_source_collector import SourceDiagnostic
 from src.collectors.tun_program_watch_collector import ProgramSourceState
@@ -82,7 +83,7 @@ def build_source_health_report(
             else tuple()
         )
     ]
-    severe = [item for item in programs if item["status"] in SEVERE_PROGRAM_STATUSES]
+    severe = [item for item in programs if item["severe"]]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "configured_source_groups": len(multi.collectors),
@@ -99,8 +100,18 @@ def _program_record(item: ProgramSourceState) -> dict[str, Any]:
     record = asdict(item)
     record["source_url_type"] = item.source_url_type.value
     record["update_risk"] = item.update_risk.value
-    record["severe"] = item.status in SEVERE_PROGRAM_STATUSES
+    record["severe"] = _is_severe_program(item)
     return record
+
+
+# 技術失敗或已知當期公告被誤判不存在，都必須阻擋 live contract。
+def _is_severe_program(item: ProgramSourceState) -> bool:
+    if item.status in SEVERE_PROGRAM_STATUSES:
+        return True
+    return (
+        item.status == "no_current_announcement"
+        and item.program_id in CURRENT_ANNOUNCEMENT_REQUIRED_IDS
+    )
 
 
 # 寫入 artifacts/source-health.json。
