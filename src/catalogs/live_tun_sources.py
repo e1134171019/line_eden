@@ -61,6 +61,14 @@ _LIVE_SOURCE_OVERRIDES: dict[str, LiveSourceOverride] = {
             "https://scholarship.sunshine.org.tw/?cat=1",
         ),
     ),
+    "lovepeace-disadvantaged": LiveSourceOverride(
+        primary_url="https://www.lovepeace.org.tw/Download.php?CataP=7&N_Key=192",
+        source_url_type=SourceUrlType.EVERGREEN,
+        fallback_urls=(
+            "https://www.lovepeace.org.tw/Policy.php?CataP=4&N_Key=189",
+            "https://service.utaipei.edu.tw/p/404-1034-125916.php?Lang=zh-tw",
+        ),
+    ),
     "dapeng-aid": LiveSourceOverride(
         primary_url=(
             "https://osa.ndhu.edu.tw/p/406-1005-254221%2Cr402.php?Lang=zh-tw"
