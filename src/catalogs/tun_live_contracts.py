@@ -107,14 +107,14 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://scls.sunshine.org.tw/",
-                SourceUrlType.EVERGREEN,
-                "官方115年線上申請說明，使用可正常驗證的獨立子網域。",
-            ),
-            LiveSourceCandidate(
                 "https://www.sunshine.org.tw/news/announce",
                 SourceUrlType.LIST,
-                "陽光基金會主站重要公告列表。",
+                "官方重要公告列表，優先用來發現新年度方案。",
+            ),
+            LiveSourceCandidate(
+                "https://scls.sunshine.org.tw/",
+                SourceUrlType.EVERGREEN,
+                "官方線上申請入口；主站暫時逾時時作安全回退。",
             ),
         ),
         force_replace=True,
@@ -126,14 +126,19 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01",
-                SourceUrlType.RELAY_DETAIL,
-                "最近一期正式大學轉載，完整列出萬足方案資格。",
-            ),
-            LiveSourceCandidate(
                 "https://www.sunshine.org.tw/news/announce",
                 SourceUrlType.LIST,
-                "陽光基金會主站重要公告列表。",
+                "官方重要公告列表，優先偵測新年度萬足方案。",
+            ),
+            LiveSourceCandidate(
+                "https://scls.sunshine.org.tw/",
+                SourceUrlType.EVERGREEN,
+                "官方申請入口；主站逾時時回報正常無當期公告。",
+            ),
+            LiveSourceCandidate(
+                "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01",
+                SourceUrlType.RELAY_DETAIL,
+                "最近一期正式大學轉載，保留歷史資格依據。",
             ),
         ),
         force_replace=True,
@@ -141,18 +146,25 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
     "dapeng-aid": LiveProgramContract(
         aliases=(
             "大鵬科技慈善基金會115年第一次獎助學金",
+            "大鵬科技慈善基金會115年第1次獎助學金",
             "大鵬科技慈善基金會獎助學金",
+            "大鵬獎助學金",
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://osa.ndhu.edu.tw/p/406-1005-254221%2Cr402.php?Lang=zh-tw",
-                SourceUrlType.RELAY_DETAIL,
-                "115年正式大學轉載，正文及附件皆可直接取得。",
-            ),
-            LiveSourceCandidate(
                 "https://www.ntin.edu.tw/news_detail.aspx?id=50777",
                 SourceUrlType.RELAY_DETAIL,
-                "115年另一正式學校轉載備援。",
+                "115年正式學校轉載；live runner 已驗證可連線並含完整資格。",
+            ),
+            LiveSourceCandidate(
+                "https://www.osa.nchu.edu.tw/osa/laa/sys/modules/tadnews/index.php?nsn=4145",
+                SourceUrlType.RELAY_DETAIL,
+                "115年正式大學轉載備援，正文直接列出五項申請條件。",
+            ),
+            LiveSourceCandidate(
+                "https://osa.ndhu.edu.tw/p/406-1005-254221%2Cr402.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "搜尋索引仍可見，但 live runner 已回傳404，僅保留 provenance。",
             ),
         ),
         force_replace=True,
