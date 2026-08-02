@@ -197,7 +197,7 @@ def _known_required_condition(
     if "推薦" in value:
         available = profile.can_obtain_recommendation
         if available is None:
-            return _manual_requirement(value, "是否可取得推薦")
+            return None
         return target.ConditionResult(
             "recommendation",
             value,
