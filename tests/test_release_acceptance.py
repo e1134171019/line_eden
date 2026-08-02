@@ -42,6 +42,7 @@ def _record(
     program_id: str,
     hard_status: str,
     *,
+    title: str | None = None,
     notice_kind: str = "policy",
     resolution_status: str = "valid_application_detail",
     action_status: str = "not_actionable",
@@ -52,8 +53,8 @@ def _record(
     structured_status: str = "",
 ) -> AuditRecord:
     item = Scholarship.from_raw(
-        f"tun-program-{program_id}",
-        program_id,
+        f"tun-program-{program_id or 'unassigned'}",
+        title or program_id,
         "2026-08-02",
         "https://example.test/detail",
         program_id=program_id,
@@ -213,6 +214,83 @@ def test_release_acceptance_blocks_actionable_source_incomplete_review() -> None
 
     assert result.passed is False
     assert any("可行動公告來源不完整" in failure for failure in result.failures)
+
+
+def test_authoritative_program_detail_dominates_duplicate_wrong_page() -> None:
+    result = evaluate_release_acceptance(
+        _source_report(),
+        _audit_result(
+            _record(SONGLIANG, "ineligible"),
+            _record(
+                "taishin-youth-volunteer",
+                "ineligible",
+                notice_kind="application",
+            ),
+            _record(
+                "taishin-youth-volunteer",
+                "review",
+                title="網站地圖",
+                notice_kind="application",
+                resolution_status="navigation_or_wrong_page",
+                action_status="verify_source",
+                review_kind="source_incomplete",
+            ),
+        ),
+    )
+
+    assert result.passed is True
+
+
+def test_known_program_title_deduplicates_unassigned_relay_record() -> None:
+    result = evaluate_release_acceptance(
+        _source_report(),
+        _audit_result(
+            _record(SONGLIANG, "ineligible"),
+            _record(
+                "cdf-vocational",
+                "ineligible",
+                notice_kind="application",
+            ),
+            _record(
+                "",
+                "review",
+                title="財團法人中華開發文教基金會技藝職能獎學金",
+                notice_kind="application",
+                resolution_status="insufficient_evidence",
+                action_status="verify_source",
+                review_kind="source_incomplete",
+            ),
+        ),
+    )
+
+    assert result.passed is True
+
+
+def test_complete_profile_review_dominates_duplicate_incomplete_page() -> None:
+    result = evaluate_release_acceptance(
+        _source_report(),
+        _audit_result(
+            _record(SONGLIANG, "ineligible"),
+            _record(
+                "ht-emergency",
+                "review",
+                notice_kind="application",
+                action_status="manual_review",
+                review_kind="profile_missing",
+            ),
+            _record(
+                "ht-emergency",
+                "review",
+                title="慈善志業",
+                notice_kind="application",
+                resolution_status="navigation_or_wrong_page",
+                action_status="verify_source",
+                review_kind="source_incomplete",
+            ),
+        ),
+    )
+
+    assert result.passed is True
 
 
 def test_resolved_structured_veto_is_not_a_remaining_hard_conflict() -> None:
