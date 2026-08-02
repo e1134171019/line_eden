@@ -47,7 +47,7 @@ def filter_missing_score_exclusions(
     return filtered
 
 
-# 只有申請資格語境中的一般大專生文字才能作為符合證據。
+# 只有申請或補助資格語境中的一般大專生文字才能作為符合證據。
 def filter_general_college_matches(matches: list[str], text: str) -> list[str]:
     contextual = _has_general_college_context(text)
     filtered = [
@@ -91,15 +91,15 @@ def _text_requires_graduation(text: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
-# 判斷一般大專學生字樣是否位於明確申請資格語境。
+# 判斷一般大專學生字樣是否位於明確申請、補助或適用對象語境。
 def _has_general_college_context(text: str) -> bool:
     terms = (
         r"(?:大專院校學生|大專校院學生|大專院校在校生|大專校院在校生|"
         r"大專院校在學學生|大專校院在學學生|大專在校生|大學生|在校學生)"
     )
     patterns = (
-        rf"(?:申請資格|申請對象|申請人|凡|限|僅限|全國公私立).{{0,30}}{terms}",
-        rf"{terms}.{{0,20}}(?:均可申請|可申請|得申請|申請資格)",
+        rf"(?:申請資格|申請對象|補助對象|獎助對象|適用對象|申請人|凡|限|僅限|全國公私立).{{0,30}}{terms}",
+        rf"{terms}.{{0,20}}(?:均可申請|可申請|得申請|申請資格|為主)",
         rf"{terms}.{{0,6}}(?:之|的).{{0,24}}(?:學業|操行|成績|排名)",
         rf"{terms}.{{0,30}}(?:學業|平均成績|操行|排名)",
     )
