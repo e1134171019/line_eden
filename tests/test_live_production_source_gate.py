@@ -75,6 +75,14 @@ def _source(program_id: str = "tf4dr-aid") -> ResolvedProgramSource:
     )
 
 
+def _sunshine_programs() -> tuple[ResolvedProgramSource, ...]:
+    return tuple(
+        item
+        for item in live_resolved_programs()
+        if item.program_id in {"sunshine-scholarship", "sunshine-wanzu"}
+    )
+
+
 def _failed_crawl(url: str) -> ListingCrawlResult:
     return ListingCrawlResult(
         tuple(),
@@ -213,6 +221,7 @@ def test_all_source_candidates_failed_remains_fetch_failure(
     (
         ("tf4dr-aid", "本會114學年度第2學期『助學金』自115年2月10日起受理"),
         ("hsinrong-emergency-aid", "竹山欣榮圖書館急難學生助學金"),
+        ("lijin-taoyuan", "114年度清寒獎助學金開放申請"),
         (
             "lovepeace-disadvantaged",
             "財團法人祥和文教基金會114年度優秀清寒獎學金獎助學金",
@@ -227,6 +236,33 @@ def test_live_titles_match_program(program_id: str, title: str) -> None:
     assert match_program(title, program).matched is True
 
 
+def test_sunshine_shared_announcement_fans_out_to_both_programs() -> None:
+    html = """
+    <div class="news-row">
+      <a href="/news/announce/news20250814">
+        〖重要提醒〗114年度獎助學金相關簡章開放下載
+      </a>
+      <span>2025.08.14</span>
+    </div>
+    """
+
+    records = resilient._shared_announcement_records(
+        html,
+        "https://www.sunshine.org.tw/news/announce/0/10",
+        "https://www.sunshine.org.tw/news/announce/0/10",
+        _sunshine_programs(),
+    )
+
+    assert {item.program_id for item in records} == {
+        "sunshine-scholarship",
+        "sunshine-wanzu",
+    }
+    assert {item.match_method for item in records} == {"shared_announcement"}
+    assert {item.detail_url for item in records} == {
+        "https://www.sunshine.org.tw/news/announce/news20250814"
+    }
+
+
 def test_live_source_overrides_replace_broken_primary_urls() -> None:
     programs = {item.program_id: item for item in live_resolved_programs()}
 
@@ -235,7 +271,14 @@ def test_live_source_overrides_replace_broken_primary_urls() -> None:
     )
     assert programs["yonglin-hope"].source_url_type == SourceUrlType.RELAY_LIST
     assert programs["sunshine-scholarship"].official_url == (
-        "https://www.sunshine.org.tw/news/announce"
+        "https://www.sunshine.org.tw/news/announce/0/10"
+    )
+    assert programs["sunshine-scholarship"].fallback_urls == (
+        "https://www.sunshine.org.tw/news/announce/0/20",
+    )
+    assert all(
+        "scls.sunshine.org.tw" not in url
+        for url in programs["sunshine-scholarship"].fallback_urls
     )
     assert programs["lovepeace-disadvantaged"].source_url_type == (
         SourceUrlType.RELAY_DETAIL
