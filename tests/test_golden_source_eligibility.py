@@ -6,6 +6,7 @@ from src.diagnostics.detail_fetch_diagnostics import RULES_STATUS_NOT_REQUIRED
 from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
     INELIGIBLE,
+    REVIEW,
     EligibilityEvaluator,
 )
 from src.models.scholarship import Scholarship
@@ -186,6 +187,58 @@ GOLDEN_CASES = (
         "台北市熱河同鄉會獎助金",
         "申請資格：海外來台就讀國內公私立大學及研究所學生，已在台就讀一年以上，"
         "且學生父親或母親之祖籍符合國民政府熱河省建置。",
+        INELIGIBLE,
+    ),
+    (
+        "wisdomshare-service-learning",
+        "2026青力親為・千萬祝福服務學習獎勵計畫",
+        "申請資格（以下三點皆需符合）：\n"
+        "(一)民國85年1月1日後出生之國內大專院校在校生及畢業生。\n"
+        "(二)於114年第2學期含前任一學期曾申請就學貸款者。\n"
+        "(三)114年11月1日至115年9月30日前曾擔任本計畫合作社福單位之志工。",
+        REVIEW,
+    ),
+    (
+        "hsinrong-emergency-aid",
+        "欣榮圖書館急難學生助學金",
+        "助學對象：限設籍於南投縣、雲林縣及彰化縣指定鄉鎮市之在學學生，"
+        "且有父母雙亡、父母一方死亡或離棄、天災、意外、重病、父母離婚等變故，"
+        "致無力繳納學雜費而影響繼續就學者。",
+        INELIGIBLE,
+    ),
+    (
+        "it-social-care",
+        "資訊人社會關懷獎學金",
+        "申請對象：大專校院資訊、統計、公共行政及法律等相關科系含研究所之在學學生，"
+        "提案內容須具有資訊管理、資訊政策或資訊應用。",
+        INELIGIBLE,
+    ),
+    (
+        "you-care-hand-in-hand",
+        "大手拉小手育成計畫",
+        "申請對象為家庭經濟困難之高中、大專院校在學學生；不含在職專班及產學合作班。"
+        "前一學年度學業成績70分以上，操行80分以上。",
+        INELIGIBLE,
+    ),
+    (
+        "chiu-filial-piety",
+        "邱創煥文教基金會績優清寒孝親獎助學金",
+        "申請對象限公私立國小五、六年級、國中及高中職學生，"
+        "不含五專、夜校及補校，並須具清寒與孝親事蹟。",
+        INELIGIBLE,
+    ),
+    (
+        "buddha-charity-progress",
+        "誌善清寒學生進步獎學金",
+        "申請對象為高中職專、大、碩之清寒弱勢在學學生，"
+        "須具有善、孝精神且學業進步、堅忍向上。",
+        INELIGIBLE,
+    ),
+    (
+        "cdf-vocational",
+        "中華開發技藝職能獎學金",
+        "申請資格為25歲以下高中職或大專院校在學學生，具藝術、體育或技職專長；"
+        "技職專長不包含外語類、商業與管理類、電機電子資訊類。",
         INELIGIBLE,
     ),
 )
