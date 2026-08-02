@@ -183,6 +183,8 @@ def _required_status_groups(text: str) -> tuple[tuple[bool, tuple[str, ...]], ..
             continue
         statuses: list[str] = []
         for following in sentences[index + 1 : index + 1 + _GROUP_LOOKAHEAD]:
+            if _is_group_header(following):
+                break
             mentioned = _mentioned_statuses(following)
             if mentioned:
                 statuses.extend(item for item in mentioned if item not in statuses)
