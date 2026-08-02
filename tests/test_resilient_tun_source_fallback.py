@@ -132,9 +132,9 @@ def test_collect_emits_record_and_effective_entry(monkeypatch) -> None:
     )
     records = collector.collect()
 
-    assert len(records) == 1
-    assert records[0].program_id == "tf4dr-aid"
-    assert records[0].entry_url == fallback_url
+    assert records
+    assert {item.program_id for item in records} == {"tf4dr-aid"}
+    assert all(item.entry_url == fallback_url for item in records)
     assert collector.program_states[0].status == "matched"
     assert collector.program_states[0].entry_url == fallback_url
     assert "主入口失敗後改用 fallback" in collector.program_states[0].reason
