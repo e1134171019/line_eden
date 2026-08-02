@@ -16,6 +16,7 @@ from src.services.scholarship_service import (
     ScholarshipService,
     ServiceResult,
 )
+from src.services.structured_ineligible_veto import apply_veto_to_outcome
 
 
 class RevisionAwareScholarshipService(ScholarshipService):
@@ -52,5 +53,13 @@ class RevisionAwareScholarshipService(ScholarshipService):
     def _evaluate_item(self, item: Scholarship) -> EvaluationOutcome:
         fetch_result = self._revision_fetch_cache.get(item.content_hash)
         if fetch_result is None:
-            return super()._evaluate_item(item)
-        return self._evaluate_fetch_result(item, fetch_result)
+            fetch_result = self._fetch_audit_result(item)
+        outcome = self._evaluate_fetch_result(item, fetch_result)
+        shadow, _, _ = self._build_structured_shadow(
+            item,
+            outcome.decision,
+            outcome.notice_kind,
+            outcome.application_status,
+            fetch_result,
+        )
+        return apply_veto_to_outcome(outcome, shadow)
