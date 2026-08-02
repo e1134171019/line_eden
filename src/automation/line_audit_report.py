@@ -20,12 +20,19 @@ from src.evaluators.runtime_safety import (
     STALE_UNKNOWN,
     classify_application_period,
 )
+from src.models.eligibility_axes import (
+    APPLY_CANDIDATE,
+    MANUAL_REVIEW,
+    VERIFY_SOURCE,
+    derive_action_status,
+)
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
 from src.services.scholarship_service import AuditRecord, AuditResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 MAX_ELIGIBLE_ITEMS = 5
+MAX_SOURCE_VERIFY_ITEMS = 5
 MAX_REVIEW_ITEMS = 5
 MAX_SHADOW_CHANGED_ITEMS = 10
 MAX_SHADOW_ERROR_ITEMS = 8
@@ -39,14 +46,28 @@ _REVIEW_LABELS = {
     "profile_missing": "個人資料缺值",
     "semantic_ambiguous": "語意待確認",
 }
+_ACTION_LABELS = {
+    APPLY_CANDIDATE: "可準備申請",
+    VERIFY_SOURCE: "先核對正文或附件",
+    MANUAL_REVIEW: "需人工確認硬性條件",
+}
 _NON_ACTIONABLE_PERIODS = {EXPIRED, STALE_UNKNOWN}
+_ABNORMAL_SOURCE_STATUSES = {
+    "fetch_failed",
+    "pending_source",
+    "matcher_miss",
+    "match_ambiguous",
+    "source_structure_changed",
+    "wrong_source",
+    "application_portal",
+}
 
 
 def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
 ) -> str:
-    """建立可行動公告優先、來源狀態壓縮的 LINE 稽核報告。"""
+    """建立硬性資格與來源證據分軸、可行動項目優先的 LINE 報告。"""
 
     lines = [
         "獎學金真實檢查報告",
@@ -88,7 +109,7 @@ def _pipeline_lines(result: AuditResult) -> list[str]:
 
 
 def _scope_lines(records: list[AuditRecord]) -> list[str]:
-    """建立公告分類、申請期間、正文證據與硬性資格統計。"""
+    """建立公告、期間、來源證據、硬性資格與行動狀態統計。"""
 
     notice_counts = Counter(record.item.notice_kind for record in records)
     category_counts = Counter(record.item.category for record in records)
@@ -102,13 +123,12 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
         for record in applications
         if periods[id(record)] not in _NON_ACTIONABLE_PERIODS
     ]
-    eligibility_counts = Counter(
-        record.item.eligibility_status for record in actionable
-    )
+    hard_counts = Counter(_hard_status(record) for record in actionable)
+    action_counts = Counter(_action_status(record) for record in actionable)
     review_counts = Counter(
         record.item.review_kind
         for record in actionable
-        if record.item.eligibility_status == REVIEW and record.item.review_kind
+        if _hard_status(record) == REVIEW and record.item.review_kind
     )
     evidence_counts = Counter(
         record.item.resolution_status or "unknown" for record in applications
@@ -143,9 +163,10 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
         ),
         (
             "硬性資格（可行動期間）："
-            f"符合 {eligibility_counts[ELIGIBLE]}／"
-            f"待確認 {eligibility_counts[REVIEW]}／"
-            f"不符 {eligibility_counts[INELIGIBLE]}"
+            f"符合且來源完整 {action_counts[APPLY_CANDIDATE]}／"
+            f"符合但來源待補 {_eligible_verify_count(actionable)}／"
+            f"待確認 {hard_counts[REVIEW]}／"
+            f"不符 {hard_counts[INELIGIBLE]}"
         ),
         f"已截止未列為個人資格不符：{period_counts['expired']}",
         f"歷史期限未知未列入可申請：{period_counts['stale_unknown']}",
@@ -153,7 +174,7 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
     ]
     if review_counts:
         lines.append(
-            "待確認原因："
+            "硬性待確認原因："
             + "／".join(
                 f"{_REVIEW_LABELS.get(kind, kind)} {count}"
                 for kind, count in sorted(review_counts.items())
@@ -162,28 +183,59 @@ def _scope_lines(records: list[AuditRecord]) -> list[str]:
     return lines
 
 
+def _eligible_verify_count(records: list[AuditRecord]) -> int:
+    return sum(
+        _hard_status(record) == ELIGIBLE and _action_status(record) == VERIFY_SOURCE
+        for record in records
+    )
+
+
 def _actionable_lines(result: AuditResult) -> list[str]:
-    eligible = _records_with_status(result.records, ELIGIBLE)
-    review = _records_with_status(result.records, REVIEW)
-    if not eligible and not review:
+    ready = _records_with_action(result.records, APPLY_CANDIDATE, ELIGIBLE)
+    verify_eligible = _records_with_action(result.records, VERIFY_SOURCE, ELIGIBLE)
+    review = _records_with_hard_status(result.records, REVIEW)
+    if not ready and not verify_eligible and not review:
         return ["目前沒有硬性條件符合或待確認且仍可申請的公告。"]
     lines: list[str] = []
-    if eligible:
-        lines.append("硬性條件符合公告：")
-        lines.extend(_item_lines(record) for record in eligible[:MAX_ELIGIBLE_ITEMS])
-        remaining = len(eligible) - MAX_ELIGIBLE_ITEMS
+    if ready:
+        lines.append("硬性條件符合且來源完整公告：")
+        lines.extend(_item_lines(record) for record in ready[:MAX_ELIGIBLE_ITEMS])
+        remaining = len(ready) - MAX_ELIGIBLE_ITEMS
         if remaining > 0:
-            lines.append(f"另有 {remaining} 筆硬性條件符合公告未列出。")
+            lines.append(f"另有 {remaining} 筆可準備申請公告未列出。")
+    if verify_eligible:
+        lines.append("硬性條件符合但來源待補公告：")
+        lines.extend(
+            _item_lines(record) for record in verify_eligible[:MAX_SOURCE_VERIFY_ITEMS]
+        )
+        remaining = len(verify_eligible) - MAX_SOURCE_VERIFY_ITEMS
+        if remaining > 0:
+            lines.append(f"另有 {remaining} 筆來源待補公告未列出。")
     if review:
         lines.append("硬性條件待確認公告：")
         lines.extend(_item_lines(record) for record in review[:MAX_REVIEW_ITEMS])
         remaining = len(review) - MAX_REVIEW_ITEMS
         if remaining > 0:
-            lines.append(f"另有 {remaining} 筆待確認公告未列出。")
+            lines.append(f"另有 {remaining} 筆硬性待確認公告未列出。")
     return lines
 
 
-def _records_with_status(
+def _records_with_action(
+    records: list[AuditRecord],
+    action_status: str,
+    hard_status: str,
+) -> list[AuditRecord]:
+    return [
+        record
+        for record in records
+        if record.item.notice_kind == APPLICATION
+        and _hard_status(record) == hard_status
+        and _action_status(record) == action_status
+        and _period_status(record) not in _NON_ACTIONABLE_PERIODS
+    ]
+
+
+def _records_with_hard_status(
     records: list[AuditRecord],
     status: str,
 ) -> list[AuditRecord]:
@@ -191,19 +243,40 @@ def _records_with_status(
         record
         for record in records
         if record.item.notice_kind == APPLICATION
-        and record.item.eligibility_status == status
+        and _hard_status(record) == status
         and _period_status(record) not in _NON_ACTIONABLE_PERIODS
     ]
+
+
+def _hard_status(record: AuditRecord) -> str:
+    saved = getattr(record.item, "hard_eligibility_status", "")
+    return saved or record.item.eligibility_status
+
+
+def _action_status(record: AuditRecord) -> str:
+    saved = getattr(record.item, "action_status", "")
+    if saved:
+        return saved
+    return derive_action_status(
+        _hard_status(record),
+        record.item.resolution_status,
+        record.item.notice_kind,
+        _period_status(record),
+    )
 
 
 def _item_lines(record: AuditRecord) -> str:
     item = record.item
     title = _short(item.title, MAX_DETAIL_TITLE_LENGTH)
-    reason = _short(item.eligibility_reason, MAX_DETAIL_REASON_LENGTH)
+    hard_reason = getattr(item, "hard_eligibility_reason", "")
+    reason = _short(hard_reason or item.eligibility_reason, MAX_DETAIL_REASON_LENGTH)
     url = item.detail_url or item.source_url
     published = item.published_date or "日期未知"
+    action = _action_status(record)
     lines = [f"- {published}｜{title}", f"  {reason}"]
-    if item.review_kind:
+    if action in _ACTION_LABELS:
+        lines.append(f"  行動：{_ACTION_LABELS[action]}")
+    if item.review_kind and _hard_status(record) == REVIEW:
         lines.append(f"  類型：{_REVIEW_LABELS.get(item.review_kind, item.review_kind)}")
     if item.manual_checks:
         checks = [
@@ -275,9 +348,7 @@ def _compact_source_lines(source_lines: Sequence[str]) -> list[str]:
         f"{status} {count}" for status, count in sorted(statuses.items())
     )
     abnormal = [
-        line
-        for line in tun_lines
-        if _tun_status(line) in {"fetch_failed", "pending_source"}
+        line for line in tun_lines if _tun_status(line) in _ABNORMAL_SOURCE_STATUSES
     ]
     lines = [*(f"- {line}" for line in regular)]
     lines.append(f"- TUN方案共 {len(tun_lines)}：{status_text}")

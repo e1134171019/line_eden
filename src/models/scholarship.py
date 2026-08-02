@@ -75,6 +75,9 @@ class Scholarship:
     application_status: str = "not_applicable"
     eligibility_status: str = ""
     eligibility_reason: str = ""
+    hard_eligibility_status: str = ""
+    hard_eligibility_reason: str = ""
+    action_status: str = ""
     manual_checks: tuple[str, ...] = tuple()
     review_kind: str = ""
     exclusion_reason: str = ""

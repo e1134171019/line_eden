@@ -17,12 +17,16 @@ def _record(
     review_kind: str = "",
     resolution_status: str = "valid_application_detail",
     evidence_score: int = 4,
+    action_status: str = "",
 ) -> SimpleNamespace:
     item = SimpleNamespace(
         eligibility_status=status,
+        eligibility_reason="符合目前學生背景。",
+        hard_eligibility_status=status,
+        hard_eligibility_reason="符合目前學生背景。",
+        action_status=action_status,
         published_date="2026-07-28",
         title=title,
-        eligibility_reason="符合目前學生背景。",
         source_url="https://example.test/notice",
         detail_url="https://example.test/detail",
         notice_kind=notice_kind,
@@ -60,25 +64,32 @@ def _result(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
-def test_report_lists_current_eligible_and_review_items() -> None:
+def test_report_lists_independent_hard_and_source_states() -> None:
     result = _result(
         records=[
             _record(
                 "eligible",
-                "符合資格的獎學金",
+                "符合資格且來源完整的獎學金",
                 manual_checks=("請自行確認：平均成績須達 85 分門檻。",),
+                action_status="apply_candidate",
+            ),
+            _record(
+                "eligible",
+                "符合資格但來源待補公告",
+                category="student_aid",
+                resolution_status="insufficient_evidence",
+                evidence_score=2,
+                action_status="verify_source",
             ),
             _record(
                 "review",
-                "待確認公告",
-                category="student_aid",
-                review_kind="source_incomplete",
-                resolution_status="insufficient_evidence",
-                evidence_score=2,
+                "硬性待確認公告",
+                review_kind="semantic_ambiguous",
+                action_status="manual_review",
             ),
             _record("ineligible", "不符合公告", notice_kind="result"),
         ],
-        eligible_count=1,
+        eligible_count=2,
         review_count=1,
         ineligible_count=1,
     )
@@ -91,25 +102,32 @@ def test_report_lists_current_eligible_and_review_items() -> None:
         ],
     )
 
-    assert "本次稽核公告：3" in message
-    assert "申請型公告：2" in message
-    assert "公告類別：獎學金 2／助學金 1" in message
-    assert "申請狀態：開放 2" in message
-    assert "正文證據：完整 1／不足 1" in message
-    assert "硬性資格（可行動期間）：符合 1／待確認 1／不符 0" in message
-    assert "待確認原因：來源不完整 1" in message
+    assert "本次稽核公告：4" in message
+    assert "申請型公告：3" in message
+    assert "公告類別：獎學金 3／助學金 1" in message
+    assert "申請狀態：開放 3" in message
+    assert "正文證據：完整 2／不足 1" in message
+    assert (
+        "硬性資格（可行動期間）：符合且來源完整 1／符合但來源待補 1／"
+        "待確認 1／不符 0"
+    ) in message
+    assert "硬性待確認原因：語意待確認 1" in message
     assert "非申請公告未列入個人資格：1" in message
     assert "來源網站：設定 7" in message
     assert "龍華科技大學：完整" in message
-    assert "符合資格的獎學金" in message
+    assert "硬性條件符合且來源完整公告：" in message
+    assert "硬性條件符合但來源待補公告：" in message
     assert "硬性條件待確認公告：" in message
-    assert "待確認公告" in message
+    assert "符合資格且來源完整的獎學金" in message
+    assert "符合資格但來源待補公告" in message
+    assert "硬性待確認公告" in message
+    assert "行動：先核對正文或附件" in message
     assert "自行確認：平均成績須達 85 分門檻" in message
     assert "正文證據：4｜valid_application_detail" in message
     assert "不符合公告" not in message
 
 
-def test_expired_notice_is_not_counted_as_personal_ineligibility() -> None:
+def test_expired_notice_is_not_counted_as_hard_ineligibility() -> None:
     result = _result(
         records=[
             _record(
@@ -123,7 +141,10 @@ def test_expired_notice_is_not_counted_as_personal_ineligibility() -> None:
 
     message = build_report_message(result)
 
-    assert "硬性資格（可行動期間）：符合 0／待確認 0／不符 0" in message
+    assert (
+        "硬性資格（可行動期間）：符合且來源完整 0／符合但來源待補 0／"
+        "待確認 0／不符 0"
+    ) in message
     assert "已截止未列為個人資格不符：1" in message
     assert "過期獎學金" not in message
 
@@ -154,6 +175,7 @@ def test_report_lists_review_when_no_eligible_items() -> None:
                 "review",
                 "待確認公告",
                 review_kind="semantic_ambiguous",
+                action_status="manual_review",
             )
         ],
         review_count=1,
@@ -172,8 +194,16 @@ def test_report_lists_review_when_no_eligible_items() -> None:
 def test_actionable_items_appear_before_compact_tun_status() -> None:
     result = _result(
         records=[
-            _record("eligible", "優先顯示的符合公告"),
-            _record("review", "優先顯示的待確認公告"),
+            _record(
+                "eligible",
+                "優先顯示的符合公告",
+                action_status="apply_candidate",
+            ),
+            _record(
+                "review",
+                "優先顯示的待確認公告",
+                action_status="manual_review",
+            ),
         ],
         eligible_count=1,
         review_count=1,
@@ -182,7 +212,7 @@ def test_actionable_items_appear_before_compact_tun_status() -> None:
         "來源網站：設定 7，成功產生資料 7，空結果 0，部分完成 0，失敗 0"
     ]
     source_lines.extend(
-        f"TUN方案 program-{index}：candidate_found；唯一候選 1；入口 https://example.test/{index}"
+        f"TUN方案 program-{index}：matched；唯一候選 1；入口 https://example.test/{index}"
         for index in range(35)
     )
     source_lines.extend(
@@ -195,13 +225,34 @@ def test_actionable_items_appear_before_compact_tun_status() -> None:
     assert len(message) <= 4800
     assert "優先顯示的符合公告" in message
     assert "優先顯示的待確認公告" in message
-    assert "TUN方案共 38：candidate_found 35／pending_source 3" in message
+    assert "TUN方案共 38：matched 35／pending_source 3" in message
     assert message.index("優先顯示的符合公告") < message.index("TUN方案共 38")
     assert "TUN方案 program-20" not in message
 
 
+def test_compact_sources_surface_matcher_and_structure_failures() -> None:
+    result = _result(records=[])
+    source_lines = [
+        "TUN方案 a：matcher_miss；唯一候選 0",
+        "TUN方案 b：match_ambiguous；唯一候選 0",
+        "TUN方案 c：source_structure_changed；唯一候選 0",
+        "TUN方案 d：no_current_announcement；唯一候選 0",
+    ]
+
+    message = build_report_message(result, source_lines)
+
+    assert "TUN方案 a：matcher_miss" in message
+    assert "TUN方案 b：match_ambiguous" in message
+    assert "TUN方案 c：source_structure_changed" in message
+    assert "TUN方案 d：no_current_announcement" not in message
+
+
 def test_report_lists_structured_divergence_and_error_details() -> None:
-    changed = _record("review", "Structured 判斷不同的公告")
+    changed = _record(
+        "review",
+        "Structured 判斷不同的公告",
+        action_status="manual_review",
+    )
     changed.structured_shadow = SimpleNamespace(
         changed=True,
         legacy_status="review",
@@ -211,7 +262,11 @@ def test_report_lists_structured_divergence_and_error_details() -> None:
     changed.shadow_status = "compared"
     changed.structured_gemini_diagnostic = None
 
-    failed = _record("review", "Gemini 暫時失敗公告")
+    failed = _record(
+        "review",
+        "Gemini 暫時失敗公告",
+        action_status="manual_review",
+    )
     failed.structured_shadow = None
     failed.shadow_status = "text_error"
     failed.structured_gemini_diagnostic = SimpleNamespace(
