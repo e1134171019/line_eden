@@ -2,6 +2,16 @@ name: Scholarship source contract
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "feat/**"
+      - "fix/**"
+    paths:
+      - "src/catalogs/**"
+      - "src/collectors/**"
+      - "src/matchers/**"
+      - "src/automation/source_contract_report.py"
+      - ".github/workflows/source-contract.yml"
   pull_request:
     paths:
       - "src/catalogs/**"
