@@ -12,6 +12,8 @@ from src.collectors.tun_program_watch_collector import ProgramSourceState
 
 SEVERE_PROGRAM_STATUSES = {
     "fetch_failed",
+    "matcher_miss",
+    "match_ambiguous",
     "wrong_source",
     "source_structure_changed",
     "application_portal",
