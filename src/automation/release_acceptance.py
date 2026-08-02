@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from src.catalogs.tun_2025_program_catalog import TUN_2025_PROGRAMS
 from src.evaluators.application_evidence_scorer import VALID_APPLICATION_DETAIL
 from src.evaluators.eligibility_evaluator import (
     ELIGIBLE,
@@ -17,6 +18,7 @@ from src.evaluators.runtime_safety import (
     OPEN,
     UPCOMING,
 )
+from src.matchers.program_name_matcher import match_programs
 from src.models.eligibility_axes import APPLY_CANDIDATE
 from src.services.scholarship_service import AuditRecord, AuditResult
 
@@ -171,7 +173,8 @@ def _songliang_failures(records: list[AuditRecord]) -> tuple[str, ...]:
 def _actionable_source_incomplete_failures(
     records: list[AuditRecord],
 ) -> tuple[str, ...]:
-    unresolved = []
+    resolved_programs = _resolved_actionable_programs(records)
+    unresolved: dict[str, None] = {}
     for record in records:
         item = record.item
         if item.notice_kind != APPLICATION:
@@ -186,13 +189,45 @@ def _actionable_source_incomplete_failures(
         )
         if not source_incomplete:
             continue
-        unresolved.append(item.program_id or item.title)
+        identifier = _canonical_program_identifier(record)
+        if identifier in resolved_programs:
+            continue
+        unresolved.setdefault(identifier, None)
     if not unresolved:
         return tuple()
-    identifiers = ", ".join(dict.fromkeys(unresolved))
+    identifiers = ", ".join(unresolved)
     return (
-        f"仍有 {len(dict.fromkeys(unresolved))} 筆可行動公告來源不完整：{identifiers}",
+        f"仍有 {len(unresolved)} 筆可行動公告來源不完整：{identifiers}",
     )
+
+
+def _resolved_actionable_programs(records: list[AuditRecord]) -> frozenset[str]:
+    resolved: set[str] = set()
+    for record in records:
+        item = record.item
+        if item.notice_kind != APPLICATION:
+            continue
+        if item.application_status not in ACTIONABLE_APPLICATION_STATUSES:
+            continue
+        if item.resolution_status != VALID_APPLICATION_DETAIL:
+            continue
+        if (
+            _hard_status(record) == REVIEW
+            and item.review_kind == REVIEW_SOURCE_INCOMPLETE
+        ):
+            continue
+        resolved.add(_canonical_program_identifier(record))
+    return frozenset(resolved)
+
+
+def _canonical_program_identifier(record: AuditRecord) -> str:
+    item = record.item
+    if item.program_id:
+        return item.program_id
+    match = match_programs(item.title, TUN_2025_PROGRAMS)
+    if match.matched and match.program_id:
+        return match.program_id
+    return item.title
 
 
 def _hard_conflict_failures(records: list[AuditRecord]) -> tuple[str, ...]:
