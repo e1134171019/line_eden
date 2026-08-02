@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -24,6 +24,7 @@ _SHARED_SUNSHINE_ANNOUNCEMENT_TERMS = (
     "年度獎助學金相關簡章開放下載",
     "年度獎助學金申請公告",
 )
+_SUNSHINE_APPLICATION_HOST = "scls.sunshine.org.tw"
 
 
 class ResilientTunProgramWatchCollector(legacy.TunProgramWatchCollector):
@@ -221,22 +222,83 @@ def _shared_announcement_records(
         seen_details.add(detail_url)
         context = anchor.parent.get_text(" ", strip=True) if anchor.parent else title
         published_date = legacy._extract_date(anchor, context) or ""
-        for program in sunshine_programs:
-            records.append(
-                Scholarship.from_raw(
-                    source=f"tun-program-{program.program_id}",
-                    title=title,
-                    published_date=published_date,
-                    source_url=detail_url,
-                    program_id=program.program_id,
-                    entry_url=entry_url,
-                    detail_url=detail_url,
-                    match_method="shared_announcement",
-                    match_score=100,
-                    matched_alias=matched_term,
-                )
+        records.extend(
+            _build_shared_sunshine_records(
+                sunshine_programs,
+                title,
+                published_date,
+                entry_url,
+                detail_url,
+                "shared_announcement",
+                matched_term,
             )
-    return records
+        )
+    if records:
+        return records
+    return _direct_sunshine_application_records(
+        soup,
+        page_url,
+        entry_url,
+        sunshine_programs,
+    )
+
+
+# 官方 SCLS 申請說明本身就是兩方案共同入口，不要求頁內再有公告連結。
+def _direct_sunshine_application_records(
+    soup: BeautifulSoup,
+    page_url: str,
+    entry_url: str,
+    programs: tuple[ResolvedProgramSource, ...],
+) -> list[Scholarship]:
+    host = urlparse(page_url).hostname or ""
+    page_text = " ".join(soup.get_text(" ", strip=True).split())
+    shared_relay = "陽光" in page_text and "萬足" in page_text and "獎助學金" in page_text
+    if host != _SUNSHINE_APPLICATION_HOST and not shared_relay:
+        return []
+    title_node = soup.select_one("title")
+    title = (
+        " ".join(title_node.get_text(" ", strip=True).split())
+        if title_node is not None
+        else ""
+    )
+    if not title or "獎助學金" not in title:
+        title = "陽光與萬足獎助學金申請說明"
+    return _build_shared_sunshine_records(
+        programs,
+        title,
+        "",
+        entry_url,
+        page_url,
+        "shared_application_page",
+        "官方共同申請說明",
+    )
+
+
+# 建立共同公告對兩個方案的獨立候選。
+def _build_shared_sunshine_records(
+    programs: tuple[ResolvedProgramSource, ...],
+    title: str,
+    published_date: str,
+    entry_url: str,
+    detail_url: str,
+    match_method: str,
+    matched_alias: str,
+) -> list[Scholarship]:
+    return [
+        Scholarship.from_raw(
+            source=f"tun-program-{program.program_id}",
+            title=title,
+            published_date=published_date,
+            source_url=detail_url,
+            program_id=program.program_id,
+            entry_url=entry_url,
+            detail_url=detail_url,
+            match_method=match_method,
+            match_score=100,
+            matched_alias=matched_alias,
+        )
+        for program in programs
+    ]
 
 
 # 合併共同公告時，避免與一般 matcher 已找到的同方案同明細重複。
