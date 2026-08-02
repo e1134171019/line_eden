@@ -4,17 +4,32 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.evaluators.application_evidence_scorer import VALID_APPLICATION_DETAIL
-from src.evaluators.eligibility_evaluator import ELIGIBLE, INELIGIBLE
+from src.evaluators.eligibility_evaluator import (
+    ELIGIBLE,
+    INELIGIBLE,
+    REVIEW,
+    REVIEW_SOURCE_INCOMPLETE,
+)
 from src.evaluators.notice_classifier import APPLICATION
+from src.evaluators.runtime_safety import (
+    DEADLINE_UNKNOWN,
+    EVERGREEN,
+    OPEN,
+    UPCOMING,
+)
 from src.models.eligibility_axes import APPLY_CANDIDATE
 from src.services.scholarship_service import AuditRecord, AuditResult
 
 EXPECTED_PROGRAM_COUNT = 38
-REQUIRED_PROGRAM_IDS = frozenset({"auden-university-talent", "songliang-aid"})
+AUDEN_PROGRAM_ID = "auden-university-talent"
+SONGLIANG_PROGRAM_ID = "songliang-aid"
+REQUIRED_PROGRAM_IDS = frozenset({AUDEN_PROGRAM_ID, SONGLIANG_PROGRAM_ID})
 ACCEPTED_PROGRAM_STATUSES = frozenset(
     {"matched", "no_current_announcement", "expired_known"}
 )
-SONGLIANG_PROGRAM_ID = "songliang-aid"
+ACTIONABLE_APPLICATION_STATUSES = frozenset(
+    {OPEN, UPCOMING, EVERGREEN, DEADLINE_UNKNOWN}
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +56,9 @@ def evaluate_release_acceptance(
         *_program_count_failures(program_states),
         *_required_program_failures(program_states),
         *_source_status_failures(program_states),
+        *_auden_failures(audit_result.records),
         *_songliang_failures(audit_result.records),
+        *_actionable_source_incomplete_failures(audit_result.records),
         *_hard_conflict_failures(audit_result.records),
     ]
     return ReleaseAcceptance(tuple(failures))
@@ -79,6 +96,43 @@ def _source_status_failures(states: tuple[dict[str, Any], ...]) -> tuple[str, ..
     return tuple(failures)
 
 
+def _auden_failures(records: list[AuditRecord]) -> tuple[str, ...]:
+    auden = [
+        record
+        for record in records
+        if record.item.program_id == AUDEN_PROGRAM_ID
+        and record.item.notice_kind == APPLICATION
+        and record.item.application_status in ACTIONABLE_APPLICATION_STATUSES
+        and record.item.resolution_status == VALID_APPLICATION_DETAIL
+    ]
+    if not auden:
+        return ("耀登優秀人才沒有可驗證的當期完整申請公告",)
+
+    eligible = [
+        record
+        for record in auden
+        if _hard_status(record) == ELIGIBLE
+        and record.item.action_status == APPLY_CANDIDATE
+    ]
+    if eligible:
+        return tuple()
+
+    statuses = sorted({_hard_status(record) for record in auden})
+    reasons = sorted(
+        {
+            record.item.hard_eligibility_reason or record.item.eligibility_reason
+            for record in auden
+            if record.item.hard_eligibility_reason or record.item.eligibility_reason
+        }
+    )
+    detail = "｜".join(reasons) if reasons else "無原因"
+    return (
+        "耀登優秀人才必須產生 eligible + apply_candidate，實際為 "
+        + ", ".join(statuses)
+        + f"（{detail}）",
+    )
+
+
 def _songliang_failures(records: list[AuditRecord]) -> tuple[str, ...]:
     songliang = [
         record for record in records if record.item.program_id == SONGLIANG_PROGRAM_ID
@@ -112,6 +166,33 @@ def _songliang_failures(records: list[AuditRecord]) -> tuple[str, ...]:
     if any(record.item.action_status == APPLY_CANDIDATE for record in songliang):
         failures.append("松樑仍被列為可準備申請")
     return tuple(failures)
+
+
+def _actionable_source_incomplete_failures(
+    records: list[AuditRecord],
+) -> tuple[str, ...]:
+    unresolved = []
+    for record in records:
+        item = record.item
+        if item.notice_kind != APPLICATION:
+            continue
+        if item.application_status not in ACTIONABLE_APPLICATION_STATUSES:
+            continue
+        if _hard_status(record) != REVIEW:
+            continue
+        source_incomplete = (
+            item.review_kind == REVIEW_SOURCE_INCOMPLETE
+            or item.resolution_status != VALID_APPLICATION_DETAIL
+        )
+        if not source_incomplete:
+            continue
+        unresolved.append(item.program_id or item.title)
+    if not unresolved:
+        return tuple()
+    identifiers = ", ".join(dict.fromkeys(unresolved))
+    return (
+        f"仍有 {len(dict.fromkeys(unresolved))} 筆可行動公告來源不完整：{identifiers}",
+    )
 
 
 def _hard_conflict_failures(records: list[AuditRecord]) -> tuple[str, ...]:
