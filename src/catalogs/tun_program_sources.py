@@ -106,17 +106,17 @@ _URL_TYPE_BY_ID = {
     "cfh-disabled-family": SourceUrlType.LIST,
     "lovepeace-disadvantaged": SourceUrlType.LIST,
     "dapeng-aid": SourceUrlType.RELAY_DETAIL,
-    "hndasset-wenxiang": SourceUrlType.CORE_COVERED,
+    "hndasset-wenxiang": SourceUrlType.EVERGREEN,
     "cy-arch-aid": SourceUrlType.EVERGREEN,
     "lihpao-fullon": SourceUrlType.EVERGREEN,
     "gfc-scholarship": SourceUrlType.LIST,
     "auden-innovation-research": SourceUrlType.LIST,
     "auden-university-talent": SourceUrlType.LIST,
-    "harmony-stability": SourceUrlType.RELAY_DETAIL,
-    "taishin-youth-volunteer": SourceUrlType.HOMEPAGE,
+    "harmony-stability": SourceUrlType.ANNUAL_DETAIL,
+    "taishin-youth-volunteer": SourceUrlType.EVERGREEN,
 }
 
-# 只覆寫已核對的精準入口、正式轉載與核心來源。
+# 只覆寫已核對的精準入口、正式轉載與官方固定方案頁。
 _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
     "foxconn-scholarship-whale": (
         "https://www.foxconnfoundation.org/plan/scholar/university",
@@ -214,10 +214,6 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         "https://www.lovepeace.org.tw/Download.php?CataP=7&N_Key=192",
         OFFICIAL_VERIFIED,
     ),
-    "harmony-stability": (
-        "https://www.hk.edu.tw/remote/HKlf_1238963/",
-        SOURCE_RELAY,
-    ),
     "tainan-kaiji": (
         "https://service.utaipei.edu.tw/p/404-1034-131943.php?Lang=zh-tw",
         SOURCE_RELAY,
@@ -227,10 +223,25 @@ _SOURCE_OVERRIDES: dict[str, tuple[str, str]] = {
         SOURCE_RELAY,
     ),
     "dapeng-aid": (
-        "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
+        "https://nfuosa.nfu.edu.tw/%E6%9C%80%E6%96%B0%E6%B6%88%E6%81%AF/181-life/sact-scholarship/scholarshipcc/9722-115%E5%B9%B4%E7%AC%AC1%E6%AC%A1%E5%A4%A7%E9%B5%AC%E7%A7%91%E6%8A%80%E6%85%88%E5%96%84%E5%9F%BA%E9%87%91%E6%9C%83%E7%8D%8E%E5%8A%A9%E5%AD%B8%E9%87%91.html",
         SOURCE_RELAY,
     ),
-    "hndasset-wenxiang": ("", SOURCE_CORE),
+    "hndasset-wenxiang": (
+        "https://www.hndasset.com/csr/",
+        OFFICIAL_VERIFIED,
+    ),
+    "lihpao-fullon": (
+        "https://www.lihpao.org.tw/active_detail.php?no=95",
+        OFFICIAL_VERIFIED,
+    ),
+    "harmony-stability": (
+        "https://rsd.fashui.org/archives/33101",
+        OFFICIAL_VERIFIED,
+    ),
+    "taishin-youth-volunteer": (
+        "https://www.taishinyouth.org.tw/apply2.php",
+        OFFICIAL_VERIFIED,
+    ),
 }
 
 _FALLBACK_URLS = {
@@ -300,10 +311,31 @@ _FALLBACK_URLS = {
         "https://www.lovepeace.org.tw/Policy.php?CataP=4&N_Key=189",
         "https://service.utaipei.edu.tw/p/404-1034-125916.php?Lang=zh-tw",
     ),
+    "dapeng-aid": (
+        "https://www.edu.tw/helpdreams/Grants_Content.aspx?n=2BBF7170197CE7D3&s=68651C4217F75095&sms=0A01A72AAB9E5CD4",
+        "https://www.hn.thu.edu.tw/web/school/announcement.php?aid=12909&cid=4&department=15",
+    ),
+    "hndasset-wenxiang": (
+        "https://assistance.ncnu.edu.tw/p/406-1079-36114%2Cr249.php?Lang=zh-tw",
+    ),
     "cy-arch-aid": ("https://www.cy-arch.com.tw/foundation",),
-    "lihpao-fullon": ("https://www.lihpao.org.tw/active.php",),
-    "auden-innovation-research": ("https://www.auden.com.tw/",),
+    "lihpao-fullon": (
+        "https://www.lihpao.org.tw/active.php",
+        "https://www.lihpao.org.tw/active_history.php?type=16",
+    ),
+    "auden-innovation-research": (
+        "https://www.auden.com.tw/2025innovation/",
+        "https://www.auden.com.tw/",
+    ),
     "auden-university-talent": ("https://www.auden.com.tw/",),
+    "harmony-stability": (
+        "https://rsd.fashui.org/",
+        "https://www.hk.edu.tw/remote/HKlf_1238963/",
+    ),
+    "taishin-youth-volunteer": (
+        "https://www.taishinyouth.org.tw/news.php",
+        "https://www.taishinyouth.org.tw/2026apply",
+    ),
 }
 
 _RISK_BY_TYPE = {
@@ -383,7 +415,7 @@ def monitorable_programs() -> tuple[ResolvedProgramSource, ...]:
     )
 
 
-# 回傳已由六核心來源涵蓋的方案。
+# 回傳仍由核心來源涵蓋的方案；完成全部人工入口後應為空。
 def core_covered_programs() -> tuple[ResolvedProgramSource, ...]:
     return tuple(
         item for item in resolved_programs() if item.official_status == SOURCE_CORE
