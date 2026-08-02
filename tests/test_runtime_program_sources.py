@@ -26,7 +26,9 @@ def test_runtime_source_patches_use_verified_entry_types() -> None:
     assert _by_id("buddha-charity-progress").source_url_type is SourceUrlType.RELAY_DETAIL
     assert _by_id("yonglin-hope").source_url_type is SourceUrlType.RELAY_DETAIL
     assert _by_id("sunshine-scholarship").official_url == "https://scls.sunshine.org.tw/"
-    assert _by_id("dapeng-aid").source_url_type is SourceUrlType.RELAY_LIST
+    assert _by_id("sunshine-wanzu").official_url == "https://scls.sunshine.org.tw/"
+    assert _by_id("dapeng-aid").source_url_type is SourceUrlType.RELAY_DETAIL
+    assert "osa.ndhu.edu.tw" in _by_id("dapeng-aid").official_url
     assert _by_id("hndasset-wenxiang").source_url_type is SourceUrlType.RELAY_LIST
 
 
@@ -44,6 +46,10 @@ def test_live_titles_match_their_programs() -> None:
         (
             "lovepeace-disadvantaged",
             "財團法人祥和文教基金會114年度優秀清寒獎學金獎助學金申請",
+        ),
+        (
+            "dapeng-aid",
+            "大鵬科技慈善基金會115年第一次獎助學金（限低或中低收、家況特殊致就學困難者）",
         ),
     )
 
