@@ -93,7 +93,7 @@ def test_cross_line_any_of_status_group() -> None:
     )
 
     assert find_alias_exclusions("助學金", text, _profile()) == [
-        "須具備以下任一身分：低收入戶、中低收入戶、特殊境遇家庭、遭逢變故。"
+        "須具備以下任一身分：低收入戶、中低收入戶、遭逢變故、特殊境遇家庭。"
     ]
     assert find_alias_exclusions(
         "助學金",
