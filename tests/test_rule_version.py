@@ -30,6 +30,11 @@ def _profile() -> StudentProfile:
     )
 
 
+# 本次語意修正必須提升版本，迫使雲端 SQLite 重新評估既有公告。
+def test_current_rule_version_is_v14() -> None:
+    assert ELIGIBILITY_RULE_VERSION == "eligibility-v14"
+
+
 # 舊版只含 profile 的雜湊不得等於目前包含規則版本的雜湊。
 def test_profile_fingerprint_includes_rule_version() -> None:
     profile = _profile()
