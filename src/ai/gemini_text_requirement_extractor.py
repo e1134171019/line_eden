@@ -11,7 +11,11 @@ from src.ai.gemini_requirement_extractor import (
     GeminiRequirementExtraction,
     GeminiRequirementExtractor,
 )
-from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult, NoticeContent
+from src.diagnostics.detail_fetch_diagnostics import (
+    DetailFetchResult,
+    ExtractedAttachment,
+    NoticeContent,
+)
 
 
 @dataclass(frozen=True)
@@ -75,22 +79,11 @@ def _build_text_prompt(title: str, content: NoticeContent) -> str:
         f"主要辦法狀態：{content.rules_status}",
         f"公告正文或資格相關節錄：\n{content.main_text}",
     ]
-    for index, attachment in enumerate(content.attachments, start=1):
-        if not attachment.text.strip():
-            continue
-        parts.append(
-            "\n".join(
-                (
-                    f"主要辦法附件{index}：",
-                    f"標籤：{attachment.label}",
-                    f"角色提示：{attachment.role_hint}",
-                    f"內容角色：{attachment.content_role}",
-                    f"解析狀態：{attachment.status}",
-                    f"網址：{attachment.final_url or attachment.requested_url}",
-                    f"資格相關節錄：\n{attachment.text}",
-                )
-            )
-        )
+    parts.extend(
+        _attachment_prompt(index, attachment)
+        for index, attachment in enumerate(content.attachments, start=1)
+        if attachment.text.strip()
+    )
     parts.append(
         """
 規則：
@@ -99,8 +92,33 @@ def _build_text_prompt(title: str, content: NoticeContent) -> str:
 3. program_types 只能放日間部、進修部、在職專班等學制。
 4. 科系、學系、學院與專業領域必須放 departments 欄位。
 5. 輸入可能是長文件的資格相關節錄；若節錄不足以涵蓋全部必要資格，criteria_complete=false。
-6. 文字輸入沒有可靠 PDF 頁碼；evidence.page 一律填 1，並在 evidence.text 保留短句來源。
-7. 申請表、聲明書、行政契約或其他支援文件不得假裝成 scholarship_rules。
+6. 附件若標出「第N頁」，evidence.page 必須填實際 N；沒有頁碼資訊時才填 1。
+7. evidence.text 只能保留該頁中的短句，不得把不同頁面的文字合併成同一證據。
+8. 申請表、聲明書、行政契約或其他支援文件不得假裝成 scholarship_rules。
 """.strip()
     )
     return "\n\n".join(parts)
+
+
+# 將逐頁附件證據放進提示；無頁碼的舊資料仍維持相容格式。
+def _attachment_prompt(index: int, attachment: ExtractedAttachment) -> str:
+    header = "\n".join(
+        (
+            f"主要辦法附件{index}：",
+            f"標籤：{attachment.label}",
+            f"角色提示：{attachment.role_hint}",
+            f"內容角色：{attachment.content_role}",
+            f"解析狀態：{attachment.status}",
+            f"驗證狀態：{attachment.verification_status}",
+            f"文件雜湊：{attachment.document_hash}",
+            f"網址：{attachment.final_url or attachment.requested_url}",
+        )
+    )
+    if not attachment.pages:
+        return f"{header}\n資格相關節錄：\n{attachment.text}"
+    pages = "\n".join(
+        f"[第{page.page_number}頁｜{page.extraction_method}]\n{page.text}"
+        for page in attachment.pages
+        if page.text.strip()
+    )
+    return f"{header}\n逐頁資格相關節錄：\n{pages}"
