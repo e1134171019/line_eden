@@ -52,6 +52,7 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
     ),
     "cfh-graduate": LiveProgramContract(
         aliases=(
+            "鄭豐喜獎學金",
             "鄭豐喜研究所／大學獎學金",
             "鄭豐喜研究所/大學獎學金",
             "鄭豐喜研究所暨大學獎學金",
@@ -67,6 +68,7 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
     ),
     "cfh-university": LiveProgramContract(
         aliases=(
+            "鄭豐喜獎學金",
             "鄭豐喜研究所／大學獎學金",
             "鄭豐喜研究所/大學獎學金",
             "鄭豐喜研究所暨大學獎學金",
