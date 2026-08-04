@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import replace
+from datetime import date
 from urllib.parse import urlparse
 
 from src.catalogs.tun_live_contracts import LiveSourceCandidate, live_contract
@@ -85,7 +86,11 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
     ) -> "_RetryAttempt | None":
         contract = live_contract(program.program_id)
         aliases = tuple(dict.fromkeys((*program.aliases, *contract.aliases)))
-        variants = _source_variants(program, contract.preferred_sources)
+        variants = _source_variants(
+            program,
+            contract.preferred_sources,
+            use_catalog_sources=contract.use_catalog_sources,
+        )
         best: _RetryAttempt | None = None
         for candidate in variants:
             variant = replace(
@@ -189,32 +194,45 @@ def _placeholder_state(program: ResolvedProgramSource) -> ProgramSourceState:
     )
 
 
-# preferred sources 優先，再接原入口與既有 fallback；URL 不重複。
+# preferred sources 優先；可依 live 契約停用舊 catalog 入口與 fallback。
 def _source_variants(
     program: ResolvedProgramSource,
     preferred: tuple[LiveSourceCandidate, ...],
+    *,
+    use_catalog_sources: bool = True,
+    current_year: int | None = None,
 ) -> tuple[LiveSourceCandidate, ...]:
-    candidates = [
-        *preferred,
-        LiveSourceCandidate(
-            program.official_url,
-            program.source_url_type,
-            "原始來源契約入口。",
-        ),
-        *(
-            LiveSourceCandidate(
-                url,
-                _fallback_url_type(url, program.source_url_type),
-                "來源契約 fallback。",
-            )
-            for url in program.fallback_urls
-        ),
-    ]
+    year = current_year if current_year is not None else date.today().year
+    candidates = list(preferred)
+    if use_catalog_sources:
+        candidates.extend(
+            [
+                LiveSourceCandidate(
+                    program.official_url,
+                    program.source_url_type,
+                    "原始來源契約入口。",
+                ),
+                *(
+                    LiveSourceCandidate(
+                        url,
+                        _fallback_url_type(url, program.source_url_type),
+                        "來源契約 fallback。",
+                    )
+                    for url in program.fallback_urls
+                ),
+            ]
+        )
     unique: dict[str, LiveSourceCandidate] = {}
     for candidate in candidates:
-        if candidate.url:
+        if candidate.url and _candidate_is_active(candidate, year):
             unique.setdefault(candidate.url, candidate)
     return tuple(unique.values())
+
+
+# 年度單篇超過契約有效年後不得再當成目前公告候選。
+def _candidate_is_active(candidate: LiveSourceCandidate, current_year: int) -> bool:
+    valid_through = candidate.valid_through_year
+    return valid_through is None or current_year <= valid_through
 
 
 # 正式轉載單篇必須允許入口頁自身成為候選。
@@ -258,7 +276,7 @@ def _replace_program_records(
     return kept
 
 
-# 同一 fallback 多個節點只保留唯一公告。
+# 同一 fallback 多個節點依 content hash 去重。
 def _unique_records(records: list[Scholarship]) -> list[Scholarship]:
     unique: dict[str, Scholarship] = {}
     for item in records:
