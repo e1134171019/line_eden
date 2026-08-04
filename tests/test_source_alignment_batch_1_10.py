@@ -23,8 +23,10 @@ def test_cfh_combined_announcement_matches_both_program_contracts() -> None:
     title = "114年度「鄭豐喜獎學金」-申請公告"
 
     for program_id in ("cfh-graduate", "cfh-university"):
+        contract = live_contract(program_id)
         result = match_program(title, _source_with_live_aliases(program_id))
 
+        assert contract.force_replace is True
         assert result.matched is True
         assert result.program_id == program_id
         assert result.score >= 100
