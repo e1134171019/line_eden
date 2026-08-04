@@ -14,6 +14,10 @@ from src.diagnostics.detail_fetch_diagnostics import (
     RULES_STATUS_UNKNOWN,
 )
 from src.extractors.attachment_content_classifier import CONTENT_RULES
+from src.models.document_evidence import (
+    DocumentPageEvidence,
+    EXTRACTION_HTML_TEXT,
+)
 from src.models.scholarship import Scholarship
 
 _REFERENCE_ELIGIBLE_RULE_STATUSES = frozenset(
@@ -86,6 +90,15 @@ class EvidenceDetailFetcher(AnnouncementDetailFetcher):
                 status=diagnostic.status,
                 text=evidence_text,
                 error=diagnostic.error,
+                document_hash=diagnostic.document_hash,
+                pages=(
+                    DocumentPageEvidence(
+                        1,
+                        evidence_text,
+                        EXTRACTION_HTML_TEXT,
+                    ),
+                ),
+                verification_status="parsed_reference_evidence",
             )
             merged = replace(
                 result,
