@@ -9,6 +9,11 @@ _SUNSHINE_RELAY_URL = (
     "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20250828-1100-01"
 )
 _SUNSHINE_APPLICATION_URL = "https://scls.sunshine.org.tw/"
+_CFH_LIST_URL = "https://www.cfh.org.tw/?cat=9"
+_LIJIN_NEWS_URL = "https://www.lijin.com.tw/Extend/Foundation/News"
+_UTAIPEI_OFF_CAMPUS_SCHOLARSHIP_URL = (
+    "https://service.utaipei.edu.tw/p/412-1034-63.php?Lang=zh-tw"
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,69 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "官方最新消息列表；實際年度標題常省略基金會名稱。",
             ),
         ),
+    ),
+    "cfh-graduate": LiveProgramContract(
+        aliases=(
+            "鄭豐喜獎學金",
+            "鄭豐喜研究所／大學獎學金",
+            "鄭豐喜研究所/大學獎學金",
+            "鄭豐喜研究所暨大學獎學金",
+            "鄭豐喜研究所及大學獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _CFH_LIST_URL,
+                SourceUrlType.LIST,
+                "官方分類頁將研究所與大學組合併為同一年度申請公告。",
+            ),
+        ),
+        force_replace=True,
+    ),
+    "cfh-university": LiveProgramContract(
+        aliases=(
+            "鄭豐喜獎學金",
+            "鄭豐喜研究所／大學獎學金",
+            "鄭豐喜研究所/大學獎學金",
+            "鄭豐喜研究所暨大學獎學金",
+            "鄭豐喜研究所及大學獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _CFH_LIST_URL,
+                SourceUrlType.LIST,
+                "官方分類頁將研究所與大學組合併為同一年度申請公告。",
+            ),
+        ),
+        force_replace=True,
+    ),
+    "lijin-taoyuan": LiveProgramContract(
+        aliases=(
+            "清寒獎助學金開放申請",
+            "利晉基金會清寒獎助學金",
+            "利晉清寒獎助學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _LIJIN_NEWS_URL,
+                SourceUrlType.LIST,
+                "官方年度公告標題常省略利晉名稱，需以來源範圍內別名鎖定。",
+            ),
+        ),
+    ),
+    "tainan-kaiji": LiveProgramContract(
+        aliases=(
+            "臺疆祖廟中低低收入戶清寒優秀獎學金",
+            "臺疆祖廟清寒優秀獎學金",
+            "大觀音亭暨祀典興濟宮清寒優秀獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _UTAIPEI_OFF_CAMPUS_SCHOLARSHIP_URL,
+                SourceUrlType.RELAY_LIST,
+                "臺北市立大學校外獎助學金列表可跨年度重新發現新公告。",
+            ),
+        ),
+        force_replace=True,
     ),
     "hsinrong-emergency-aid": LiveProgramContract(
         aliases=(
