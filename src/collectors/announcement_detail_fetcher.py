@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import dataclass, replace
+from hashlib import sha256
 import re
 
 import httpx
@@ -28,7 +29,15 @@ from src.extractors.attachment_link_extractor import (
     AttachmentLinkInventory,
     extract_attachment_inventory,
 )
-from src.extractors.document_text_extractor import detect_document_kind, extract_document_text
+from src.extractors.document_text_extractor import (
+    detect_document_kind,
+    extract_document,
+    extract_document_text,
+)
+from src.models.document_evidence import (
+    DocumentPageEvidence,
+    EXTRACTION_HTML_TEXT,
+)
 from src.models.scholarship import Scholarship
 
 
@@ -38,6 +47,15 @@ class DownloadedResource:
     content_type: str
     content: bytes
     ssl_compatibility_fallback: bool = False
+
+
+@dataclass(frozen=True)
+class ExtractedResourceContent:
+    """保留合併文字、逐頁證據與原始文件雜湊。"""
+
+    text: str
+    document_hash: str
+    pages: tuple[DocumentPageEvidence, ...] = tuple()
 
 
 class AnnouncementDetailFetcher:
@@ -89,16 +107,22 @@ class AnnouncementDetailFetcher:
         requested_url: str,
         title: str,
     ) -> DetailFetchResult:
-        text = self._document_text(resource)
-        source = self._success_diagnostic("source", requested_url, resource, kind, text)
-        if not content_matches_announcement(title, text):
-            return self._content_mismatch_result(source, text)
+        content = self._document_content(resource)
+        source = self._success_diagnostic(
+            "source",
+            requested_url,
+            resource,
+            kind,
+            content,
+        )
+        if not content_matches_announcement(title, content.text):
+            return self._content_mismatch_result(source, content.text)
         return DetailFetchResult(
-            text,
+            content.text,
             source,
             tuple(),
             0,
-            body_text=text,
+            body_text=content.text,
             extracted_attachments=tuple(),
             rules_status=RULES_STATUS_NOT_REQUIRED,
         )
@@ -129,8 +153,8 @@ class AnnouncementDetailFetcher:
         ]
         diagnostics = tuple(diagnostic for _, diagnostic in results)
         extracted_attachments = tuple(
-            self._build_extracted_attachment(text, diagnostic)
-            for text, diagnostic in results
+            self._build_extracted_attachment(content, diagnostic)
+            for content, diagnostic in results
         )
         rules_texts = [
             item.text
@@ -138,7 +162,14 @@ class AnnouncementDetailFetcher:
             if item.status == "success" and item.content_role == CONTENT_RULES
         ]
         rules_status = self._determine_rules_status(body, inventory, extracted_attachments)
-        source = self._success_diagnostic("source", requested_url, resource, "html", body)
+        body_content = self._html_content(resource, body)
+        source = self._success_diagnostic(
+            "source",
+            requested_url,
+            resource,
+            "html",
+            body_content,
+        )
         if not content_matches_announcement(title, body, rules_texts):
             return self._content_mismatch_result(
                 source,
@@ -184,13 +215,20 @@ class AnnouncementDetailFetcher:
 
     def _build_extracted_attachment(
         self,
-        text: str,
+        content: ExtractedResourceContent,
         diagnostic: ResourceDiagnostic,
     ) -> ExtractedAttachment:
         content_role = (
-            classify_attachment_content(text, diagnostic.attachment_role)
+            classify_attachment_content(content.text, diagnostic.attachment_role)
             if diagnostic.status == "success"
             else "uncertain"
+        )
+        verification_status = (
+            "parsed_with_page_evidence"
+            if diagnostic.status == "success" and content.pages
+            else "parsed"
+            if diagnostic.status == "success"
+            else "unresolved"
         )
         return ExtractedAttachment(
             requested_url=diagnostic.requested_url,
@@ -200,8 +238,11 @@ class AnnouncementDetailFetcher:
             content_role=content_role,
             document_kind=diagnostic.document_kind,
             status=diagnostic.status,
-            text=text,
+            text=content.text,
             error=diagnostic.error,
+            document_hash=content.document_hash,
+            pages=content.pages,
+            verification_status=verification_status,
         )
 
     def _determine_rules_status(
@@ -237,24 +278,24 @@ class AnnouncementDetailFetcher:
         requested_url: str,
         attachment_role: str = "unknown",
         attachment_label: str = "",
-    ) -> tuple[str, ResourceDiagnostic]:
+    ) -> tuple[ExtractedResourceContent, ResourceDiagnostic]:
         resource: DownloadedResource | None = None
         kind = "unknown"
         try:
             resource = self._download(client, requested_url)
             kind = detect_document_kind(resource.content_type, resource.url)
-            text = self._resource_text(resource, kind)
-            return text, self._success_diagnostic(
+            content = self._resource_content(resource, kind)
+            return content, self._success_diagnostic(
                 "attachment",
                 requested_url,
                 resource,
                 kind,
-                text,
+                content,
                 attachment_role,
                 attachment_label,
             )
         except Exception as error:
-            return "", self._error_diagnostic(
+            return self._empty_content(), self._error_diagnostic(
                 requested_url,
                 resource,
                 kind,
@@ -263,11 +304,16 @@ class AnnouncementDetailFetcher:
                 attachment_label,
             )
 
-    def _resource_text(self, resource: DownloadedResource, kind: str) -> str:
+    def _resource_content(
+        self,
+        resource: DownloadedResource,
+        kind: str,
+    ) -> ExtractedResourceContent:
         if kind != "unsupported":
-            return self._document_text(resource)
+            return self._document_content(resource)
         if self._is_html(resource):
-            return extract_announcement_text(self._decode_html(resource), "", resource.url)
+            text = extract_announcement_text(self._decode_html(resource), "", resource.url)
+            return self._html_content(resource, text)
         raise ValueError("不支援的附件格式")
 
     def _success_diagnostic(
@@ -276,7 +322,7 @@ class AnnouncementDetailFetcher:
         requested_url: str,
         resource: DownloadedResource,
         kind: str,
-        text: str,
+        content: ExtractedResourceContent,
         attachment_role: str = "unknown",
         attachment_label: str = "",
     ) -> ResourceDiagnostic:
@@ -288,11 +334,13 @@ class AnnouncementDetailFetcher:
             len(resource.content),
             kind,
             "success",
-            len(text),
+            len(content.text),
             "",
             attachment_role,
             attachment_label,
             resource.ssl_compatibility_fallback,
+            document_hash=content.document_hash,
+            page_count=len(content.pages),
         )
 
     def _error_diagnostic(
@@ -341,16 +389,68 @@ class AnnouncementDetailFetcher:
             rules_status=RULES_STATUS_UNKNOWN,
         )
 
-    def _error_text(self, error: Exception) -> str:
-        return f"{type(error).__name__}: {' '.join(str(error).split())}"[:240]
-
-    def _document_text(self, resource: DownloadedResource) -> str:
-        return extract_document_text(
-            resource.content,
-            resource.content_type,
-            resource.url,
-            self.max_pdf_pages,
+    def _document_content(
+        self,
+        resource: DownloadedResource,
+    ) -> ExtractedResourceContent:
+        try:
+            parsed = extract_document(
+                resource.content,
+                resource.content_type,
+                resource.url,
+                self.max_pdf_pages,
+            )
+        except Exception as parse_error:
+            text = self._legacy_document_text(resource, parse_error)
+            pages = (DocumentPageEvidence(1, text),) if text.strip() else tuple()
+            return ExtractedResourceContent(
+                text,
+                self._content_hash(resource.content),
+                pages,
+            )
+        return ExtractedResourceContent(
+            parsed.text,
+            self._content_hash(resource.content),
+            parsed.pages,
         )
+
+    # 保留舊測試與客製擷取器替換點；正式解析失敗仍維持 fail closed。
+    def _legacy_document_text(
+        self,
+        resource: DownloadedResource,
+        parse_error: Exception,
+    ) -> str:
+        try:
+            return extract_document_text(
+                resource.content,
+                resource.content_type,
+                resource.url,
+                self.max_pdf_pages,
+            )
+        except Exception:
+            raise parse_error
+
+    def _html_content(
+        self,
+        resource: DownloadedResource,
+        text: str,
+    ) -> ExtractedResourceContent:
+        pages = (
+            (DocumentPageEvidence(1, text, EXTRACTION_HTML_TEXT),)
+            if text.strip()
+            else tuple()
+        )
+        return ExtractedResourceContent(
+            text,
+            self._content_hash(resource.content),
+            pages,
+        )
+
+    def _empty_content(self) -> ExtractedResourceContent:
+        return ExtractedResourceContent("", "")
+
+    def _content_hash(self, content: bytes) -> str:
+        return sha256(content).hexdigest()
 
     def _download(self, client: DetailSafeHttpClient, url: str) -> DownloadedResource:
         with client.stream(url) as (response, fallback):
@@ -394,3 +494,6 @@ class AnnouncementDetailFetcher:
 
     def _parse_text(self, html: str, title: str = "", source_url: str = "") -> str:
         return extract_announcement_text(html, title, source_url)
+
+    def _error_text(self, error: Exception) -> str:
+        return f"{type(error).__name__}: {' '.join(str(error).split())}"[:240]
