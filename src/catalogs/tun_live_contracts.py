@@ -14,6 +14,33 @@ _LIJIN_NEWS_URL = "https://www.lijin.com.tw/Extend/Foundation/News"
 _UTAIPEI_OFF_CAMPUS_SCHOLARSHIP_URL = (
     "https://service.utaipei.edu.tw/p/412-1034-63.php?Lang=zh-tw"
 )
+_YZU_SCHOLARSHIP_TAG_URL = (
+    "https://announce.yzu.edu.tw/index.php/tw/component/tags/tag/a-20250103"
+)
+_IT_SOCIAL_CARE_2026_RELAY_URL = (
+    "https://announce.yzu.edu.tw/index.php/tw/st/st-lgs20260521-1630-01"
+)
+_IT_SOCIAL_CARE_RULES_URL = "https://itss.csroc.org.tw/about/"
+_BUDDHA_CHARITY_NEWS_URL = (
+    "https://www.buddha-charity.org/main.php?funName=news"
+)
+_BUDDHA_CHARITY_2026_DETAIL_URL = (
+    "https://www.buddha-charity.org/main.php?funName=news_content&id=114"
+)
+_BUDDHA_CHARITY_2026_RELAY_URL = (
+    "https://service.utaipei.edu.tw/p/404-1034-130714.php?Lang=zh-tw"
+)
+_YONGLIN_2026_RELAY_URL = (
+    "https://service.utaipei.edu.tw/p/404-1034-133653.php?Lang=zh-tw"
+)
+_YONGLIN_2026_BACKUP_URL = (
+    "https://osa.ndhu.edu.tw/p/406-1005-260310%2Cr402.php?Lang=zh-tw"
+)
+_YONGLIN_PROJECT_URL = "https://www.yonglin.org.tw/project/education/detail/28"
+_CDF_VOCATIONAL_URL = (
+    "https://www.cdffoundation.org/zh-tw/scholarships/"
+    "vocational-education-scholarship"
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +50,7 @@ class LiveSourceCandidate:
     url: str
     source_url_type: SourceUrlType
     reason: str
+    valid_through_year: int | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +60,9 @@ class LiveProgramContract:
     aliases: tuple[str, ...] = tuple()
     preferred_sources: tuple[LiveSourceCandidate, ...] = tuple()
     force_replace: bool = False
+    reference_sources: tuple[LiveSourceCandidate, ...] = tuple()
+    include_reference_evidence: bool = False
+    use_catalog_sources: bool = True
 
 
 # 只放 production 已證實需要特殊 live 契約的方案。
@@ -113,6 +144,35 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         ),
         force_replace=True,
     ),
+    "rehe-association": LiveProgramContract(
+        aliases=(
+            "台北市熱河同鄉會獎學金",
+            "台北市熱河同鄉會獎助金",
+            "熱河同鄉會獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _UTAIPEI_OFF_CAMPUS_SCHOLARSHIP_URL,
+                SourceUrlType.RELAY_LIST,
+                "以校外獎助學金列表跨年度重新發現；不再固定依賴114年單篇。",
+            ),
+        ),
+        force_replace=True,
+        use_catalog_sources=False,
+    ),
+    "wang-yun-wu-self-study": LiveProgramContract(
+        aliases=(
+            "114年獎學金申請",
+            "王雲五先生自學獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://yunwu.org.tw/y/news/category/6",
+                SourceUrlType.LIST,
+                "官方自學獎學金分類頁；年度申請標題常省略方案全名。",
+            ),
+        ),
+    ),
     "hsinrong-emergency-aid": LiveProgramContract(
         aliases=(
             "竹山欣榮圖書館急難學生助學金",
@@ -125,6 +185,118 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "正式大學急難救助列表，實際名稱未使用『急難救助』完整詞組。",
             ),
         ),
+    ),
+    "it-social-care": LiveProgramContract(
+        aliases=(
+            "資訊人社會關懷獎學金",
+            "中華民國電腦學會資訊人社會關懷獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _IT_SOCIAL_CARE_2026_RELAY_URL,
+                SourceUrlType.RELAY_DETAIL,
+                "115年正式大學轉載；2026年內優先取得完整申請日期與資格。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                _YZU_SCHOLARSHIP_TAG_URL,
+                SourceUrlType.RELAY_LIST,
+                "元智大學獎學金標籤列表可跨年度重新發現新公告。",
+            ),
+        ),
+        force_replace=True,
+        reference_sources=(
+            LiveSourceCandidate(
+                _IT_SOCIAL_CARE_RULES_URL,
+                SourceUrlType.EVERGREEN,
+                "官方設置辦法只作固定資格證據，不作當年度公告候選。",
+            ),
+        ),
+        include_reference_evidence=True,
+        use_catalog_sources=False,
+    ),
+    "you-care-hand-in-hand": LiveProgramContract(
+        aliases=(
+            "大手拉小手育成計畫",
+            "大手拉小手—育成計畫",
+            "大手拉小手-育成計畫",
+        ),
+    ),
+    "buddha-charity-progress": LiveProgramContract(
+        aliases=(
+            "誌善清寒學生進步獎學金",
+            "高中職專大碩誌善清寒學生進步獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _BUDDHA_CHARITY_2026_DETAIL_URL,
+                SourceUrlType.ANNUAL_DETAIL,
+                "115年官方申請辦法頁；只在2026年內作快速精準入口。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                _BUDDHA_CHARITY_NEWS_URL,
+                SourceUrlType.LIST,
+                "官方最新消息列表負責跨年度重新發現。",
+            ),
+            LiveSourceCandidate(
+                _BUDDHA_CHARITY_2026_RELAY_URL,
+                SourceUrlType.RELAY_DETAIL,
+                "115年正式大學轉載備援，含資格正文與附件入口。",
+                valid_through_year=2026,
+            ),
+        ),
+        force_replace=True,
+        use_catalog_sources=False,
+    ),
+    "yonglin-hope": LiveProgramContract(
+        aliases=(
+            "115年永齡銘日希望獎助學金",
+            "永齡銘日希望獎助學金辦法",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _YONGLIN_2026_RELAY_URL,
+                SourceUrlType.RELAY_DETAIL,
+                "115年正式大學轉載；2026年內優先取得完整資格。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                _YONGLIN_2026_BACKUP_URL,
+                SourceUrlType.RELAY_DETAIL,
+                "115年第二個正式大學轉載備援。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                _UTAIPEI_OFF_CAMPUS_SCHOLARSHIP_URL,
+                SourceUrlType.RELAY_LIST,
+                "臺北市立大學校外獎助學金列表負責跨年度重新發現。",
+            ),
+        ),
+        force_replace=True,
+        reference_sources=(
+            LiveSourceCandidate(
+                _YONGLIN_PROJECT_URL,
+                SourceUrlType.EVERGREEN,
+                "官方固定方案頁只作計畫 provenance，不宣告當年度開放。",
+            ),
+        ),
+        use_catalog_sources=False,
+    ),
+    "cdf-vocational": LiveProgramContract(
+        aliases=(
+            "中華開發技藝職能獎學金",
+            "技藝職能獎學金",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                _CDF_VOCATIONAL_URL,
+                SourceUrlType.EVERGREEN,
+                "官方新版 canonical 固定方案頁。",
+            ),
+        ),
+        force_replace=True,
+        use_catalog_sources=False,
     ),
     "lovepeace-disadvantaged": LiveProgramContract(
         aliases=(
@@ -139,39 +311,6 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "官方公文及表單列表，申請辦法標題未包含『優秀清寒』。",
             ),
         ),
-    ),
-    "buddha-charity-progress": LiveProgramContract(
-        aliases=(
-            "誌善清寒學生進步獎學金",
-            "高中職專大碩誌善清寒學生進步獎學金",
-        ),
-        preferred_sources=(
-            LiveSourceCandidate(
-                "https://service.utaipei.edu.tw/p/404-1034-130714.php?Lang=zh-tw",
-                SourceUrlType.RELAY_DETAIL,
-                "115年正式大學轉載，含資格正文與附件入口。",
-            ),
-        ),
-        force_replace=True,
-    ),
-    "yonglin-hope": LiveProgramContract(
-        aliases=(
-            "115年永齡銘日希望獎助學金",
-            "永齡銘日希望獎助學金辦法",
-        ),
-        preferred_sources=(
-            LiveSourceCandidate(
-                "https://service.utaipei.edu.tw/p/404-1034-133653.php?Lang=zh-tw",
-                SourceUrlType.RELAY_DETAIL,
-                "115年正式大學轉載；官方方案站在 runner 發生憑證鏈錯誤。",
-            ),
-            LiveSourceCandidate(
-                "https://osa.ndhu.edu.tw/p/406-1005-260310%2Cr402.php?Lang=zh-tw",
-                SourceUrlType.RELAY_DETAIL,
-                "115年第二個正式大學轉載備援。",
-            ),
-        ),
-        force_replace=True,
     ),
     "sunshine-scholarship": LiveProgramContract(
         aliases=(
