@@ -86,10 +86,14 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
     ) -> "_RetryAttempt | None":
         contract = live_contract(program.program_id)
         aliases = tuple(dict.fromkeys((*program.aliases, *contract.aliases)))
-        variants = _source_variants(
-            program,
-            contract.preferred_sources,
-            use_catalog_sources=contract.use_catalog_sources,
+        variants = (
+            _source_variants(program, contract.preferred_sources)
+            if contract.use_catalog_sources
+            else _source_variants(
+                program,
+                contract.preferred_sources,
+                use_catalog_sources=False,
+            )
         )
         best: _RetryAttempt | None = None
         for candidate in variants:
