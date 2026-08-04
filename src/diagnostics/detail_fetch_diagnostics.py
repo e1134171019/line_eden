@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from src.models.document_evidence import DocumentPageEvidence
+
 RULES_STATUS_UNKNOWN = "unknown"
 RULES_STATUS_NOT_REQUIRED = "not_required"
 RULES_STATUS_RESOLVED = "resolved"
@@ -31,11 +33,13 @@ class ResourceDiagnostic:
     extraction_policy_hash: str = ""
     selected_selector: str = ""
     heuristic_fallback: bool = False
+    document_hash: str = ""
+    page_count: int = 0
 
 
 @dataclass(frozen=True)
 class ExtractedAttachment:
-    """保留附件文字、角色提示與內容確認結果。"""
+    """保留附件文字、逐頁證據、角色提示與內容確認結果。"""
 
     requested_url: str
     final_url: str
@@ -46,6 +50,9 @@ class ExtractedAttachment:
     status: str
     text: str
     error: str = ""
+    document_hash: str = ""
+    pages: tuple[DocumentPageEvidence, ...] = tuple()
+    verification_status: str = "unverified"
 
 
 @dataclass(frozen=True)
