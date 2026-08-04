@@ -65,6 +65,7 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "官方分類頁將研究所與大學組合併為同一年度申請公告。",
             ),
         ),
+        force_replace=True,
     ),
     "cfh-university": LiveProgramContract(
         aliases=(
@@ -81,6 +82,7 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
                 "官方分類頁將研究所與大學組合併為同一年度申請公告。",
             ),
         ),
+        force_replace=True,
     ),
     "lijin-taoyuan": LiveProgramContract(
         aliases=(
