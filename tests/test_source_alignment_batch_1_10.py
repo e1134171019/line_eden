@@ -20,7 +20,7 @@ def _source_with_live_aliases(program_id: str) -> ResolvedProgramSource:
 
 
 def test_cfh_combined_announcement_matches_both_program_contracts() -> None:
-    title = "114年度「鄭豐喜〈研究所／大學〉獎學金」申請公告"
+    title = "114年度「鄭豐喜獎學金」-申請公告"
 
     for program_id in ("cfh-graduate", "cfh-university"):
         result = match_program(title, _source_with_live_aliases(program_id))
