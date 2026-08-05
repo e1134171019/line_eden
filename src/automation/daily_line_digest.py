@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from collections.abc import Iterable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -12,9 +13,16 @@ from config import (
     validate_settings,
 )
 from main import build_service
+from src.automation.eligible_line_links import (
+    EligibleLink,
+    USER_CONFIRMED_ELIGIBLE_LINKS,
+    build_line_message,
+    links_from_scholarships,
+    merge_links,
+)
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
-from src.services.scholarship_service import ScholarshipService, ServiceResult
+from src.services.scholarship_service import ServiceResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
@@ -24,25 +32,22 @@ def build_daily_message(
     result: ServiceResult,
     source_lines: list[str] | tuple[str, ...] = (),
     checked_at: datetime | None = None,
+    confirmed_links: Iterable[EligibleLink] = USER_CONFIRMED_ELIGIBLE_LINKS,
 ) -> str:
-    """建立每日固定 LINE 摘要；即使沒有符合公告也必須產生訊息。"""
+    """建立每日固定 LINE 摘要，只顯示時間、符合方案名稱與連結。"""
+
+    # 來源診斷保留在 GitHub Actions 日誌與 artifact，不送到 LINE。
+    _ = source_lines
     local_time = checked_at or datetime.now(TAIPEI_TIMEZONE)
-    lines = [
-        "獎學金每日檢查完成",
-        f"時間：{local_time:%Y-%m-%d %H:%M}",
-        f"本次蒐集公告：{len(result.collected)}",
-        f"本次符合並通知：{result.notified_count}",
-        f"資格待確認：{result.review_count}（不推播）",
-        f"明確不符合：{result.ineligible_count}",
-        f"Gemini 生成呼叫：{result.gemini_calls}",
-        "",
-        result.message,
-    ]
-    if source_lines:
-        lines.extend(["", "來源狀態：", *(f"- {line}" for line in source_lines)])
-    if result.notified_count == 0:
-        lines.extend(["", "今天沒有新的明確符合公告。"])
-    return "\n".join(lines)[:MAX_LINE_TEXT_LENGTH]
+    links = merge_links(
+        confirmed_links,
+        links_from_scholarships(result.pending_items),
+    )
+    return build_line_message(
+        links,
+        checked_at=local_time,
+        max_length=MAX_LINE_TEXT_LENGTH,
+    )
 
 
 def build_failure_message(error: Exception, checked_at: datetime | None = None) -> str:
@@ -55,13 +60,6 @@ def build_failure_message(error: Exception, checked_at: datetime | None = None) 
         f"錯誤：{reason}\n"
         "GitHub Actions 已標記失敗，請檢查執行紀錄。"
     )[:MAX_LINE_TEXT_LENGTH]
-
-
-def _source_summary_lines(service: ScholarshipService) -> list[str]:
-    summary = getattr(service.collector, "source_summary_lines", None)
-    if not callable(summary):
-        return []
-    return list(summary())
 
 
 def _send(text: str) -> None:
@@ -84,7 +82,7 @@ def main() -> None:
     except Exception as error:
         _send(build_failure_message(error))
         raise
-    message = build_daily_message(result, _source_summary_lines(service))
+    message = build_daily_message(result)
     _send(message)
     print(message)
     print("每日 LINE 摘要已送出。")
