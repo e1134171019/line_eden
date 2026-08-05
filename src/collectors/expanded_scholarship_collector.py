@@ -21,6 +21,7 @@ from src.collectors.moe_overseas_collector import MoeOverseasCollector
 from src.collectors.multi_source_collector import MultiSourceCollector
 from src.collectors.tun_program_watch_collector import ProgramSourceState
 from src.collectors.xinzhuang_awards_collector import XinzhuangAwardsCollector
+from src.discovery.source_discovery_service import ProgramSourceDiscoveryService
 from src.models.scholarship import Scholarship
 from src.models.source_quality import SourceRisk
 
@@ -36,6 +37,10 @@ class ExpandedScholarshipCollector(LhuCollector):
         collection_mode: CollectionMode = CollectionMode.INCREMENTAL,
         max_pages: int = 20,
         fetch_workers: int = 1,
+        *,
+        source_discovery: ProgramSourceDiscoveryService | None = None,
+        source_discovery_min_score: int = 100,
+        source_discovery_max_candidates: int = 5,
     ) -> None:
         super().__init__(
             source_url,
@@ -45,6 +50,9 @@ class ExpandedScholarshipCollector(LhuCollector):
             max_pages,
         )
         self.fetch_workers = fetch_workers
+        self.source_discovery = source_discovery
+        self.source_discovery_min_score = source_discovery_min_score
+        self.source_discovery_max_candidates = source_discovery_max_candidates
         self.tun_collector: DecisionSafeTunProgramWatchCollector | None = None
 
     def collect(self) -> list[Scholarship]:
@@ -54,6 +62,9 @@ class ExpandedScholarshipCollector(LhuCollector):
             self.collection_mode,
             self.max_pages,
             self.fetch_workers,
+            source_discovery=self.source_discovery,
+            source_discovery_min_score=self.source_discovery_min_score,
+            source_discovery_max_candidates=self.source_discovery_max_candidates,
         )
         collectors: list[BaseCollector] = [
             _LhuOnlyCollector(self),
