@@ -86,27 +86,10 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         max_pages=10,
     ),
     AdditionalScholarshipSource(
-        source_id="ntu-scholarship-portal",
-        display_name="國立臺灣大學獎學金公告",
-        entry_url=(
-            "https://advisory.ntu.edu.tw/CMS/Scholarship?applicant_type=16&"
-            "keyword=&pageIndex=1&show_way=all&sort=f_apply_end_date"
-        ),
-        allowed_hosts=("advisory.ntu.edu.tw",),
-        max_pages=10,
-    ),
-    AdditionalScholarshipSource(
         source_id="ntut-scholarship-platform",
         display_name="國立臺北科技大學獎助學金平台",
         entry_url="https://scholarship.ntut.edu.tw/",
         allowed_hosts=("scholarship.ntut.edu.tw",),
-        max_pages=10,
-    ),
-    AdditionalScholarshipSource(
-        source_id="ntust-external-scholarships",
-        display_name="國立臺灣科技大學校外獎學金",
-        entry_url="https://www.oia.ntust.edu.tw/p/403-1060-1588.php?Lang=zh-tw",
-        allowed_hosts=("oia.ntust.edu.tw", "www.oia.ntust.edu.tw"),
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -148,8 +131,8 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
     AdditionalScholarshipSource(
         source_id="tut-external-scholarships",
         display_name="台南應用科技大學校外獎助學金",
-        entry_url="https://stud.tut.edu.tw/p/422-1007-1025.php?lang=zh-tw",
-        allowed_hosts=("stud.tut.edu.tw",),
+        entry_url="https://club-stud.tut.edu.tw/p/403-1038-1402-1.php?Lang=zh-tw",
+        allowed_hosts=("club-stud.tut.edu.tw",),
         max_pages=10,
     ),
 )
