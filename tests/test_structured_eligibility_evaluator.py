@@ -113,6 +113,41 @@ def test_missing_all_special_status_options_is_ineligible_once() -> None:
     assert result.decision.reason_text().count("任一身分") == 1
 
 
+def test_qualitative_traits_are_manual_not_profile_identity() -> None:
+    extraction = _extraction(
+        required_special_statuses=["品學兼優", "積極向上"]
+    )
+
+    result = StructuredEligibilityEvaluator().evaluate(extraction, _profile())
+
+    assert result.decision.status == ELIGIBLE
+    assert all(item.status != "fail" for item in result.conditions)
+    assert any(
+        item.field == "qualitative_requirement" and item.status == MANUAL
+        for item in result.conditions
+    )
+    assert any("品學兼優" in item for item in result.decision.manual_checks)
+
+
+def test_mixed_identity_and_qualitative_requirements_keep_hard_identity() -> None:
+    extraction = _extraction(
+        required_special_statuses=["中低收入戶", "積極向上"]
+    )
+    profile = _profile(special_statuses=("中低收入戶",))
+
+    result = StructuredEligibilityEvaluator().evaluate(extraction, profile)
+
+    assert result.decision.status == ELIGIBLE
+    assert any(
+        item.field == "special_status_any_of" and item.status == "pass"
+        for item in result.conditions
+    )
+    assert any(
+        item.field == "qualitative_requirement" and item.status == MANUAL
+        for item in result.conditions
+    )
+
+
 def test_shadow_comparison_never_changes_legacy_decision() -> None:
     legacy = EligibilityDecision(REVIEW, ("舊規則待確認。",))
 

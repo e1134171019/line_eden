@@ -14,36 +14,56 @@ from src.automation.source_health_artifact import (
     write_source_health_artifact,
 )
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
+from src.collectors.base_collector import BaseCollector
 from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCollector
+from src.models.scholarship import Scholarship
 from src.runtime.run_mode import RunMode
 
 
-# 完整歷史來源健康由獨立 source-contract workflow 驗證。
-# Production acceptance 只需針對當期入口與 38 項方案候選執行語意驗收，
-# 避免再次逐筆抓取 1,200+ 筆歷史公告而超過 CI 執行上限。
-PRODUCTION_ACCEPTANCE_MODE = RunMode.DRY_RUN
+class _ReplayProgramCollector(BaseCollector):
+    """重播 full collector 已取得的 38 方案候選，不再次存取外部網站。"""
+
+    def __init__(self, items: list[Scholarship]) -> None:
+        self._items = items
+
+    def collect(self) -> list[Scholarship]:
+        return list(self._items)
 
 
 def main() -> None:
-    """以正式狀態與 profile 驗收 detail/evaluator，但禁止傳送 LINE。"""
+    """以正式狀態與 profile 驗收 38 方案，但禁止傳送 LINE。"""
 
-    print("Production acceptance：開始當期 semantic audit（禁止 LINE）", flush=True)
+    print("Production acceptance：開始 full source + 38-program semantic audit（禁止 LINE）", flush=True)
     validate_gemini_settings()
-    service = build_service(mode=PRODUCTION_ACCEPTANCE_MODE, use_gemini=True)
+    service = build_service(mode=RunMode.AUDIT, use_gemini=True)
     if not isinstance(service.collector, ExpandedScholarshipCollector):
         raise RuntimeError("Production acceptance 需要 ExpandedScholarshipCollector")
 
-    print("Production acceptance：開始收集當期來源與逐筆資格證據", flush=True)
-    result = service.audit()
-    record_count = len(getattr(result, "records", ()))
+    source_collector = service.collector
+    print("Production acceptance：開始完整來源契約收集", flush=True)
+    raw_items = source_collector.collect()
+    source_report = build_source_health_report(source_collector)
+    source_health = write_source_health_artifact(source_collector)
+    program_items = [
+        item
+        for item in raw_items
+        if item.program_id or item.source.startswith("tun-program-")
+    ]
     print(
-        f"Production acceptance：完成 {record_count} 筆語意驗收",
+        "Production acceptance：完整來源收集完成，"
+        f"共 {len(raw_items)} 筆；38 方案候選 {len(program_items)} 筆",
+        flush=True,
+    )
+
+    service.collector = _ReplayProgramCollector(program_items)
+    print("Production acceptance：開始逐方案正文、附件與資格證據驗收", flush=True)
+    result = service.audit()
+    print(
+        f"Production acceptance：完成 {len(result.records)} 筆逐方案語意驗收",
         flush=True,
     )
 
     structured_csv, structured_json = write_structured_shadow_artifacts(result)
-    source_report = build_source_health_report(service.collector)
-    source_health = write_source_health_artifact(service.collector)
     rejections = write_pipeline_rejection_artifact(result)
     acceptance_json, acceptance_csv = write_production_acceptance_artifacts(
         source_report,

@@ -23,6 +23,30 @@ UNKNOWN = "unknown"
 MANUAL = "manual"
 ConditionStatus = Literal["pass", "fail", "unknown", "manual"]
 
+_PROFILE_SPECIAL_STATUS_MARKERS = (
+    "低收入",
+    "中低收入",
+    "清寒",
+    "弱勢",
+    "原住民",
+    "身心障礙",
+    "新住民",
+    "單親",
+    "特殊境遇",
+    "失親",
+    "孤兒",
+    "隔代教養",
+    "育幼",
+    "燒傷",
+    "心臟病",
+    "罕見疾病",
+    "重大傷病",
+    "勞工子女",
+    "農漁民",
+    "遺族",
+    "受刑人子女",
+)
+
 
 @dataclass(frozen=True)
 class ConditionResult:
@@ -227,26 +251,54 @@ def _special_status_conditions(
     required = tuple(dict.fromkeys(extraction.required_special_statuses))
     if not required:
         return []
-    owned = set(profile.special_statuses)
-    matched = [status for status in required if status in owned]
-    requirement = "、".join(required)
+
+    profile_statuses = tuple(
+        status for status in required if _is_profile_special_status(status)
+    )
+    qualitative_requirements = tuple(
+        status for status in required if status not in profile_statuses
+    )
+    results = [
+        ConditionResult(
+            "qualitative_requirement",
+            value,
+            MANUAL,
+            f"請自行確認：是否符合「{value}」評選條件。",
+        )
+        for value in qualitative_requirements
+    ]
+    if not profile_statuses:
+        return results
+
+    matched = next(
+        (
+            owned
+            for required_status in profile_statuses
+            for owned in profile.special_statuses
+            if _special_status_matches(required_status, owned)
+        ),
+        "",
+    )
+    requirement = "、".join(profile_statuses)
     if matched:
-        return [
+        results.append(
             ConditionResult(
                 "special_status_any_of",
                 requirement,
                 PASS,
-                f"具備必要身分選項之一：「{matched[0]}」。",
+                f"具備必要身分選項之一：「{matched}」。",
             )
-        ]
-    return [
-        ConditionResult(
-            "special_status_any_of",
-            requirement,
-            FAIL,
-            f"須具備以下任一身分：{requirement}。",
         )
-    ]
+    else:
+        results.append(
+            ConditionResult(
+                "special_status_any_of",
+                requirement,
+                FAIL,
+                f"須具備以下任一身分：{requirement}。",
+            )
+        )
+    return results
 
 
 def _score_conditions(
@@ -410,6 +462,25 @@ def _department_matches(required: str, profile: StudentProfile) -> bool:
         "電資",
     }
     return any(term and term in required for term in terms)
+
+
+def _is_profile_special_status(value: str) -> bool:
+    normalized = _normalize_status(value)
+    return any(marker in normalized for marker in _PROFILE_SPECIAL_STATUS_MARKERS)
+
+
+def _special_status_matches(required: str, owned: str) -> bool:
+    normalized_required = _normalize_status(required)
+    normalized_owned = _normalize_status(owned)
+    return (
+        normalized_required == normalized_owned
+        or normalized_required in normalized_owned
+        or normalized_owned in normalized_required
+    )
+
+
+def _normalize_status(value: str) -> str:
+    return re.sub(r"[\s、，,；;／/或與及]+", "", value)
 
 
 def _normalize_region(value: str) -> str:

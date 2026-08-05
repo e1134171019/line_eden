@@ -1,22 +1,41 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import src.automation.production_acceptance_audit as audit_module
+from src.models.scholarship import Scholarship
 
 
 class _Collector:
-    pass
+    def collect(self) -> list[Scholarship]:
+        return [
+            Scholarship.from_raw(
+                "tun-program-auden-university-talent",
+                "耀登炳南大專校院優秀人才獎學金",
+                "2026-08-01",
+                "https://example.test/auden",
+                program_id="auden-university-talent",
+            ),
+            Scholarship.from_raw(
+                "fixture-general",
+                "一般校外獎學金公告",
+                "2026-08-01",
+                "https://example.test/general",
+            ),
+        ]
 
 
 class _Service:
     def __init__(self) -> None:
         self.collector = _Collector()
+        self.audit_items: list[Scholarship] = []
 
     def audit(self) -> object:
-        return object()
+        self.audit_items = self.collector.collect()
+        return SimpleNamespace(records=[])
 
 
 class _Acceptance:
@@ -34,10 +53,19 @@ class _Acceptance:
             raise RuntimeError("Production 驗收未通過")
 
 
-def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, acceptance: _Acceptance) -> None:
+def _patch_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    acceptance: _Acceptance,
+    service: _Service | None = None,
+) -> _Service:
+    resolved_service = service or _Service()
     monkeypatch.setattr(audit_module, "ExpandedScholarshipCollector", _Collector)
     monkeypatch.setattr(audit_module, "validate_gemini_settings", lambda: None)
-    monkeypatch.setattr(audit_module, "build_service", lambda **kwargs: _Service())
+    monkeypatch.setattr(
+        audit_module,
+        "build_service",
+        lambda **kwargs: resolved_service,
+    )
     monkeypatch.setattr(
         audit_module,
         "write_structured_shadow_artifacts",
@@ -68,27 +96,32 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, acceptance: _Acceptance) ->
         "evaluate_release_acceptance",
         lambda report, result: acceptance,
     )
+    return resolved_service
 
 
-def test_production_acceptance_uses_current_semantic_scope(
+def test_production_acceptance_uses_full_source_and_program_replay_scope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     acceptance = _Acceptance()
     captured: dict[str, object] = {}
-    _patch_pipeline(monkeypatch, acceptance)
+    service = _Service()
+    _patch_pipeline(monkeypatch, acceptance, service)
 
     def _build_service(**kwargs: object) -> _Service:
         captured.update(kwargs)
-        return _Service()
+        return service
 
     monkeypatch.setattr(audit_module, "build_service", _build_service)
 
     audit_module.main()
 
     assert captured == {
-        "mode": audit_module.RunMode.DRY_RUN,
+        "mode": audit_module.RunMode.AUDIT,
         "use_gemini": True,
     }
+    assert [item.program_id for item in service.audit_items] == [
+        "auden-university-talent"
+    ]
 
 
 def test_production_acceptance_audit_passes_without_line(
@@ -102,7 +135,7 @@ def test_production_acceptance_audit_passes_without_line(
 
     assert acceptance.required is True
     output = capsys.readouterr().out
-    assert "開始當期 semantic audit（禁止 LINE）" in output
+    assert "full source + 38-program semantic audit（禁止 LINE）" in output
     assert "Production acceptance：PASS" in output
     assert "acceptance.json" in output
 
