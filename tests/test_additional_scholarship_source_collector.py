@@ -20,6 +20,7 @@ def _config(**overrides: object) -> AdditionalScholarshipSource:
         "display_name": "測試獎學金來源",
         "entry_url": "https://scholar.example/list",
         "allowed_hosts": ("scholar.example",),
+        "review_reason": "測試來源已完成有效性審查。",
         "max_pages": 3,
     }
     values.update(overrides)
@@ -169,17 +170,19 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_fourteen_unique_sources() -> None:
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 14
-    assert len({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}) == 14
+def test_additional_source_catalog_has_twelve_reviewed_unique_sources() -> None:
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 12
+    assert len({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}) == 12
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
+    assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {
-        "foxconn-scholarship-whale",
         "pan-wen-yuan-scholarship",
         "ntut-scholarship-platform",
         "utaipei-external-scholarships",
-        "mcu-external-scholarships",
         "uch-external-scholarships",
         "npu-scholarship-portal",
         "tut-external-scholarships",
     }.issubset({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES})
+    assert "foxconn-scholarship-whale" not in {
+        item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES
+    }
