@@ -35,7 +35,7 @@ from src.models.source_quality import SourceRisk
 
 
 class ExpandedScholarshipCollector(LhuCollector):
-    """既有官方來源、六個新增來源及 TUN 38 項方案監測群組。"""
+    """既有官方來源、額外來源目錄及 TUN 指定方案監測群組。"""
 
     def __init__(
         self,
@@ -135,7 +135,7 @@ class ExpandedScholarshipCollector(LhuCollector):
             self.max_pages,
         )
 
-    # 來源群組摘要後追加 URL 品質與 38 項 TUN 逐項狀態。
+    # 來源群組摘要後追加 URL 品質與 TUN 逐項狀態。
     def source_summary_lines(self) -> list[str]:
         lines = super().source_summary_lines()
         if self.tun_collector is not None:
