@@ -20,6 +20,11 @@ LEGACY_CERTIFICATE_DOMAINS = frozenset({
     "pan.itri.org.tw",
     "scholarship.ntut.edu.tw",
     "club-stud.tut.edu.tw",
+    "osca.ncut.edu.tw",
+    "www.nfu.edu.tw",
+    "nfu.edu.tw",
+    "niuosa.niu.edu.tw",
+    "ee.ntut.edu.tw",
 })
 _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
