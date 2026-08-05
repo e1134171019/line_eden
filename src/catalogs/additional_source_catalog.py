@@ -116,6 +116,38 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         review_reason="即時稽核產出98筆，能補足大量地方與基金會方案。",
         max_pages=10,
     ),
+    AdditionalScholarshipSource(
+        source_id="ncut-external-scholarships",
+        display_name="國立勤益科技大學校外獎助學金",
+        entry_url="https://osca.ncut.edu.tw/p/403-1010-611-1.php?Lang=zh-tw",
+        allowed_hosts=("osca.ncut.edu.tw",),
+        review_reason="2026年持續更新，第一頁涵蓋基金會、政府及工程類方案。",
+        max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="nfu-scholarships",
+        display_name="國立虎尾科技大學獎助學金公告",
+        entry_url="https://www.nfu.edu.tw/zh_tw/ann/art",
+        allowed_hosts=("nfu.edu.tw", "www.nfu.edu.tw"),
+        review_reason="2026年持續更新，正文通常包含資格、金額與期限，能補足科技企業方案。",
+        max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="niu-scholarships",
+        display_name="國立宜蘭大學獎助學金專區",
+        entry_url="https://niuosa.niu.edu.tw/p/412-1004-559.php",
+        allowed_hosts=("niuosa.niu.edu.tw",),
+        review_reason="具長期分頁與2026年近期公告，涵蓋一般、地方及基金會方案。",
+        max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="ntut-ee-scholarships",
+        display_name="國立臺北科技大學電機系獎助學金",
+        entry_url="https://ee.ntut.edu.tw/p/403-1013-1598-1.php?Lang=zh-tw",
+        allowed_hosts=("ee.ntut.edu.tw",),
+        review_reason="持續發布電機、電網、科技企業與研究型獎學金，與使用者方向高度相關。",
+        max_pages=5,
+    ),
 )
 
 
