@@ -14,6 +14,9 @@ class EligibleLink:
     status_note: str = ""
 
 
+MAX_VISIBLE_LINKS = 10
+
+
 # 這些是使用者逐項確認要持續追蹤的方案。
 # 申請期間與自動解析結果不應讓它們從每日 LINE 清單消失。
 USER_CONFIRMED_ELIGIBLE_LINKS: tuple[EligibleLink, ...] = (
@@ -82,9 +85,9 @@ def build_line_message(
     max_length: int,
     collected_count: int = 0,
 ) -> str:
-    """建立固定每日 LINE 格式，顯示統計、名稱、連結與必要狀態。"""
+    """建立固定每日 LINE 格式，最多顯示10筆名稱、連結與必要狀態。"""
 
-    visible_links = tuple(links)
+    visible_links = tuple(links)[:MAX_VISIBLE_LINKS]
     lines = [
         "獎學金每日檢查完成",
         f"時間：{checked_at:%Y-%m-%d %H:%M}",
