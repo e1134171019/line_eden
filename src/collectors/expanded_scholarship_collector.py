@@ -2,6 +2,14 @@
 
 from collections import Counter
 
+from src.catalogs.additional_source_catalog import (
+    BROAD_SCHOLARSHIP_PORTALS,
+    OFFICIAL_ADDITIONAL_SOURCES,
+    AdditionalScholarshipSource,
+)
+from src.collectors.additional_scholarship_source_collector import (
+    AdditionalScholarshipSourceCollector,
+)
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.decision_safe_tun_program_watch_collector import (
@@ -27,7 +35,7 @@ from src.models.source_quality import SourceRisk
 
 
 class ExpandedScholarshipCollector(LhuCollector):
-    """現有六個官方來源，加上 TUN 38 項方案的官方監測群組。"""
+    """既有官方來源、六個新增來源及 TUN 38 項方案監測群組。"""
 
     def __init__(
         self,
@@ -66,6 +74,14 @@ class ExpandedScholarshipCollector(LhuCollector):
             source_discovery_min_score=self.source_discovery_min_score,
             source_discovery_max_candidates=self.source_discovery_max_candidates,
         )
+        official_additions = [
+            self._additional_collector(config)
+            for config in OFFICIAL_ADDITIONAL_SOURCES
+        ]
+        broad_portals = [
+            self._additional_collector(config)
+            for config in BROAD_SCHOLARSHIP_PORTALS
+        ]
         collectors: list[BaseCollector] = [
             _LhuOnlyCollector(self),
             HelpDreamsCollector(
@@ -100,12 +116,26 @@ class ExpandedScholarshipCollector(LhuCollector):
                 self.collection_mode,
                 self.max_pages,
             ),
+            *official_additions,
             self.tun_collector,
+            *broad_portals,
         ]
         self.multi_source = MultiSourceCollector(collectors)
         return self.multi_source.collect()
 
-    # 六個來源群組摘要後追加 URL 品質與 38 項 TUN 逐項狀態。
+    def _additional_collector(
+        self,
+        config: AdditionalScholarshipSource,
+    ) -> AdditionalScholarshipSourceCollector:
+        return AdditionalScholarshipSourceCollector(
+            config,
+            self.timeout_seconds,
+            self.user_agent,
+            self.collection_mode,
+            self.max_pages,
+        )
+
+    # 來源群組摘要後追加 URL 品質與 38 項 TUN 逐項狀態。
     def source_summary_lines(self) -> list[str]:
         lines = super().source_summary_lines()
         if self.tun_collector is not None:
