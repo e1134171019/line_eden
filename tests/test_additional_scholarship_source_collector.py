@@ -170,15 +170,16 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_fourteen_reviewed_unique_sources() -> None:
+def test_additional_source_catalog_has_fifteen_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
 
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 14
-    assert len(source_ids) == 14
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 15
+    assert len(source_ids) == 15
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {
         "pan-wen-yuan-scholarship",
+        "ntpc-higher-education-scholarship",
         "utaipei-external-scholarships",
         "uch-external-scholarships",
         "npu-scholarship-portal",
