@@ -23,6 +23,10 @@ LEGACY_CERTIFICATE_DOMAINS = frozenset({
     "nfu.edu.tw",
     "niuosa.niu.edu.tw",
     "ee.ntut.edu.tw",
+    "campus.nutn.edu.tw",
+    "infonews.nycu.edu.tw",
+    "sa.knu.edu.tw",
+    "www.ncue.edu.tw",
 })
 _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
@@ -119,7 +123,7 @@ class SafeHttpClient:
         host = urlparse(url).hostname or ""
         return host in LEGACY_CERTIFICATE_DOMAINS and _is_legacy_certificate_error(error)
 
-    # 延遲建立相容 client 並記錄實際使用網域。
+    # 延遲建立相容 client並記錄實際使用網域。
     def _legacy_client_for(self, url: str) -> httpx.Client:
         host = urlparse(url).hostname or ""
         self.fallback_hosts.add(host)
