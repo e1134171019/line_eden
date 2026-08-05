@@ -14,7 +14,7 @@ class EligibleLink:
     status_note: str = ""
 
 
-MAX_VISIBLE_LINKS = 10
+MAX_VISIBLE_LINKS = 20
 
 
 # 這些是使用者逐項確認要持續追蹤的方案。
@@ -85,7 +85,7 @@ def build_line_message(
     max_length: int,
     collected_count: int = 0,
 ) -> str:
-    """建立固定每日 LINE 格式，最多顯示10筆名稱、連結與必要狀態。"""
+    """建立固定每日 LINE 格式，最多顯示20筆名稱、連結與必要狀態。"""
 
     visible_links = tuple(links)[:MAX_VISIBLE_LINKS]
     lines = [
