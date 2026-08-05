@@ -172,13 +172,13 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_twenty_reviewed_unique_sources() -> None:
+def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
     entry_urls = {item.entry_url for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
 
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 20
-    assert len(source_ids) == 20
-    assert len(entry_urls) == 20
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 19
+    assert len(source_ids) == 19
+    assert len(entry_urls) == 19
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {
@@ -191,7 +191,6 @@ def test_additional_source_catalog_has_twenty_reviewed_unique_sources() -> None:
         "niu-scholarships",
         "ntut-ee-scholarships",
         "new-taipei-city-student-scholarship",
-        "nutn-scholarship-news",
         "nycu-scholarship-bulletins",
         "knu-external-scholarships",
         "ncue-external-scholarships",
@@ -201,12 +200,12 @@ def test_additional_source_catalog_has_twenty_reviewed_unique_sources() -> None:
         "foxconn-scholarship-whale",
         "ntut-scholarship-platform",
         "tut-external-scholarships",
+        "nutn-scholarship-news",
     }.isdisjoint(source_ids)
 
 
 def test_batch_three_entry_hosts_do_not_repeat_existing_catalog_hosts() -> None:
     new_ids = {
-        "nutn-scholarship-news",
         "nycu-scholarship-bulletins",
         "knu-external-scholarships",
         "ncue-external-scholarships",
