@@ -46,6 +46,7 @@ def test_additional_source_parser_keeps_only_allowed_scholarship_links() -> None
         <a href="/detail/1">【轉知】台灣電力與能源工程協會獎學金</a>
       </li>
       <li><a href="/activity">一般活動公告</a></li>
+      <li><a href="/scholarships">校外獎助學金</a></li>
       <li><a href="https://outside.example/scholarship">外站獎學金</a></li>
       <li><a href="javascript:void(0)">測試獎學金</a></li>
     </ul>
@@ -53,7 +54,7 @@ def test_additional_source_parser_keeps_only_allowed_scholarship_links() -> None
 
     records, raw_rows = collector._parse_html(html, collector.config.entry_url)
 
-    assert raw_rows == 4
+    assert raw_rows == 5
     assert len(records) == 1
     assert records[0].title == "【轉知】台灣電力與能源工程協會獎學金"
     assert records[0].published_date == "2026-07-01"
