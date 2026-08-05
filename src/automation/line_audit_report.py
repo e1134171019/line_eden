@@ -39,7 +39,7 @@ def build_report_message(
     checked_at: datetime | None = None,
     confirmed_links: Iterable[EligibleLink] = USER_CONFIRMED_ELIGIBLE_LINKS,
 ) -> str:
-    """LINE 稽核報告顯示使用者確認符合及動態判定符合的連結。"""
+    """LINE 稽核報告顯示統計、使用者確認及動態判定符合的連結。"""
 
     # 來源狀態仍保留在內部診斷與 artifact，不進入 LINE 訊息。
     _ = source_lines
@@ -51,6 +51,7 @@ def build_report_message(
         links,
         checked_at=local_time,
         max_length=MAX_LINE_TEXT_LENGTH,
+        collected_count=len(result.records),
     )
 
 

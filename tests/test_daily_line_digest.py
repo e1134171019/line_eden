@@ -65,23 +65,30 @@ def test_daily_message_without_links_uses_requested_format() -> None:
     assert message == (
         "獎學金每日檢查完成\n"
         "時間：2026-08-05 09:10\n"
+        "本次蒐集公告：2\n"
+        "本次符合並通知：0\n"
         "\n"
         "目前沒有符合資格且仍可申請的獎學金。"
     )
     assert "來源" not in message
-    assert "本次蒐集公告" not in message
 
 
-def test_daily_message_includes_five_confirmed_links() -> None:
+def test_daily_message_includes_five_confirmed_links_and_status() -> None:
     checked_at = datetime(2026, 8, 5, 9, 10, tzinfo=ZoneInfo("Asia/Taipei"))
 
     message = daily_line_digest.build_daily_message(_result(), checked_at=checked_at)
 
-    assert message.startswith("獎學金每日檢查完成\n時間：2026-08-05 09:10")
+    assert message.startswith(
+        "獎學金每日檢查完成\n"
+        "時間：2026-08-05 09:10\n"
+        "本次蒐集公告：2\n"
+        "本次符合並通知：5"
+    )
     assert message.count("https://") == 5
     assert "行天宮資優學生長期獎助學金" in message
     assert "耀登炳南大專校院優秀人才獎學金" in message
     assert "新北市新莊區聯合優秀獎學金" in message
+    assert "狀態：尚未開放（115年已截止，等待116年公告）" in message
     assert "王雲五先生自學獎學金" in message
     assert "資訊人社會關懷獎學金" in message
     assert "來源狀態" not in message
@@ -101,6 +108,8 @@ def test_daily_main_sends_completion_summary(monkeypatch: Any) -> None:
     assert service.calls == [False]
     assert len(messages) == 1
     assert "獎學金每日檢查完成" in messages[0]
+    assert "本次蒐集公告：2" in messages[0]
+    assert "本次符合並通知：5" in messages[0]
     assert messages[0].count("https://") == 5
     assert "教育部圓夢助學網－民間團體" not in messages[0]
 

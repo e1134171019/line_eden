@@ -28,6 +28,7 @@ def main() -> None:
         USER_CONFIRMED_ELIGIBLE_LINKS,
         checked_at=datetime.now(TAIPEI_TIMEZONE),
         max_length=MAX_LINE_TEXT_LENGTH,
+        collected_count=0,
     )
     send_text_message(
         api_url=LINE_API_URL,
