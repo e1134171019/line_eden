@@ -22,7 +22,7 @@ from src.automation.eligible_line_links import (
 )
 from src.notifiers.line_notifier import send_text_message
 from src.runtime.run_mode import RunMode
-from src.services.scholarship_service import ServiceResult
+from src.services.scholarship_service import ScholarshipService, ServiceResult
 
 MAX_LINE_TEXT_LENGTH = 4800
 TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
@@ -34,7 +34,7 @@ def build_daily_message(
     checked_at: datetime | None = None,
     confirmed_links: Iterable[EligibleLink] = USER_CONFIRMED_ELIGIBLE_LINKS,
 ) -> str:
-    """建立每日固定 LINE 摘要，只顯示時間、符合方案名稱與連結。"""
+    """建立每日固定 LINE 摘要，只顯示統計、符合方案名稱與連結。"""
 
     # 來源診斷保留在 GitHub Actions 日誌與 artifact，不送到 LINE。
     _ = source_lines
@@ -47,6 +47,7 @@ def build_daily_message(
         links,
         checked_at=local_time,
         max_length=MAX_LINE_TEXT_LENGTH,
+        collected_count=len(result.collected),
     )
 
 
@@ -60,6 +61,13 @@ def build_failure_message(error: Exception, checked_at: datetime | None = None) 
         f"錯誤：{reason}\n"
         "GitHub Actions 已標記失敗，請檢查執行紀錄。"
     )[:MAX_LINE_TEXT_LENGTH]
+
+
+def _source_summary_lines(service: ScholarshipService) -> list[str]:
+    summary = getattr(service.collector, "source_summary_lines", None)
+    if not callable(summary):
+        return []
+    return list(summary())
 
 
 def _send(text: str) -> None:
@@ -82,7 +90,7 @@ def main() -> None:
     except Exception as error:
         _send(build_failure_message(error))
         raise
-    message = build_daily_message(result)
+    message = build_daily_message(result, _source_summary_lines(service))
     _send(message)
     print(message)
     print("每日 LINE 摘要已送出。")
