@@ -4,6 +4,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+from src.automation.eligible_line_links import EligibleLink, build_line_message
 from src.automation.line_audit_report import build_report_message
 
 
@@ -137,3 +138,25 @@ def test_report_includes_five_user_confirmed_programs() -> None:
     assert "狀態：尚未開放（115年已截止，等待116年公告）" in message
     assert "王雲五先生自學獎學金" in message
     assert "資訊人社會關懷獎學金" in message
+
+
+def test_line_message_displays_at_most_twenty_links() -> None:
+    links = tuple(
+        EligibleLink(
+            title=f"符合方案{index}",
+            url=f"https://example.test/{index}",
+        )
+        for index in range(1, 26)
+    )
+
+    message = build_line_message(
+        links,
+        checked_at=_checked_at(),
+        max_length=20_000,
+        collected_count=25,
+    )
+
+    assert "本次符合並通知：20" in message
+    assert "20. 符合方案20" in message
+    assert "21. 符合方案21" not in message
+    assert message.count("https://example.test/") == 20
