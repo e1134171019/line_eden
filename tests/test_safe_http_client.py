@@ -39,6 +39,14 @@ def test_listing_retry_is_restricted_to_known_domain() -> None:
             "https://xinzhuangawards.ntpc.gov.tw/Schs/Frontend/RowView",
             _legacy_error(),
         )
+        assert client._can_use_legacy_context(
+            "https://www.ctci.org.tw/8838/talent/ctci-scholarship/",
+            _legacy_error(),
+        )
+        assert client._can_use_legacy_context(
+            "https://lf.hk.edu.tw/category/scholarship/",
+            _legacy_error(),
+        )
         assert not client._can_use_legacy_context(
             "https://education.example.gov.tw/page",
             _legacy_error(),
