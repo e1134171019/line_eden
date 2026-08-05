@@ -65,6 +65,8 @@ def test_report_only_lists_eligible_titles_and_links() -> None:
     assert message == (
         "獎學金每日檢查完成\n"
         "時間：2026-08-05 09:10\n"
+        "本次蒐集公告：5\n"
+        "本次符合並通知：2\n"
         "\n"
         "1. 符合資格公告一\n"
         "https://example.test/detail\n"
@@ -96,6 +98,8 @@ def test_report_without_links_uses_requested_empty_message() -> None:
     assert message == (
         "獎學金每日檢查完成\n"
         "時間：2026-08-05 09:10\n"
+        "本次蒐集公告：2\n"
+        "本次符合並通知：0\n"
         "\n"
         "目前沒有符合資格且仍可申請的獎學金。"
     )
@@ -115,6 +119,7 @@ def test_report_uses_detail_url_and_deduplicates_same_link() -> None:
         confirmed_links=(),
     )
 
+    assert "本次符合並通知：1" in message
     assert message.count("https://example.test/detail") == 1
     assert "第一筆" in message
     assert "重複連結第二筆" not in message
@@ -123,9 +128,12 @@ def test_report_uses_detail_url_and_deduplicates_same_link() -> None:
 def test_report_includes_five_user_confirmed_programs() -> None:
     message = build_report_message(_result([]), checked_at=_checked_at())
 
+    assert "本次蒐集公告：0" in message
+    assert "本次符合並通知：5" in message
     assert message.count("https://") == 5
     assert "行天宮資優學生長期獎助學金" in message
     assert "耀登炳南大專校院優秀人才獎學金" in message
     assert "新北市新莊區聯合優秀獎學金" in message
+    assert "狀態：尚未開放（115年已截止，等待116年公告）" in message
     assert "王雲五先生自學獎學金" in message
     assert "資訊人社會關懷獎學金" in message
