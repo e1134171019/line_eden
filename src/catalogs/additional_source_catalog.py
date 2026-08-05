@@ -160,6 +160,52 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         review_reason="持續發布電機、電網、科技企業與研究型獎學金，與使用者方向高度相關。",
         max_pages=5,
     ),
+    AdditionalScholarshipSource(
+        source_id="nutn-scholarship-news",
+        display_name="國立臺南大學獎助學金公告",
+        entry_url="https://campus.nutn.edu.tw/newspost3/default.aspx",
+        allowed_hosts=("campus.nutn.edu.tw",),
+        review_reason="2026年持續發布校外獎助學金，入口網域未出現在既有監測目標。",
+        max_pages=5,
+    ),
+    AdditionalScholarshipSource(
+        source_id="nycu-scholarship-bulletins",
+        display_name="國立陽明交通大學獎助學金公文公告",
+        entry_url=(
+            "https://infonews.nycu.edu.tw/index.php?"
+            "SuperType=3&action=more&categoryid=all&pagekey=1"
+        ),
+        allowed_hosts=("infonews.nycu.edu.tw",),
+        review_reason="電子公文列表持續出現企業、基金會及政府獎助學金，與既有來源網域不重複。",
+        max_pages=6,
+    ),
+    AdditionalScholarshipSource(
+        source_id="knu-external-scholarships",
+        display_name="開南大學校外獎學金",
+        entry_url="https://sa.knu.edu.tw/p/412-1005-2921.php?Lang=zh-tw",
+        allowed_hosts=("sa.knu.edu.tw",),
+        review_reason="2026年列表持續更新且直接提供多項外部方案與申請期限。",
+        max_pages=5,
+    ),
+    AdditionalScholarshipSource(
+        source_id="ncue-external-scholarships",
+        display_name="國立彰化師範大學校外獎助學金",
+        entry_url="https://www.ncue.edu.tw/p/412-1000-1513.php?Lang=zh-tw",
+        allowed_hosts=("ncue.edu.tw", "www.ncue.edu.tw", "aps.ncue.edu.tw"),
+        review_reason="高更新率校外獎助學金列表，能補充地方、民間與教育類方案。",
+        max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="nchu-external-scholarships",
+        display_name="國立中興大學校外獎助學金",
+        entry_url=(
+            "https://www.osa.nchu.edu.tw/osa/laa/sys/modules/tadnews/"
+            "index.php?ncsn=4"
+        ),
+        allowed_hosts=("osa.nchu.edu.tw", "www.osa.nchu.edu.tw"),
+        review_reason="專屬校外獎助學金分類持續更新，且包含其他入口未覆蓋的企業與基金會方案。",
+        max_pages=10,
+    ),
 )
 
 
