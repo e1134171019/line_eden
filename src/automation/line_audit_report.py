@@ -79,11 +79,12 @@ def _period_status(record: AuditRecord) -> str:
 
 
 def main() -> None:
-    """完整稽核後，LINE 傳送符合資格的公告名稱與連結。"""
+    """以最新入口頁重新稽核，LINE 傳送符合資格的公告名稱與連結。"""
 
     validate_settings()
     validate_gemini_settings()
-    service = build_service(mode=RunMode.AUDIT, use_gemini=True)
+    # 報告需要 audit 輸出，但 collector 應採增量模式；完整翻頁另由來源契約負責。
+    service = build_service(mode=RunMode.DRY_RUN, use_gemini=True)
     result = service.audit()
     csv_path, json_path = write_structured_shadow_artifacts(result)
     message = build_report_message(result)
