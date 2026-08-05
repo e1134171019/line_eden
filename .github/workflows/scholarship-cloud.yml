@@ -7,8 +7,8 @@ on:
     paths:
       - ".github/report-trigger"
   schedule:
-    # GitHub cron 使用 UTC；23:30 UTC = 台灣翌日 07:30。
-    - cron: "30 23 * * *"
+    # GitHub cron 使用 UTC；21:30 UTC = 台灣翌日 05:30。
+    - cron: "30 21 * * *"
   workflow_dispatch:
     inputs:
       operation:
@@ -270,7 +270,7 @@ jobs:
           {
             echo "## Scholarship Agent"
             echo ""
-            echo "- 台灣排程時間：每日 07:30"
+            echo "- 台灣排程時間：每日 05:30"
             echo "- 執行模式：\`$OPERATION\`"
             echo "- 每日 LINE 摘要：\`${{ env.OPERATION == 'daily' && '固定傳送' || '依模式決定' }}\`"
             echo "- Agent exit code：\`${{ steps.agent.outputs.exit_code || '未執行' }}\`"
