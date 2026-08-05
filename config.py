@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -61,6 +62,15 @@ TUN_FETCH_WORKERS = _env_int(
     _LEGACY_SOURCE_FETCH_WORKERS,
 )
 SOURCE_FETCH_WORKERS = TUN_FETCH_WORKERS
+SOURCE_DISCOVERY_ENABLED = _env_bool("SOURCE_DISCOVERY_ENABLED", False)
+SOURCE_DISCOVERY_MAX_RESULTS = _env_int("SOURCE_DISCOVERY_MAX_RESULTS", 5)
+SOURCE_DISCOVERY_MAX_CANDIDATES = _env_int("SOURCE_DISCOVERY_MAX_CANDIDATES", 5)
+SOURCE_DISCOVERY_MIN_SCORE = _env_int("SOURCE_DISCOVERY_MIN_SCORE", 100)
+TAVILY_SEARCH_URL = os.getenv(
+    "TAVILY_SEARCH_URL",
+    "https://api.tavily.com/search",
+).strip()
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
 MAX_ATTACHMENT_COUNT = 3
 ATTACHMENT_SCOPE_MAX_DEPTH = 5
 MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
@@ -112,6 +122,23 @@ def validate_settings() -> None:
     if missing_names:
         joined_names = ", ".join(missing_names)
         raise RuntimeError(f"缺少環境變數：{joined_names}")
+
+
+def validate_source_discovery_settings() -> None:
+    """只有明確啟用公開來源搜尋時才要求 Tavily 金鑰與安全上限。"""
+    if not SOURCE_DISCOVERY_ENABLED:
+        return
+    if not TAVILY_API_KEY:
+        raise RuntimeError("啟用來源搜尋時缺少環境變數：TAVILY_API_KEY")
+    parsed = urlparse(TAVILY_SEARCH_URL)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise RuntimeError("TAVILY_SEARCH_URL 必須是有效 HTTPS 網址")
+    if not 1 <= SOURCE_DISCOVERY_MAX_RESULTS <= 20:
+        raise RuntimeError("SOURCE_DISCOVERY_MAX_RESULTS 必須介於 1 至 20")
+    if SOURCE_DISCOVERY_MAX_CANDIDATES < 1:
+        raise RuntimeError("SOURCE_DISCOVERY_MAX_CANDIDATES 必須大於 0")
+    if SOURCE_DISCOVERY_MIN_SCORE < 1:
+        raise RuntimeError("SOURCE_DISCOVERY_MIN_SCORE 必須大於 0")
 
 
 def validate_gemini_settings() -> None:
