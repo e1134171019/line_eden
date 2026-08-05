@@ -22,6 +22,14 @@ SUPPORTING_DOCUMENT = "supporting_document"
 UNRELATED = "unrelated"
 _URL_IN_SCRIPT = re.compile(r"['\"](?P<url>https?://[^'\"]+|/[^'\"]+)['\"]")
 
+# 少數官方網站以 HTML 固定方案頁承載辦法，不提供 PDF/DOC。
+# 必須逐一核對並列入白名單，禁止把一般導覽頁當成附件遞迴抓取。
+SUPPORTED_HTML_RULE_URLS = frozenset(
+    {
+        "https://www.chtf.org.tw/project/693",
+    }
+)
+
 
 @dataclass(frozen=True)
 class AttachmentLinkInventory:
@@ -119,7 +127,7 @@ def _collect_links(root: Tag | None, base_url: str) -> list[tuple[int, str, str,
             if url in seen or not _is_supported_document(url, label):
                 continue
             seen.add(url)
-            role = classify_attachment_role(label)
+            role = RULES if _is_supported_html_rule(url) else classify_attachment_role(label)
             records.append((_attachment_score(url, label, role), url, label, role))
     return records
 
@@ -148,6 +156,8 @@ def classify_attachment_role(label: str) -> str:
 
 
 def _is_supported_document(url: str, label: str) -> bool:
+    if _is_supported_html_rule(url):
+        return True
     parsed = urlparse(url)
     path = parsed.path.lower()
     if path.endswith(SUPPORTED_SUFFIXES):
@@ -157,6 +167,12 @@ def _is_supported_document(url: str, label: str) -> bool:
     normalized_label = label.lower().rstrip("。．. ")
     has_suffix = normalized_label.endswith(SUPPORTED_SUFFIXES)
     return has_suffix and any(marker in label for marker in DOCUMENT_LABELS)
+
+
+def _is_supported_html_rule(url: str) -> bool:
+    parsed = urlparse(url)
+    canonical = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{parsed.path}".rstrip("/")
+    return canonical in SUPPORTED_HTML_RULE_URLS
 
 
 def _attachment_score(url: str, label: str, role: str) -> int:
