@@ -8,10 +8,10 @@ LINE_REPORT_WORKFLOW_PATH = (
 )
 
 
-def test_cloud_workflow_uses_taiwan_0730_daily_schedule() -> None:
+def test_cloud_workflow_uses_taiwan_0530_daily_schedule() -> None:
     content = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert 'cron: "30 23 * * *"' in content
+    assert 'cron: "30 21 * * *"' in content
     assert "TZ: Asia/Taipei" in content
     assert "github.event_name == 'schedule' && 'daily'" in content
     assert "python -m src.automation.daily_line_digest" in content
