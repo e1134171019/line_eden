@@ -169,7 +169,19 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_six_unique_sources() -> None:
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 6
-    assert len({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}) == 6
+def test_additional_source_catalog_has_sixteen_unique_sources() -> None:
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 16
+    assert len({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}) == 16
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
+    assert {
+        "foxconn-scholarship-whale",
+        "pan-wen-yuan-scholarship",
+        "ntu-scholarship-portal",
+        "ntut-scholarship-platform",
+        "ntust-external-scholarships",
+        "utaipei-external-scholarships",
+        "mcu-external-scholarships",
+        "uch-external-scholarships",
+        "npu-scholarship-portal",
+        "tut-external-scholarships",
+    }.issubset({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES})
