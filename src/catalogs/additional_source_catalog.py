@@ -49,6 +49,18 @@ OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
         review_reason="半導體、電子、資訊與物聯網官方來源，與使用者技術方向高度相關。",
         max_pages=10,
     ),
+    AdditionalScholarshipSource(
+        source_id="new-taipei-city-student-scholarship",
+        display_name="新北市高中以上學生獎學金",
+        entry_url="https://award.ntpc.edu.tw/",
+        allowed_hosts=("award.ntpc.edu.tw",),
+        review_reason=(
+            "新北市政府年度官方方案，與使用者設籍地直接相關；"
+            "115年度要求設籍滿6個月並於4月開放申請。"
+        ),
+        max_pages=1,
+        entry_title="新北市就讀高級中等以上學校學生獎學金",
+    ),
 )
 
 
@@ -115,6 +127,17 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         allowed_hosts=("npu.edu.tw", "www.npu.edu.tw"),
         review_reason="即時稽核產出98筆，能補足大量地方與基金會方案。",
         max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="ntut-ee-scholarships",
+        display_name="國立臺北科技大學電機工程系獎助學金",
+        entry_url="https://ee.ntut.edu.tw/p/403-1013-1598-1.php?Lang=zh-tw",
+        allowed_hosts=("ee.ntut.edu.tw",),
+        review_reason=(
+            "2026年持續更新電機、電網、科技人才與企業獎學金；"
+            "與使用者電力電子研究及北科大升學方向高度相關。"
+        ),
+        max_pages=5,
     ),
 )
 
