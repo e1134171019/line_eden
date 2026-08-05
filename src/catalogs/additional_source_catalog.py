@@ -90,19 +90,11 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         max_pages=10,
     ),
     AdditionalScholarshipSource(
-        source_id="ntut-scholarship-platform",
-        display_name="國立臺北科技大學校外獎學金",
-        entry_url="https://scholarship.ntut.edu.tw/p/412-1043-13135.php",
-        allowed_hosts=("scholarship.ntut.edu.tw",),
-        review_reason="目前持續更新校外方案，且是使用者未來升學目標學校。",
-        max_pages=10,
-    ),
-    AdditionalScholarshipSource(
         source_id="utaipei-external-scholarships",
         display_name="臺北市立大學校外獎助學金",
         entry_url="https://service.utaipei.edu.tw/p/412-1034-63.php?Lang=zh-tw",
         allowed_hosts=("service.utaipei.edu.tw",),
-        review_reason="實際稽核產出量高，並持續發布跨地區校外獎助方案。",
+        review_reason="即時稽核產出53筆，能持續補充跨地區校外方案。",
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -110,7 +102,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         display_name="健行科技大學校外獎助學金",
         entry_url="https://budget.sa.uch.edu.tw/?locale=zh_tw",
         allowed_hosts=("budget.sa.uch.edu.tw",),
-        review_reason="實際稽核可穩定解析多筆校外方案，與既有來源互補。",
+        review_reason="即時稽核產出24筆，與既有來源互補且解析穩定。",
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -121,15 +113,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
             "Parser=9%2C22%2C501%2C486"
         ),
         allowed_hosts=("npu.edu.tw", "www.npu.edu.tw"),
-        review_reason="實際稽核產出量高，能補足大量地方與基金會方案。",
-        max_pages=10,
-    ),
-    AdditionalScholarshipSource(
-        source_id="tut-external-scholarships",
-        display_name="台南應用科技大學校外獎助學金",
-        entry_url="https://stud.tut.edu.tw/p/422-1007-1030.php?Lang=zh-tw",
-        allowed_hosts=("stud.tut.edu.tw",),
-        review_reason="官方校外專區持續更新，近期含多項科技與一般獎助方案。",
+        review_reason="即時稽核產出98筆，能補足大量地方與基金會方案。",
         max_pages=10,
     ),
 )
