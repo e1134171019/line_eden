@@ -170,11 +170,11 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_ten_reviewed_unique_sources() -> None:
+def test_additional_source_catalog_has_twelve_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
 
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 10
-    assert len(source_ids) == 10
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 12
+    assert len(source_ids) == 12
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {
@@ -182,9 +182,22 @@ def test_additional_source_catalog_has_ten_reviewed_unique_sources() -> None:
         "utaipei-external-scholarships",
         "uch-external-scholarships",
         "npu-scholarship-portal",
+        "new-taipei-city-student-scholarship",
+        "ntut-ee-scholarships",
     }.issubset(source_ids)
     assert {
         "foxconn-scholarship-whale",
         "ntut-scholarship-platform",
         "tut-external-scholarships",
     }.isdisjoint(source_ids)
+
+
+def test_new_taipei_official_source_has_stable_entry_title() -> None:
+    source = next(
+        item
+        for item in ADDITIONAL_SCHOLARSHIP_SOURCES
+        if item.source_id == "new-taipei-city-student-scholarship"
+    )
+
+    assert source.entry_title == "新北市就讀高級中等以上學校學生獎學金"
+    assert source.max_pages == 1
