@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from urllib.parse import urlparse
+
 import pytest
 
 from src.catalogs.additional_source_catalog import (
@@ -170,11 +172,13 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_fifteen_reviewed_unique_sources() -> None:
+def test_additional_source_catalog_has_twenty_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
+    entry_urls = {item.entry_url for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
 
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 15
-    assert len(source_ids) == 15
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 20
+    assert len(source_ids) == 20
+    assert len(entry_urls) == 20
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {
@@ -187,12 +191,41 @@ def test_additional_source_catalog_has_fifteen_reviewed_unique_sources() -> None
         "niu-scholarships",
         "ntut-ee-scholarships",
         "new-taipei-city-student-scholarship",
+        "nutn-scholarship-news",
+        "nycu-scholarship-bulletins",
+        "knu-external-scholarships",
+        "ncue-external-scholarships",
+        "nchu-external-scholarships",
     }.issubset(source_ids)
     assert {
         "foxconn-scholarship-whale",
         "ntut-scholarship-platform",
         "tut-external-scholarships",
     }.isdisjoint(source_ids)
+
+
+def test_batch_three_entry_hosts_do_not_repeat_existing_catalog_hosts() -> None:
+    new_ids = {
+        "nutn-scholarship-news",
+        "nycu-scholarship-bulletins",
+        "knu-external-scholarships",
+        "ncue-external-scholarships",
+        "nchu-external-scholarships",
+    }
+    new_hosts = {
+        urlparse(item.entry_url).hostname
+        for item in ADDITIONAL_SCHOLARSHIP_SOURCES
+        if item.source_id in new_ids
+    }
+    existing_hosts = {
+        urlparse(item.entry_url).hostname
+        for item in ADDITIONAL_SCHOLARSHIP_SOURCES
+        if item.source_id not in new_ids
+    }
+
+    assert None not in new_hosts
+    assert len(new_hosts) == len(new_ids)
+    assert new_hosts.isdisjoint(existing_hosts)
 
 
 def test_new_taipei_official_source_has_stable_entry_title() -> None:
