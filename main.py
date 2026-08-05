@@ -28,10 +28,17 @@ from config import (
     PROFILE_PATH,
     SCHOLARSHIP_DB_FILENAME,
     SCHOLARSHIP_FILTER_KEYWORDS,
+    SOURCE_DISCOVERY_ENABLED,
+    SOURCE_DISCOVERY_MAX_CANDIDATES,
+    SOURCE_DISCOVERY_MAX_RESULTS,
+    SOURCE_DISCOVERY_MIN_SCORE,
     SOURCE_FETCH_WORKERS,
     SOURCE_MAX_PAGES,
+    TAVILY_API_KEY,
+    TAVILY_SEARCH_URL,
     validate_gemini_settings,
     validate_settings,
+    validate_source_discovery_settings,
 )
 from src.ai.gemini_requirement_extractor import GeminiRequirementExtractor
 from src.ai.gemini_text_requirement_extractor import GeminiTextRequirementExtractor
@@ -39,6 +46,8 @@ from src.automation.structured_shadow_artifact import write_structured_shadow_ar
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.evidence_detail_fetcher import EvidenceDetailFetcher
 from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCollector
+from src.discovery.source_discovery_service import ProgramSourceDiscoveryService
+from src.discovery.tavily_search_provider import TavilySearchProvider
 from src.evaluators.eligibility_evaluator import EligibilityEvaluator
 from src.evaluators.structured_eligibility_evaluator import StructuredEligibilityEvaluator
 from src.formatters.cli_output_formatter import (
@@ -181,7 +190,24 @@ def _build_collector(mode: RunMode) -> ExpandedScholarshipCollector:
         _collection_mode(mode),
         SOURCE_MAX_PAGES,
         SOURCE_FETCH_WORKERS,
+        source_discovery=_build_source_discovery(),
+        source_discovery_min_score=SOURCE_DISCOVERY_MIN_SCORE,
+        source_discovery_max_candidates=SOURCE_DISCOVERY_MAX_CANDIDATES,
     )
+
+
+# 來源搜尋預設停用；啟用後只會在完整稽核且既有入口無法取得當期公告時使用。
+def _build_source_discovery() -> ProgramSourceDiscoveryService | None:
+    if not SOURCE_DISCOVERY_ENABLED:
+        return None
+    validate_source_discovery_settings()
+    provider = TavilySearchProvider(
+        TAVILY_API_KEY,
+        TAVILY_SEARCH_URL,
+        HTTP_TIMEOUT_SECONDS,
+        HTTP_USER_AGENT,
+    )
+    return ProgramSourceDiscoveryService(provider, SOURCE_DISCOVERY_MAX_RESULTS)
 
 
 def _build_repository() -> ScholarshipRepository:
