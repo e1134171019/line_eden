@@ -10,279 +10,88 @@ def _record(
     title: str,
     *,
     notice_kind: str = "application",
-    category: str = "scholarship",
+    application_status: str = "open",
+    source_url: str = "https://example.test/notice",
+    detail_url: str = "https://example.test/detail",
     text: str = "請於2026/09/30前完成申請。",
-    application_status: str = "",
-    manual_checks: tuple[str, ...] = tuple(),
-    review_kind: str = "",
-    resolution_status: str = "valid_application_detail",
-    evidence_score: int = 4,
-    action_status: str = "",
 ) -> SimpleNamespace:
     item = SimpleNamespace(
         eligibility_status=status,
-        eligibility_reason="符合目前學生背景。",
         hard_eligibility_status=status,
-        hard_eligibility_reason="符合目前學生背景。",
-        action_status=action_status,
-        published_date="2026-07-28",
         title=title,
-        source_url="https://example.test/notice",
-        detail_url="https://example.test/detail",
+        source_url=source_url,
+        detail_url=detail_url,
         notice_kind=notice_kind,
-        category=category,
         application_status=application_status,
-        manual_checks=manual_checks,
-        review_kind=review_kind,
-        resolution_status=resolution_status,
-        detail_evidence_score=evidence_score,
     )
     fetch_result = SimpleNamespace(eligibility_text=lambda: text)
-    return SimpleNamespace(
-        item=item,
-        fetch_result=fetch_result,
-        structured_shadow=None,
-        shadow_status="not_run",
-        structured_gemini_diagnostic=None,
-    )
+    return SimpleNamespace(item=item, fetch_result=fetch_result)
 
 
-def _result(**overrides: object) -> SimpleNamespace:
-    values: dict[str, object] = {
-        "records": [],
-        "eligible_count": 0,
-        "review_count": 0,
-        "ineligible_count": 0,
-        "gemini_calls": 0,
-        "gemini_cache_hits": 0,
-        "structured_evaluated_count": 0,
-        "structured_changed_count": 0,
-        "structured_deferred_count": 0,
-        "structured_error_count": 0,
-    }
-    values.update(overrides)
-    return SimpleNamespace(**values)
+def _result(records: list[SimpleNamespace]) -> SimpleNamespace:
+    return SimpleNamespace(records=records)
 
 
-def test_report_lists_independent_hard_and_source_states() -> None:
+def test_report_only_lists_eligible_titles_and_links() -> None:
     result = _result(
-        records=[
+        [
+            _record("eligible", "符合資格公告一"),
             _record(
                 "eligible",
-                "符合資格且來源完整的獎學金",
-                manual_checks=("請自行確認：平均成績須達 85 分門檻。",),
-                action_status="apply_candidate",
+                "符合資格公告二",
+                source_url="https://example.test/notice-2",
+                detail_url="https://example.test/detail-2",
+                application_status="upcoming",
             ),
-            _record(
-                "eligible",
-                "符合資格但來源待補公告",
-                category="student_aid",
-                resolution_status="insufficient_evidence",
-                evidence_score=2,
-                action_status="verify_source",
-            ),
-            _record(
-                "review",
-                "硬性待確認公告",
-                review_kind="semantic_ambiguous",
-                action_status="manual_review",
-            ),
-            _record("ineligible", "不符合公告", notice_kind="result"),
-        ],
-        eligible_count=2,
-        review_count=1,
-        ineligible_count=1,
+            _record("review", "待確認公告"),
+            _record("ineligible", "不符合公告"),
+            _record("eligible", "非申請公告", notice_kind="result"),
+        ]
     )
 
     message = build_report_message(
         result,
-        [
-            "來源網站：設定 7，成功產生資料 7，空結果 0，部分完成 0，失敗 0",
-            "龍華科技大學：完整；頁面 5/5",
-        ],
+        ["來源網站：成功 44，失敗 0", "TUN方案 a：matched"],
     )
 
-    assert "本次稽核公告：4" in message
-    assert "申請型公告：3" in message
-    assert "公告類別：獎學金 3／助學金 1" in message
-    assert "申請狀態：開放 3" in message
-    assert "正文證據：完整 2／不足 1" in message
-    assert (
-        "硬性資格（可行動期間）：符合且來源完整 1／符合但來源待補 1／"
-        "待確認 1／不符 0"
-    ) in message
-    assert "硬性待確認原因：語意待確認 1" in message
-    assert "非申請公告未列入個人資格：1" in message
-    assert "來源網站：設定 7" in message
-    assert "龍華科技大學：完整" in message
-    assert "硬性條件符合且來源完整公告：" in message
-    assert "硬性條件符合但來源待補公告：" in message
-    assert "硬性條件待確認公告：" in message
-    assert "符合資格且來源完整的獎學金" in message
-    assert "符合資格但來源待補公告" in message
-    assert "硬性待確認公告" in message
-    assert "行動：先核對正文或附件" in message
-    assert "自行確認：平均成績須達 85 分門檻" in message
-    assert "正文證據：4｜valid_application_detail" in message
+    assert message == (
+        "【符合資格獎學金】\n"
+        "1. 符合資格公告一\n"
+        "https://example.test/detail\n"
+        "2. 符合資格公告二\n"
+        "https://example.test/detail-2"
+    )
+    assert "來源" not in message
+    assert "待確認公告" not in message
     assert "不符合公告" not in message
+    assert "符合原因" not in message
+    assert "正文證據" not in message
+    assert "Structured" not in message
 
 
-def test_expired_notice_is_not_counted_as_hard_ineligibility() -> None:
+def test_report_excludes_expired_and_stale_notices() -> None:
     result = _result(
-        records=[
-            _record(
-                "ineligible",
-                "過期獎學金",
-                text="申請截止日期為2025/09/30。",
-            )
-        ],
-        ineligible_count=1,
+        [
+            _record("eligible", "已截止公告", application_status="expired"),
+            _record("eligible", "歷史公告", application_status="stale_unknown"),
+        ]
     )
 
     message = build_report_message(result)
 
-    assert (
-        "硬性資格（可行動期間）：符合且來源完整 0／符合但來源待補 0／"
-        "待確認 0／不符 0"
-    ) in message
-    assert "已截止未列為個人資格不符：1" in message
-    assert "過期獎學金" not in message
+    assert message == "目前沒有符合資格且仍可申請的獎學金。"
 
 
-def test_stale_unknown_notice_is_not_actionable() -> None:
+def test_report_uses_detail_url_and_deduplicates_same_link() -> None:
     result = _result(
-        records=[
-            _record(
-                "review",
-                "舊年度期限未知公告",
-                application_status="stale_unknown",
-            )
-        ],
-        review_count=1,
+        [
+            _record("eligible", "第一筆"),
+            _record("eligible", "重複連結第二筆"),
+        ]
     )
 
     message = build_report_message(result)
 
-    assert "歷史未知 1" in message
-    assert "歷史期限未知未列入可申請：1" in message
-    assert "舊年度期限未知公告" not in message
-
-
-def test_report_lists_review_when_no_eligible_items() -> None:
-    result = _result(
-        records=[
-            _record(
-                "review",
-                "待確認公告",
-                review_kind="semantic_ambiguous",
-                action_status="manual_review",
-            )
-        ],
-        review_count=1,
-        gemini_calls=1,
-    )
-
-    message = build_report_message(result)
-
-    assert "本次稽核公告：1" in message
-    assert "硬性條件待確認公告：" in message
-    assert "待確認公告" in message
-    assert "目前沒有硬性條件符合或待確認且仍可申請的公告。" not in message
-    assert "LINE Messaging API 測試成功" not in message
-
-
-def test_actionable_items_appear_before_compact_tun_status() -> None:
-    result = _result(
-        records=[
-            _record(
-                "eligible",
-                "優先顯示的符合公告",
-                action_status="apply_candidate",
-            ),
-            _record(
-                "review",
-                "優先顯示的待確認公告",
-                action_status="manual_review",
-            ),
-        ],
-        eligible_count=1,
-        review_count=1,
-    )
-    source_lines = [
-        "來源網站：設定 7，成功產生資料 7，空結果 0，部分完成 0，失敗 0"
-    ]
-    source_lines.extend(
-        f"TUN方案 program-{index}：matched；唯一候選 1；入口 https://example.test/{index}"
-        for index in range(35)
-    )
-    source_lines.extend(
-        f"TUN方案 pending-{index}：pending_source；唯一候選 0；入口 由核心來源涵蓋"
-        for index in range(3)
-    )
-
-    message = build_report_message(result, source_lines)
-
-    assert len(message) <= 4800
-    assert "優先顯示的符合公告" in message
-    assert "優先顯示的待確認公告" in message
-    assert "TUN方案共 38：matched 35／pending_source 3" in message
-    assert message.index("優先顯示的符合公告") < message.index("TUN方案共 38")
-    assert "TUN方案 program-20" not in message
-
-
-def test_compact_sources_surface_matcher_and_structure_failures() -> None:
-    result = _result(records=[])
-    source_lines = [
-        "TUN方案 a：matcher_miss；唯一候選 0",
-        "TUN方案 b：match_ambiguous；唯一候選 0",
-        "TUN方案 c：source_structure_changed；唯一候選 0",
-        "TUN方案 d：no_current_announcement；唯一候選 0",
-    ]
-
-    message = build_report_message(result, source_lines)
-
-    assert "TUN方案 a：matcher_miss" in message
-    assert "TUN方案 b：match_ambiguous" in message
-    assert "TUN方案 c：source_structure_changed" in message
-    assert "TUN方案 d：no_current_announcement" not in message
-
-
-def test_report_lists_structured_divergence_and_error_details() -> None:
-    changed = _record(
-        "review",
-        "Structured 判斷不同的公告",
-        action_status="manual_review",
-    )
-    changed.structured_shadow = SimpleNamespace(
-        changed=True,
-        legacy_status="review",
-        structured_status="ineligible",
-        structured_reason="公告明確限定研究生。",
-    )
-    changed.shadow_status = "compared"
-    changed.structured_gemini_diagnostic = None
-
-    failed = _record(
-        "review",
-        "Gemini 暫時失敗公告",
-        action_status="manual_review",
-    )
-    failed.structured_shadow = None
-    failed.shadow_status = "text_error"
-    failed.structured_gemini_diagnostic = SimpleNamespace(
-        message="ServerError: 503 temporarily unavailable"
-    )
-    result = _result(
-        records=[changed, failed],
-        structured_evaluated_count=1,
-        structured_changed_count=1,
-        structured_error_count=1,
-    )
-
-    message = build_report_message(result)
-
-    assert "Structured 分歧明細：" in message
-    assert "review→ineligible" in message
-    assert "公告明確限定研究生" in message
-    assert "Structured 抽取錯誤：" in message
-    assert "503 temporarily unavailable" in message
+    assert message.count("https://example.test/detail") == 1
+    assert "第一筆" in message
+    assert "重複連結第二筆" not in message

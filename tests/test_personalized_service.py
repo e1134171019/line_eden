@@ -102,7 +102,7 @@ def test_personalized_dry_run_only_returns_eligible(tmp_path: Path) -> None:
     assert sent_messages == []
 
 
-def test_live_mode_only_sends_eligible_item(tmp_path: Path) -> None:
+def test_live_mode_only_sends_eligible_item_link(tmp_path: Path) -> None:
     day_item = _item(1, "日間部學生獎學金")
     energy_item = _item(2, "電力與能源優秀學生獎學金")
     items = [day_item, energy_item]
@@ -117,10 +117,15 @@ def test_live_mode_only_sends_eligible_item(tmp_path: Path) -> None:
 
     assert result.notified_count == 1
     assert len(sent_messages) == 1
-    assert energy_item.title in sent_messages[0]
-    assert energy_item.source_url in sent_messages[0]
-    assert "符合原因" in sent_messages[0]
+    assert sent_messages[0] == (
+        "【符合資格獎學金｜第 1/1 則】\n"
+        f"1. {energy_item.title}\n"
+        f"{energy_item.source_url}"
+    )
     assert day_item.title not in sent_messages[0]
+    assert "符合原因" not in sent_messages[0]
+    assert "來源" not in sent_messages[0]
+    assert "自行確認" not in sent_messages[0]
 
 
 def test_profile_change_re_evaluates_existing_item(tmp_path: Path) -> None:
