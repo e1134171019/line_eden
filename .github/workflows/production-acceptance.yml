@@ -126,11 +126,11 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -m src.automation.production_acceptance_audit \
-            > production-acceptance.log 2>&1
-          exit_code=$?
+          set -o pipefail
+          python -u -m src.automation.production_acceptance_audit \
+            2>&1 | tee production-acceptance.log
+          exit_code=${PIPESTATUS[0]}
           set -e
-          cat production-acceptance.log
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
       - name: Upload production acceptance evidence

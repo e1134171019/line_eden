@@ -18,14 +18,28 @@ from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCol
 from src.runtime.run_mode import RunMode
 
 
+# 完整歷史來源健康由獨立 source-contract workflow 驗證。
+# Production acceptance 只需針對當期入口與 38 項方案候選執行語意驗收，
+# 避免再次逐筆抓取 1,200+ 筆歷史公告而超過 CI 執行上限。
+PRODUCTION_ACCEPTANCE_MODE = RunMode.DRY_RUN
+
+
 def main() -> None:
     """以正式狀態與 profile 驗收 detail/evaluator，但禁止傳送 LINE。"""
 
+    print("Production acceptance：開始當期 semantic audit（禁止 LINE）", flush=True)
     validate_gemini_settings()
-    service = build_service(mode=RunMode.AUDIT, use_gemini=True)
-    result = service.audit()
+    service = build_service(mode=PRODUCTION_ACCEPTANCE_MODE, use_gemini=True)
     if not isinstance(service.collector, ExpandedScholarshipCollector):
         raise RuntimeError("Production acceptance 需要 ExpandedScholarshipCollector")
+
+    print("Production acceptance：開始收集當期來源與逐筆資格證據", flush=True)
+    result = service.audit()
+    record_count = len(getattr(result, "records", ()))
+    print(
+        f"Production acceptance：完成 {record_count} 筆語意驗收",
+        flush=True,
+    )
 
     structured_csv, structured_json = write_structured_shadow_artifacts(result)
     source_report = build_source_health_report(service.collector)

@@ -36,7 +36,10 @@ def test_production_acceptance_restores_state_but_never_loads_line_secrets() -> 
         encoding="utf-8"
     )
 
-    assert "python -m src.automation.production_acceptance_audit" in content
+    assert "python -u -m src.automation.production_acceptance_audit" in content
+    assert "2>&1 | tee production-acceptance.log" in content
+    assert "exit_code=${PIPESTATUS[0]}" in content
+    assert "> production-acceptance.log 2>&1" not in content
     assert "scholarship-agent-state" in content
     assert "STUDENT_PROFILE_B64" in content
     assert "GEMINI_API_KEY" in content

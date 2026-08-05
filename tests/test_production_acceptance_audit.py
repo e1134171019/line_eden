@@ -70,6 +70,27 @@ def _patch_pipeline(monkeypatch: pytest.MonkeyPatch, acceptance: _Acceptance) ->
     )
 
 
+def test_production_acceptance_uses_current_semantic_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    acceptance = _Acceptance()
+    captured: dict[str, object] = {}
+    _patch_pipeline(monkeypatch, acceptance)
+
+    def _build_service(**kwargs: object) -> _Service:
+        captured.update(kwargs)
+        return _Service()
+
+    monkeypatch.setattr(audit_module, "build_service", _build_service)
+
+    audit_module.main()
+
+    assert captured == {
+        "mode": audit_module.RunMode.DRY_RUN,
+        "use_gemini": True,
+    }
+
+
 def test_production_acceptance_audit_passes_without_line(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -81,6 +102,7 @@ def test_production_acceptance_audit_passes_without_line(
 
     assert acceptance.required is True
     output = capsys.readouterr().out
+    assert "開始當期 semantic audit（禁止 LINE）" in output
     assert "Production acceptance：PASS" in output
     assert "acceptance.json" in output
 
