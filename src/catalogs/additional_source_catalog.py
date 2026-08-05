@@ -49,6 +49,15 @@ OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
         review_reason="半導體、電子、資訊與物聯網官方來源，與使用者技術方向高度相關。",
         max_pages=10,
     ),
+    AdditionalScholarshipSource(
+        source_id="ntpc-higher-education-scholarship",
+        display_name="新北市高中以上學生獎學金",
+        entry_url="https://award.ntpc.edu.tw/",
+        allowed_hosts=("award.ntpc.edu.tw",),
+        review_reason="私人資格設定符合地區與學業門檻，且與既有區級方案不同。",
+        max_pages=2,
+        entry_title="新北市就讀高級中等以上學校學生獎學金",
+    ),
 )
 
 
