@@ -169,17 +169,17 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_fourteen_unique_sources() -> None:
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 14
-    assert len({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}) == 14
+def test_additional_source_catalog_has_eighteen_unique_sources() -> None:
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 18
+    assert len({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}) == 18
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
-    assert {
-        "foxconn-scholarship-whale",
-        "pan-wen-yuan-scholarship",
-        "ntut-scholarship-platform",
-        "utaipei-external-scholarships",
-        "mcu-external-scholarships",
-        "uch-external-scholarships",
-        "npu-scholarship-portal",
-        "tut-external-scholarships",
-    }.issubset({item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES})
+
+    reviewed_ids = {
+        "ncut-external-scholarships",
+        "nfu-scholarships",
+        "niu-scholarships",
+        "ntut-ee-scholarships",
+    }
+    by_id = {item.source_id: item for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
+    assert reviewed_ids.issubset(by_id)
+    assert all(by_id[source_id].review_reason.strip() for source_id in reviewed_ids)
