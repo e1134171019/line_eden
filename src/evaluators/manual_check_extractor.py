@@ -137,10 +137,9 @@ def _preparation_checks(text: str) -> list[str]:
         if not normalized:
             continue
         for pattern in patterns:
-            match = re.search(pattern, normalized)
-            if match is None:
-                continue
-            item = match.group("object")
-            checks.append(f"需準備：{item}（屬申請準備，不影響硬性資格判定）。")
-            break
+            for match in re.finditer(pattern, normalized):
+                item = match.group("object")
+                checks.append(
+                    f"需準備：{item}（屬申請準備，不影響硬性資格判定）。"
+                )
     return checks
