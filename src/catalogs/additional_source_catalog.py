@@ -16,6 +16,8 @@ class AdditionalScholarshipSource:
     entry_title: str = ""
 
 
+# 新來源只有在實際稽核能產生有效公告、具持續更新價值，且不是既有監測的
+# 完全重複入口時才可加入。review_reason 是 PR 審查與測試的必要欄位。
 OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
     AdditionalScholarshipSource(
         source_id="tp2e-awards",
