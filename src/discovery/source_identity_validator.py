@@ -30,7 +30,9 @@ def validate_source_identity(
     official_hosts: tuple[str, ...] = tuple(),
 ) -> SourceIdentityDecision:
     host = (urlparse(url).hostname or "").lower()
-    trusted = _trusted_host(host, official_hosts)
+    official = _official_host(host, official_hosts)
+    relay = host.endswith((".gov.tw", ".edu.tw"))
+    trusted = official or relay
     text = _compact(f"{page_title} {page_text}")
     program_match = any(
         _compact(name) in text
@@ -38,8 +40,18 @@ def validate_source_identity(
         if name.strip()
     )
     organizer_match = bool(organizer and _compact(organizer) in text)
-    reasons = _identity_reasons(trusted, program_match, organizer_match)
-    status = _identity_status(trusted, program_match, organizer_match)
+    reasons = _identity_reasons(
+        official,
+        relay,
+        program_match,
+        organizer_match,
+    )
+    status = _identity_status(
+        official,
+        relay,
+        program_match,
+        organizer_match,
+    )
     return SourceIdentityDecision(
         status,
         organizer_match,
@@ -49,35 +61,45 @@ def validate_source_identity(
     )
 
 
-def _trusted_host(host: str, official_hosts: tuple[str, ...]) -> bool:
+def _official_host(host: str, official_hosts: tuple[str, ...]) -> bool:
     normalized = tuple(item.lower().lstrip(".") for item in official_hosts)
-    official = any(host == item or host.endswith(f".{item}") for item in normalized)
-    return official or host.endswith((".gov.tw", ".edu.tw"))
+    return any(host == item or host.endswith(f".{item}") for item in normalized)
 
 
 def _identity_status(
-    trusted: bool,
+    official: bool,
+    relay: bool,
     program_match: bool,
     organizer_match: bool,
 ) -> str:
     if not program_match:
         return SOURCE_REJECTED
-    if trusted and organizer_match:
+    if official:
         return SOURCE_VERIFIED
-    if trusted:
+    if relay and organizer_match:
+        return SOURCE_VERIFIED
+    if relay:
         return SOURCE_REVIEW
     return SOURCE_REJECTED
 
 
 def _identity_reasons(
-    trusted: bool,
+    official: bool,
+    relay: bool,
     program_match: bool,
     organizer_match: bool,
 ) -> list[str]:
+    host_reason = (
+        "主辦單位官方網域"
+        if official
+        else "政府或學校正式轉載網域"
+        if relay
+        else "來源網域尚未信任"
+    )
     return [
         "方案名稱已命中" if program_match else "方案名稱未命中",
         "主辦單位已命中" if organizer_match else "主辦單位未命中",
-        "來源網域可信" if trusted else "來源網域尚未信任",
+        host_reason,
     ]
 
 

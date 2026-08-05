@@ -4,9 +4,12 @@ from dataclasses import replace
 from datetime import date
 from urllib.parse import urlparse
 
+from bs4 import BeautifulSoup
+
 from src.catalogs.tun_live_contracts import LiveSourceCandidate, live_contract
 from src.catalogs.tun_program_sources import ResolvedProgramSource, resolved_programs
-from src.collectors.collection_diagnostics import CollectorDiagnostic
+from src.collectors.collection_diagnostics import CollectionMode, CollectorDiagnostic
+from src.collectors.http_client import DetailSafeHttpClient
 from src.collectors.listing_paginator import ListingCrawlResult, crawl_listing_pages
 from src.collectors.tun_program_watch_collector import (
     ProgramSourceState,
@@ -17,6 +20,20 @@ from src.collectors.tun_program_watch_collector import (
     _merge_counts,
     _merge_discovery_diagnostics,
     _update_program_states,
+)
+from src.discovery.source_candidate_ranker import (
+    SOURCE_GOVERNMENT,
+    SOURCE_OFFICIAL,
+    SOURCE_SCHOOL,
+    RankedSourceCandidate,
+)
+from src.discovery.source_discovery_service import (
+    ProgramDiscoveryRequest,
+    ProgramSourceDiscoveryService,
+)
+from src.discovery.source_identity_validator import (
+    SOURCE_VERIFIED,
+    validate_source_identity,
 )
 from src.models.scholarship import Scholarship
 from src.models.source_quality import SourceUrlType
@@ -29,6 +46,7 @@ _RETRYABLE_STATUSES = frozenset(
         "source_structure_changed",
     }
 )
+_DISCOVERY_TRIGGER_STATUSES = frozenset((*_RETRYABLE_STATUSES, "no_current_announcement"))
 _SUCCESS_STATUSES = frozenset({"matched", "no_current_announcement"})
 _STATUS_PRIORITY = {
     "matched": 6,
@@ -41,7 +59,34 @@ _STATUS_PRIORITY = {
 
 
 class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
-    """主入口失敗或 matcher miss 時，依 live 契約逐一嘗試安全回退來源。"""
+    """主入口失敗時依序嘗試契約來源，完整稽核可再啟動公開來源發現。"""
+
+    def __init__(
+        self,
+        timeout_seconds: float,
+        user_agent: str,
+        collection_mode: CollectionMode = CollectionMode.INCREMENTAL,
+        max_pages: int = 20,
+        fetch_workers: int = 1,
+        *,
+        source_discovery: ProgramSourceDiscoveryService | None = None,
+        source_discovery_min_score: int = 100,
+        source_discovery_max_candidates: int = 5,
+    ) -> None:
+        super().__init__(
+            timeout_seconds,
+            user_agent,
+            collection_mode,
+            max_pages,
+            fetch_workers,
+        )
+        if source_discovery_min_score < 1:
+            raise ValueError("來源發現最低分數必須大於 0")
+        if source_discovery_max_candidates < 1:
+            raise ValueError("來源發現候選上限必須大於 0")
+        self.source_discovery = source_discovery
+        self.source_discovery_min_score = source_discovery_min_score
+        self.source_discovery_max_candidates = source_discovery_max_candidates
 
     def collect(self) -> list[Scholarship]:
         records = super().collect()
@@ -52,7 +97,9 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
         for program_id, source in source_by_id.items():
             contract = live_contract(program_id)
             current = original_states[program_id]
-            if current.status not in _RETRYABLE_STATUSES and not contract.force_replace:
+            retryable = current.status in _RETRYABLE_STATUSES
+            discoverable = self._can_discover(current.status)
+            if not retryable and not contract.force_replace and not discoverable:
                 continue
             if contract.force_replace:
                 records = _replace_program_records(records, program_id, tuple(), True)
@@ -78,7 +125,7 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
         )
         return records
 
-    # 依 preferred、原入口與既有 fallback 順序嘗試，回傳最佳結果。
+    # 依 preferred、原入口、fallback 與公開搜尋候選順序嘗試，回傳最佳結果。
     def _retry_program(
         self,
         program: ResolvedProgramSource,
@@ -96,19 +143,124 @@ class ResilientTunProgramWatchCollector(TunProgramWatchCollector):
             )
         )
         best: _RetryAttempt | None = None
+        attempted_urls: set[str] = set()
         for candidate in variants:
-            variant = replace(
-                program,
-                aliases=aliases,
-                official_url=candidate.url,
-                source_url_type=candidate.source_url_type,
-            )
-            attempt = self._collect_variant(variant, candidate.reason, stats)
+            attempted_urls.add(candidate.url)
+            attempt = self._attempt_candidate(program, aliases, candidate, stats)
             if best is None or _attempt_score(attempt) > _attempt_score(best):
                 best = attempt
-            if attempt.state.status in _SUCCESS_STATUSES:
+            if attempt.state.status == "matched":
+                return attempt
+            if (
+                attempt.state.status == "no_current_announcement"
+                and not self._can_discover(attempt.state.status)
+            ):
+                return attempt
+
+        for candidate in self._discovered_source_variants(
+            program,
+            aliases,
+            attempted_urls,
+        ):
+            attempt = self._attempt_candidate(program, aliases, candidate, stats)
+            if best is None or _attempt_score(attempt) > _attempt_score(best):
+                best = attempt
+            if attempt.state.status == "matched":
                 return attempt
         return best
+
+    def _attempt_candidate(
+        self,
+        program: ResolvedProgramSource,
+        aliases: tuple[str, ...],
+        candidate: LiveSourceCandidate,
+        stats: "_RetryStats",
+    ) -> "_RetryAttempt":
+        variant = replace(
+            program,
+            aliases=aliases,
+            official_url=candidate.url,
+            source_url_type=candidate.source_url_type,
+        )
+        return self._collect_variant(variant, candidate.reason, stats)
+
+    # 僅完整稽核在既有來源沒有當期公告或失敗時使用付費公開搜尋。
+    def _can_discover(self, status: str) -> bool:
+        return (
+            self.source_discovery is not None
+            and self.collection_mode is CollectionMode.FULL_AUDIT
+            and status in _DISCOVERY_TRIGGER_STATUSES
+        )
+
+    # 搜尋摘要只負責排序；實際頁面必須再次下載並通過身分驗證。
+    def _discovered_source_variants(
+        self,
+        program: ResolvedProgramSource,
+        aliases: tuple[str, ...],
+        attempted_urls: set[str],
+    ) -> tuple[LiveSourceCandidate, ...]:
+        if not self._can_discover("no_current_announcement"):
+            return tuple()
+        assert self.source_discovery is not None
+        try:
+            result = self.source_discovery.discover(
+                ProgramDiscoveryRequest(
+                    program.program_id,
+                    program.title,
+                    program.organizer,
+                    aliases,
+                    program.allowed_hosts,
+                )
+            )
+        except Exception:
+            return tuple()
+
+        verified: list[LiveSourceCandidate] = []
+        for candidate in result.candidates:
+            if len(verified) >= self.source_discovery_max_candidates:
+                break
+            if candidate.score < self.source_discovery_min_score:
+                continue
+            url = candidate.hit.url
+            if url in attempted_urls or _is_direct_document(url):
+                continue
+            if not self._verify_discovered_page(program, aliases, candidate):
+                continue
+            verified.append(
+                LiveSourceCandidate(
+                    url,
+                    _discovered_url_type(candidate),
+                    _discovery_reason(candidate),
+                )
+            )
+        return tuple(verified)
+
+    def _verify_discovered_page(
+        self,
+        program: ResolvedProgramSource,
+        aliases: tuple[str, ...],
+        candidate: RankedSourceCandidate,
+    ) -> bool:
+        try:
+            with DetailSafeHttpClient(self.timeout_seconds, self.user_agent) as client:
+                html = client.get_text(candidate.hit.url)
+        except Exception:
+            return False
+        soup = BeautifulSoup(html, "html.parser")
+        page_title = " ".join(
+            (soup.title.get_text(" ", strip=True) if soup.title else "").split()
+        )
+        page_text = " ".join(soup.get_text(" ", strip=True).split())
+        decision = validate_source_identity(
+            candidate.hit.url,
+            page_title,
+            page_text,
+            program.title,
+            program.organizer,
+            aliases,
+            program.allowed_hosts,
+        )
+        return decision.status == SOURCE_VERIFIED
 
     # 單一方案單一入口使用原 collector 的解析與診斷邏輯。
     def _collect_variant(
@@ -239,15 +391,40 @@ def _candidate_is_active(candidate: LiveSourceCandidate, current_year: int) -> b
     return valid_through is None or current_year <= valid_through
 
 
-# 正式轉載單篇必須允許入口頁自身成為候選。
+# 正式機構單篇 fallback 必須允許頁面自身成為候選。
 def _fallback_url_type(url: str, default: SourceUrlType) -> SourceUrlType:
     host = urlparse(url).hostname or ""
-    detail_markers = ("/p/404-", "news_detail", "announcement.php?aid=", "/posts/")
+    detail_markers = (
+        "/p/404-",
+        "/p/406-",
+        "news_detail",
+        "news_content",
+        "announcement.php?aid=",
+        "/posts/",
+    )
     if any(marker in url for marker in detail_markers):
         if host.endswith(("edu.tw", "gov.tw")):
             return SourceUrlType.RELAY_DETAIL
         return SourceUrlType.ANNUAL_DETAIL
     return default
+
+
+def _discovered_url_type(candidate: RankedSourceCandidate) -> SourceUrlType:
+    if candidate.source_role in {SOURCE_GOVERNMENT, SOURCE_SCHOOL}:
+        return SourceUrlType.RELAY_DETAIL
+    if candidate.source_role == SOURCE_OFFICIAL:
+        return SourceUrlType.ANNUAL_DETAIL
+    return SourceUrlType.PENDING
+
+
+def _discovery_reason(candidate: RankedSourceCandidate) -> str:
+    reasons = "、".join(candidate.reasons)
+    return f"runtime source discovery：score={candidate.score}；{reasons}"
+
+
+def _is_direct_document(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    return path.endswith((".pdf", ".doc", ".docx", ".odt"))
 
 
 # matched 優先；其次正常無當期公告，再依技術錯誤層級排序。
