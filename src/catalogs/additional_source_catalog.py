@@ -13,6 +13,7 @@ class AdditionalScholarshipSource:
     allowed_hosts: tuple[str, ...]
     max_pages: int = 10
     entry_title: str = ""
+    review_reason: str = ""
 
 
 OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
@@ -134,6 +135,46 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://club-stud.tut.edu.tw/p/403-1038-1402-1.php?Lang=zh-tw",
         allowed_hosts=("club-stud.tut.edu.tw",),
         max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="ncut-external-scholarships",
+        display_name="國立勤益科技大學校外獎助學金",
+        entry_url="https://osca.ncut.edu.tw/p/403-1010-611-1.php?Lang=zh-tw",
+        allowed_hosts=("osca.ncut.edu.tw",),
+        max_pages=10,
+        review_reason=(
+            "2026年持續更新且第一頁包含多個仍在申請中的基金會、政府與工程類方案。"
+        ),
+    ),
+    AdditionalScholarshipSource(
+        source_id="nfu-scholarships",
+        display_name="國立虎尾科技大學獎助學金公告",
+        entry_url="https://www.nfu.edu.tw/zh_tw/ann/art",
+        allowed_hosts=("nfu.edu.tw", "www.nfu.edu.tw"),
+        max_pages=10,
+        review_reason=(
+            "2026年持續更新，公告正文含資格、金額與期限，並能補足科技及企業方案。"
+        ),
+    ),
+    AdditionalScholarshipSource(
+        source_id="niu-scholarships",
+        display_name="國立宜蘭大學獎助學金專區",
+        entry_url="https://niuosa.niu.edu.tw/p/412-1004-559.php",
+        allowed_hosts=("niuosa.niu.edu.tw",),
+        max_pages=10,
+        review_reason=(
+            "獎助學金專區有長期分頁與2026年近期公告，涵蓋一般、地方及基金會方案。"
+        ),
+    ),
+    AdditionalScholarshipSource(
+        source_id="ntut-ee-scholarships",
+        display_name="國立臺北科技大學電機系獎助學金",
+        entry_url="https://ee.ntut.edu.tw/p/403-1013-1598-1.php?Lang=zh-tw",
+        allowed_hosts=("ee.ntut.edu.tw",),
+        max_pages=5,
+        review_reason=(
+            "2026年持續發布電機、電網、科技企業與研究型獎學金，與使用者研究方向高度相關。"
+        ),
     ),
 )
 
