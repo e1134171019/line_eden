@@ -128,17 +128,6 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         review_reason="即時稽核產出98筆，能補足大量地方與基金會方案。",
         max_pages=10,
     ),
-    AdditionalScholarshipSource(
-        source_id="ntut-ee-scholarships",
-        display_name="國立臺北科技大學電機工程系獎助學金",
-        entry_url="https://ee.ntut.edu.tw/p/403-1013-1598-1.php?Lang=zh-tw",
-        allowed_hosts=("ee.ntut.edu.tw",),
-        review_reason=(
-            "2026年持續更新電機、電網、科技人才與企業獎學金；"
-            "與使用者電力電子研究及北科大升學方向高度相關。"
-        ),
-        max_pages=5,
-    ),
 )
 
 
