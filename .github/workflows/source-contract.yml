@@ -8,8 +8,10 @@ on:
       - "src/catalogs/**"
       - "src/collectors/**"
       - "src/matchers/**"
+      - "src/automation/candidate_source_review.py"
       - "src/automation/source_contract_report.py"
       - "src/automation/source_health_artifact.py"
+      - ".github/workflows/candidate-source-review.yml"
       - ".github/workflows/source-contract.yml"
   workflow_dispatch:
   schedule:
@@ -42,6 +44,10 @@ jobs:
 
       - name: Install dependencies
         run: python -m pip install --quiet -r requirements.txt
+
+      - name: Review candidate sources
+        if: github.event_name == 'pull_request'
+        run: python -m src.automation.candidate_source_review
 
       - name: Run live source contract
         id: contract
