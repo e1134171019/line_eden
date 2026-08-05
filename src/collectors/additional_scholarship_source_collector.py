@@ -21,6 +21,16 @@ _SCHOLARSHIP_MARKERS = (
     "獎勵學金",
     "助學計畫",
 )
+_GENERIC_TITLES = {
+    "獎學金",
+    "助學金",
+    "獎助學金",
+    "校外獎學金",
+    "校外助學金",
+    "校外獎助學金",
+    "獎助學金公告",
+    "最新校外獎學金申請訊息公告",
+}
 _IGNORED_SCHEMES = ("javascript:", "mailto:", "tel:")
 _DATE_YMD = re.compile(
     r"(?P<year>20\d{2})\s*[./\-年]\s*(?P<month>\d{1,2})\s*[./\-月]\s*"
@@ -130,7 +140,11 @@ class AdditionalScholarshipSourceCollector(BaseCollector):
             return None
 
         title, context = _candidate_title_and_context(anchor)
-        if not title or not _contains_scholarship_marker(title):
+        if (
+            not title
+            or not _contains_scholarship_marker(title)
+            or _normalize_text(title) in _GENERIC_TITLES
+        ):
             return None
         if detail_url.rstrip("/") == page_url.rstrip("/") and not self.config.entry_title:
             return None
