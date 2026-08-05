@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from config import (
     HTTP_TIMEOUT_SECONDS,
@@ -11,6 +13,13 @@ from config import (
     validate_settings,
 )
 from main import build_service
+from src.automation.eligible_line_links import (
+    EligibleLink,
+    USER_CONFIRMED_ELIGIBLE_LINKS,
+    build_line_message,
+    links_from_scholarships,
+    merge_links,
+)
 from src.automation.structured_shadow_artifact import write_structured_shadow_artifacts
 from src.evaluators.eligibility_evaluator import ELIGIBLE
 from src.evaluators.notice_classifier import APPLICATION
@@ -20,37 +29,29 @@ from src.runtime.run_mode import RunMode
 from src.services.scholarship_service import AuditRecord, AuditResult
 
 MAX_LINE_TEXT_LENGTH = 4800
+TAIPEI_TIMEZONE = ZoneInfo("Asia/Taipei")
 _NON_ACTIONABLE_PERIODS = {EXPIRED, STALE_UNKNOWN, "not_applicable"}
 
 
 def build_report_message(
     result: AuditResult,
     source_lines: Sequence[str] = (),
+    checked_at: datetime | None = None,
+    confirmed_links: Iterable[EligibleLink] = USER_CONFIRMED_ELIGIBLE_LINKS,
 ) -> str:
-    """LINE 稽核報告只列硬性資格符合且仍可申請的公告連結。"""
+    """LINE 稽核報告顯示使用者確認符合及動態判定符合的連結。"""
 
     # 來源狀態仍保留在內部診斷與 artifact，不進入 LINE 訊息。
     _ = source_lines
+    local_time = checked_at or datetime.now(TAIPEI_TIMEZONE)
     records = _eligible_records(result.records)
-    if not records:
-        return "目前沒有符合資格且仍可申請的獎學金。"
-
-    lines = ["【符合資格獎學金】"]
-    seen_urls: set[str] = set()
-    visible_index = 0
-    for record in records:
-        item = record.item
-        url = item.detail_url or item.source_url
-        if not url or url in seen_urls:
-            continue
-        seen_urls.add(url)
-        visible_index += 1
-        block = [f"{visible_index}. {item.title}", url]
-        candidate = "\n".join([*lines, *block])
-        if len(candidate) > MAX_LINE_TEXT_LENGTH:
-            break
-        lines.extend(block)
-    return "\n".join(lines)
+    dynamic_links = links_from_scholarships(record.item for record in records)
+    links = merge_links(confirmed_links, dynamic_links)
+    return build_line_message(
+        links,
+        checked_at=local_time,
+        max_length=MAX_LINE_TEXT_LENGTH,
+    )
 
 
 def _eligible_records(records: list[AuditRecord]) -> list[AuditRecord]:
@@ -77,7 +78,7 @@ def _period_status(record: AuditRecord) -> str:
 
 
 def main() -> None:
-    """完整稽核後，LINE 僅傳送符合資格的公告名稱與連結。"""
+    """完整稽核後，LINE 傳送符合資格的公告名稱與連結。"""
 
     validate_settings()
     validate_gemini_settings()
