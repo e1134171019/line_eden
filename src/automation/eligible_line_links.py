@@ -7,10 +7,11 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class EligibleLink:
-    """LINE 顯示用的獎學金名稱與入口。"""
+    """LINE 顯示用的獎學金名稱、入口與申請狀態備註。"""
 
     title: str
     url: str
+    status_note: str = ""
 
 
 # 這些是使用者逐項確認要持續追蹤的方案。
@@ -27,6 +28,7 @@ USER_CONFIRMED_ELIGIBLE_LINKS: tuple[EligibleLink, ...] = (
     EligibleLink(
         title="新北市新莊區聯合優秀獎學金",
         url="https://xinzhuangawards.ntpc.gov.tw/",
+        status_note="狀態：尚未開放（115年已截止，等待116年公告）",
     ),
     EligibleLink(
         title="王雲五先生自學獎學金",
@@ -78,14 +80,17 @@ def build_line_message(
     *,
     checked_at: datetime,
     max_length: int,
+    collected_count: int = 0,
 ) -> str:
-    """建立固定的每日 LINE 格式，只顯示時間、名稱與連結。"""
+    """建立固定每日 LINE 格式，顯示統計、名稱、連結與必要狀態。"""
 
+    visible_links = tuple(links)
     lines = [
         "獎學金每日檢查完成",
         f"時間：{checked_at:%Y-%m-%d %H:%M}",
+        f"本次蒐集公告：{collected_count}",
+        f"本次符合並通知：{len(visible_links)}",
     ]
-    visible_links = tuple(links)
     if not visible_links:
         lines.extend(["", "目前沒有符合資格且仍可申請的獎學金。"])
         return "\n".join(lines)[:max_length]
@@ -93,6 +98,8 @@ def build_line_message(
     lines.append("")
     for index, link in enumerate(visible_links, start=1):
         block = [f"{index}. {link.title}", link.url]
+        if link.status_note:
+            block.append(link.status_note)
         candidate = "\n".join([*lines, *block])
         if len(candidate) > max_length:
             break
