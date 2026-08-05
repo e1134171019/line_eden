@@ -43,12 +43,8 @@ jobs:
       - name: Run Pyright
         shell: bash
         run: |
-          log_file="pyright-${{ matrix.python-version }}.log"
-          set +e
-          python -m pyright > "$log_file" 2>&1
-          status=$?
-          cat "$log_file"
-          exit $status
+          set -o pipefail
+          python -m pyright 2>&1 | tee "pyright-${{ matrix.python-version }}.log"
 
       - name: Upload failed Pyright log
         if: failure()
@@ -62,12 +58,14 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          log_file="pytest-${{ matrix.python-version }}.log"
-          set +e
-          python -m pytest tests/ -x -q --tb=short --cov=src --cov-report=term-missing > "$log_file" 2>&1
-          status=$?
-          cat "$log_file"
-          exit $status
+          set -o pipefail
+          python -m pytest tests/ -x -q --tb=short \
+            -W error::ResourceWarning \
+            --cov=src --cov-fail-under=0 --cov-report=term-missing \
+            2>&1 | tee "pytest-${{ matrix.python-version }}.log"
+
+      - name: Enforce coverage threshold
+        run: python -m coverage report --fail-under=85
 
       - name: Upload failed pytest log
         if: failure()

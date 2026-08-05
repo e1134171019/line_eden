@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import sqlite3
+
+from src.repositories.sqlite_connection import open_database
 
 
 @dataclass(frozen=True)
@@ -31,7 +32,6 @@ class GeminiCacheRepository:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._create_table()
 
-    # 建立以 cache_key 唯一識別的文件抽取快取表。
     def _create_table(self) -> None:
         query = """
         CREATE TABLE IF NOT EXISTS gemini_document_cache (
@@ -49,11 +49,9 @@ class GeminiCacheRepository:
             created_at TEXT NOT NULL
         )
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(query)
-            conn.commit()
 
-    # 讀取已分析過的同一文件、模型與提示版本。
     def get(self, cache_key: str) -> GeminiCacheEntry | None:
         query = """
         SELECT cache_key, document_hash, source_url, model, prompt_version,
@@ -61,11 +59,10 @@ class GeminiCacheRepository:
         FROM gemini_document_cache
         WHERE cache_key = ?
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute(query, [cache_key]).fetchone()
         return GeminiCacheEntry(*row) if row else None
 
-    # 寫入成功或失敗結果；相同 key 不再覆寫以保留首次成本。
     def save(self, entry: GeminiCacheEntry) -> int:
         query = """
         INSERT OR IGNORE INTO gemini_document_cache (
@@ -88,17 +85,14 @@ class GeminiCacheRepository:
             entry.error,
             datetime.now(timezone.utc).isoformat(timespec="seconds"),
         ]
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             cursor = conn.execute(query, values)
-            conn.commit()
         return max(cursor.rowcount, 0)
 
-    # 移除失敗快取，使下一次稽核能重新嘗試同一文件。
     def delete(self, cache_key: str) -> int:
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             cursor = conn.execute(
                 "DELETE FROM gemini_document_cache WHERE cache_key = ?",
                 [cache_key],
             )
-            conn.commit()
         return max(cursor.rowcount, 0)

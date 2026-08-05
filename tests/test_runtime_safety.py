@@ -109,6 +109,24 @@ def test_old_unknown_without_current_year_is_stale() -> None:
     assert period.status == STALE_UNKNOWN
 
 
+def test_explicit_prior_roc_cycle_is_stale_even_when_page_is_recent() -> None:
+    period = classify_application_period(
+        "〔114年度｜雲田乘風飛揚獎助學金計畫〕申請辦法請見附件。",
+        "2026-08-01",
+        today=date(2026, 8, 2),
+    )
+    assert period.status == STALE_UNKNOWN
+
+
+def test_current_roc_cycle_is_not_stale() -> None:
+    period = classify_application_period(
+        "115年度獎學金申請辦法請見附件。",
+        "2026-08-01",
+        today=date(2026, 8, 2),
+    )
+    assert period.status == DEADLINE_UNKNOWN
+
+
 def test_old_notice_with_current_year_stays_current_unknown() -> None:
     period = classify_application_period(
         "2026年度仍受理申請，詳細期限請見附件。",

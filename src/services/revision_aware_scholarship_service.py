@@ -4,17 +4,30 @@ from dataclasses import replace
 from typing import Any
 
 from src.diagnostics.detail_fetch_diagnostics import DetailFetchResult
+from src.evaluators.application_evidence_scorer import (
+    VALID_APPLICATION_DETAIL,
+    ApplicationEvidence,
+)
 from src.evaluators.eligibility_evaluator import (
     INELIGIBLE,
     EligibilityDecision,
 )
-from src.evaluators.notice_classifier import APPLICATION
-from src.evaluators.runtime_safety import EXPIRED, STALE_UNKNOWN
+from src.evaluators.notice_classifier import (
+    APPLICATION,
+    POLICY,
+    classify_notice,
+)
+from src.evaluators.runtime_safety import (
+    EXPIRED,
+    NOT_APPLICABLE,
+    STALE_UNKNOWN,
+)
 from src.models.announcement_revision import (
     build_announcement_id,
     build_revision_hash,
 )
 from src.models.eligibility_axes import derive_action_status
+from src.models.evaluator_input import EvaluatorInput
 from src.models.scholarship import Scholarship
 from src.repositories.announcement_revision_repository import (
     AnnouncementRevisionRepository,
@@ -66,6 +79,26 @@ class RevisionAwareScholarshipService(ScholarshipService):
         if fetch_result is None:
             return super()._evaluate_item(item)
         return self._evaluate_fetch_result(item, fetch_result)
+
+    # 已知方案的有效辦法頁不推播，但仍要保存可稽核的硬性資格結果。
+    def _evaluate_detail(
+        self,
+        item: Scholarship,
+        detail_text: str,
+        evaluator_input: EvaluatorInput,
+        evidence: ApplicationEvidence,
+    ) -> tuple[EligibilityDecision, str, str]:
+        notice_kind = classify_notice(item.title, detail_text)
+        if (
+            notice_kind == POLICY
+            and item.program_id
+            and evidence.status == VALID_APPLICATION_DETAIL
+        ):
+            assert self.evaluator is not None
+            assert self.profile is not None
+            decision = self.evaluator.evaluate(item, evaluator_input, self.profile)
+            return decision, notice_kind, NOT_APPLICABLE
+        return super()._evaluate_detail(item, detail_text, evaluator_input, evidence)
 
     # Structured 模型只抽取；deterministic evaluator 的明確 FAIL 才能否決 legacy。
     def _evaluate_fetch_result(

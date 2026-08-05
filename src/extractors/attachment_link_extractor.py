@@ -65,6 +65,8 @@ def extract_attachment_inventory(
     root = select_announcement_root(soup, title, base_url)
     scope = _select_attachment_scope(root, base_url)
     candidates = _collect_links(scope, base_url)
+    if not candidates and _is_lhu_host(base_url):
+        candidates = _collect_links(soup, base_url)
     ranked = sorted(candidates, key=lambda item: item[0], reverse=True)
     selected = ranked[:max_count]
     selected_urls = tuple(url for _, url, _, _ in selected)
@@ -80,6 +82,11 @@ def extract_attachment_inventory(
         selected_labels=selected_labels,
         discovered_generic_count=generic_count,
     )
+
+
+def _is_lhu_host(base_url: str) -> bool:
+    host = (urlparse(base_url).hostname or "").lower()
+    return host.endswith("lhu.edu.tw")
 
 
 def _select_attachment_scope(root: Tag | None, base_url: str) -> Tag | None:
