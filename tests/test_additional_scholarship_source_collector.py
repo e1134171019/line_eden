@@ -170,15 +170,16 @@ def test_additional_source_collect_raises_when_fetch_failed(
     assert collector.diagnostic.completeness == "failed"
 
 
-def test_additional_source_catalog_has_ten_reviewed_unique_sources() -> None:
+def test_additional_source_catalog_has_eleven_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
 
-    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 10
-    assert len(source_ids) == 10
+    assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 11
+    assert len(source_ids) == 11
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {
         "pan-wen-yuan-scholarship",
+        "ntpc-higher-education-scholarship",
         "utaipei-external-scholarships",
         "uch-external-scholarships",
         "npu-scholarship-portal",
@@ -186,5 +187,6 @@ def test_additional_source_catalog_has_ten_reviewed_unique_sources() -> None:
     assert {
         "foxconn-scholarship-whale",
         "ntut-scholarship-platform",
+        "mcu-external-scholarships",
         "tut-external-scholarships",
     }.isdisjoint(source_ids)
