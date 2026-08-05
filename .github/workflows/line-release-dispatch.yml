@@ -1,0 +1,26 @@
+name: Dispatch LINE scholarship report
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/line-release-trigger"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch scholarship report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run scholarship-cloud.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f operation=report
+          echo "Scholarship LINE report dispatch requested."
