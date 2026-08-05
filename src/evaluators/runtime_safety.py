@@ -204,12 +204,26 @@ def _is_historical_named_cycle(text: str, current: date) -> bool:
     return bool(cycle_years) and max(cycle_years) < current.year
 
 
-# 無發布日且沒有當年度標記時，不得把「10/1 至 10/31」猜成今年。
+# 無發布日且含無年份申請日期時，不得把「10/1 至 10/31」猜成今年。
 def _is_undated_ambiguous(text: str, published_date: str, current: date) -> bool:
     if _parse_iso_date(published_date) is not None:
         return False
     cycle_years = _named_cycle_years(text)
-    return current.year not in cycle_years
+    if current.year in cycle_years:
+        return False
+    return _has_yearless_application_date(text)
+
+
+def _has_yearless_application_date(text: str) -> bool:
+    for segment in _deadline_segments(text):
+        if not _is_application_deadline_segment(segment):
+            continue
+        if any(
+            match.group("year_value") is None
+            for match in DATE_PATTERN.finditer(segment)
+        ):
+            return True
+    return False
 
 
 def _named_cycle_years(text: str) -> list[int]:
