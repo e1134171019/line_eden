@@ -1,2 +1,2 @@
-Run one real daily scholarship heartbeat after the fixed-notification workflow is merged.
-Triggered: 2026-07-28T07:45:00+08:00
+Publish the latest full scholarship audit report to LINE.
+Triggered: 2026-08-05T13:25:00+08:00
