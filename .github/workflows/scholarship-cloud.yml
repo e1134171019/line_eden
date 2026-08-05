@@ -104,7 +104,7 @@ jobs:
 
       - name: Download encrypted cloud state
         if: env.OPERATION == 'daily' || env.OPERATION == 'run' || env.OPERATION == 'report' || env.OPERATION == 'dry-run'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: scholarship-agent-state
           path: cloud-state
