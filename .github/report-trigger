@@ -1,3 +1,4 @@
 Publish the latest full scholarship audit report to LINE.
-Triggered: 2026-08-05T14:15:00+08:00
-Mode: incremental-collection audit report
+Triggered: 2026-08-05T22:33:00+08:00
+Mode: full-source audit report
+Reason: user requested complete expanded-source collection
