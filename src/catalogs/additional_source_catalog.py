@@ -160,6 +160,47 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         review_reason="持續發布電機、電網、科技企業與研究型獎學金，與使用者方向高度相關。",
         max_pages=5,
     ),
+    AdditionalScholarshipSource(
+        source_id="nycu-scholarship-bulletins",
+        display_name="國立陽明交通大學獎助學金公文公告",
+        entry_url=(
+            "https://infonews.nycu.edu.tw/index.php?"
+            "SuperType=3&action=more&categoryid=all&pagekey=1"
+        ),
+        allowed_hosts=("infonews.nycu.edu.tw",),
+        review_reason=(
+            "電子公文列表持續出現企業、基金會及政府獎助學金；"
+            "候選審查第一頁實測解析1筆。"
+        ),
+        max_pages=6,
+    ),
+    AdditionalScholarshipSource(
+        source_id="knu-external-scholarships",
+        display_name="開南大學校外獎學金",
+        entry_url="https://sa.knu.edu.tw/p/412-1005-2921.php?Lang=zh-tw",
+        allowed_hosts=("sa.knu.edu.tw",),
+        review_reason="候選審查第一頁實測解析5筆，並直接提供外部方案與申請期限。",
+        max_pages=5,
+    ),
+    AdditionalScholarshipSource(
+        source_id="ncue-external-scholarships",
+        display_name="國立彰化師範大學校外獎助學金",
+        entry_url="https://www.ncue.edu.tw/p/412-1000-1513.php?Lang=zh-tw",
+        allowed_hosts=("ncue.edu.tw", "www.ncue.edu.tw", "aps.ncue.edu.tw"),
+        review_reason="候選審查第一頁實測解析17筆，能補充地方、民間與教育類方案。",
+        max_pages=10,
+    ),
+    AdditionalScholarshipSource(
+        source_id="nchu-external-scholarships",
+        display_name="國立中興大學校外獎助學金",
+        entry_url=(
+            "https://www.osa.nchu.edu.tw/osa/laa/sys/modules/tadnews/"
+            "index.php?ncsn=4"
+        ),
+        allowed_hosts=("osa.nchu.edu.tw", "www.osa.nchu.edu.tw"),
+        review_reason="候選審查第一頁實測解析18筆，且包含既有入口未覆蓋的方案。",
+        max_pages=10,
+    ),
 )
 
 

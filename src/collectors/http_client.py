@@ -23,6 +23,9 @@ LEGACY_CERTIFICATE_DOMAINS = frozenset({
     "nfu.edu.tw",
     "niuosa.niu.edu.tw",
     "ee.ntut.edu.tw",
+    "infonews.nycu.edu.tw",
+    "sa.knu.edu.tw",
+    "www.ncue.edu.tw",
 })
 _CERTIFICATE_ERROR_MARKERS = (
     "certificate_verify_failed",
