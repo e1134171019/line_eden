@@ -91,6 +91,9 @@ DATE_PATTERN = re.compile(
     r"(?:(?P<year_value>20\d{2}|\d{3})(?:年|[\-/.]))?"
     r"(?P<month>\d{1,2})(?:月|[\-/.])(?P<day>\d{1,2})日?"
 )
+NAMED_CYCLE_PATTERN = re.compile(
+    r"(?<!\d)(?P<year>20\d{2}|1\d{2})\s*(?:學年度|年度)"
+)
 _DATE_TOKEN = (
     r"(?:(?:20\d{2}|\d{3})(?:年|[\-/.]))?"
     r"\d{1,2}(?:月|[\-/.])\d{1,2}日?"
@@ -130,11 +133,12 @@ def extract_application_deadline(text: str, published_date: str) -> date | None:
     for segment in _deadline_segments(text):
         if not _is_application_deadline_segment(segment):
             continue
-        candidates = _parse_segment_dates(segment, published)
+        candidates = _dates_for_publication_cycle(segment, published)
         if not candidates:
             continue
         priority = 0 if any(marker in segment for marker in DIRECT_APPLICANT_MARKERS) else 1
         ranked.append((priority, max(candidates)))
+    ranked = _ranked_for_publication_cycle(ranked, published)
     if not ranked:
         return None
     best_priority = min(priority for priority, _ in ranked)
@@ -149,7 +153,7 @@ def _explicit_deadlines(
     ranked: list[tuple[int, date]] = []
     for pattern in EXPLICIT_DEADLINE_PATTERNS:
         for match in pattern.finditer(text):
-            candidates = _parse_segment_dates(match.group(0), published)
+            candidates = _dates_for_publication_cycle(match.group(0), published)
             if candidates:
                 ranked.append((0, max(candidates)))
     return ranked
@@ -162,7 +166,7 @@ def extract_application_start(text: str, published_date: str) -> date | None:
     for segment in _deadline_segments(text):
         if not _is_application_deadline_segment(segment):
             continue
-        candidates = _parse_segment_dates(segment, published)
+        candidates = _dates_for_publication_cycle(segment, published)
         if len(candidates) >= 2:
             starts.append(min(candidates))
     return min(starts) if starts else None
@@ -183,11 +187,51 @@ def classify_application_period(
         return ApplicationPeriod(start, deadline, UPCOMING)
     if deadline is not None:
         return ApplicationPeriod(start, deadline, OPEN)
+    if _is_historical_named_cycle(text, current):
+        return ApplicationPeriod(start, None, STALE_UNKNOWN)
     if any(marker in text for marker in EVERGREEN_MARKERS):
         return ApplicationPeriod(start, None, EVERGREEN)
+    if _is_undated_ambiguous(text, published_date, current):
+        return ApplicationPeriod(start, None, STALE_UNKNOWN)
     if _is_stale_unknown(text, published_date, current):
         return ApplicationPeriod(start, None, STALE_UNKNOWN)
     return ApplicationPeriod(start, None, DEADLINE_UNKNOWN)
+
+
+# 明示為舊年度的固定方案頁，即使缺少截止日期也不得視為當期可申請。
+def _is_historical_named_cycle(text: str, current: date) -> bool:
+    cycle_years = _named_cycle_years(text)
+    return bool(cycle_years) and max(cycle_years) < current.year
+
+
+# 無發布日且含無年份申請日期時，不得把「10/1 至 10/31」猜成今年。
+def _is_undated_ambiguous(text: str, published_date: str, current: date) -> bool:
+    if _parse_iso_date(published_date) is not None:
+        return False
+    cycle_years = _named_cycle_years(text)
+    if current.year in cycle_years:
+        return False
+    return _has_yearless_application_date(text)
+
+
+def _has_yearless_application_date(text: str) -> bool:
+    for segment in _deadline_segments(text):
+        if not _is_application_deadline_segment(segment):
+            continue
+        if any(
+            match.group("year_value") is None
+            for match in DATE_PATTERN.finditer(segment)
+        ):
+            return True
+    return False
+
+
+def _named_cycle_years(text: str) -> list[int]:
+    years: list[int] = []
+    for match in NAMED_CYCLE_PATTERN.finditer(text):
+        value = int(match.group("year"))
+        years.append(value + 1911 if value < 1000 else value)
+    return years
 
 
 # 發布時間已久且正文沒有當年度訊號時，避免當成目前可申請的期限未知公告。
@@ -253,6 +297,24 @@ def _is_application_deadline_segment(segment: str) -> bool:
     return True
 
 
+def _dates_for_publication_cycle(segment: str, published: date | None) -> list[date]:
+    candidates = _parse_segment_dates(segment, published)
+    if published is None:
+        return candidates
+    current_or_future = [candidate for candidate in candidates if candidate.year >= published.year]
+    return current_or_future or candidates
+
+
+def _ranked_for_publication_cycle(
+    ranked: list[tuple[int, date]],
+    published: date | None,
+) -> list[tuple[int, date]]:
+    if published is None:
+        return ranked
+    current_or_future = [item for item in ranked if item[1].year >= published.year]
+    return current_or_future or ranked
+
+
 # 擷取同一申請語意片段中的所有有效日期。
 def _parse_segment_dates(segment: str, published: date | None) -> list[date]:
     return [
@@ -270,6 +332,8 @@ def _parse_date_match(match: re.Match[str], published: date | None) -> date | No
     month = int(match.group("month"))
     day = int(match.group("day"))
     year = _match_year(match.group("year_value"), month, published)
+    if year is None:
+        return None
     try:
         return date(year, month, day)
     except ValueError:
@@ -277,12 +341,12 @@ def _parse_date_match(match: re.Match[str], published: date | None) -> date | No
 
 
 # 民國年轉西元；跨年且未標年份時依公告日期推定下一年。
-def _match_year(year_value: str | None, month: int, published: date | None) -> int:
+def _match_year(year_value: str | None, month: int, published: date | None) -> int | None:
     if year_value:
         value = int(year_value)
         return value + 1911 if len(year_value) == 3 else value
     if not published:
-        return date.today().year
+        return None
     if published.month - month > 6:
         return published.year + 1
     return published.year

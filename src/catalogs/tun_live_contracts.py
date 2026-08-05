@@ -65,14 +65,9 @@ class LiveProgramContract:
     use_catalog_sources: bool = True
 
 
-# 只放 production 已證實需要特殊 live 契約的方案。
 LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
     "tf4dr-aid": LiveProgramContract(
-        aliases=(
-            "第1學期助學金",
-            "第2學期助學金",
-            "本會助學金",
-        ),
+        aliases=("第1學期助學金", "第2學期助學金", "本會助學金"),
         preferred_sources=(
             LiveSourceCandidate(
                 "https://www.tf4dr.org/posts",
@@ -389,11 +384,39 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         ),
         force_replace=True,
     ),
-    "songliang-aid": LiveProgramContract(
+    "hndasset-wenxiang": LiveProgramContract(
         aliases=(
-            "助學金實施辦法",
-            "松樑助學金實施辦法",
+            "文向教育基金會115年度文向獎學金",
+            "115年度文向獎學金",
+            "文向獎學金",
         ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "115年度正式大學轉載，含本期資格、期限與附件。",
+            ),
+            LiveSourceCandidate(
+                "https://assistance.ncnu.edu.tw/p/406-1079-36114%2Cr249.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "Production runner 已驗證可命中的正式大學轉載備援。",
+            ),
+        ),
+        force_replace=True,
+    ),
+    "harmony-stability": LiveProgramContract(
+        aliases=("和諧安定獎學金", "114年度和諧安定獎學金"),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://www.hk.edu.tw/remote/HKlf_1238963/",
+                SourceUrlType.RELAY_DETAIL,
+                "最新可驗證正式學校轉載；已截止但仍可確認方案與規則。",
+            ),
+        ),
+        force_replace=True,
+    ),
+    "songliang-aid": LiveProgramContract(
+        aliases=("助學金實施辦法", "松樑助學金實施辦法"),
         preferred_sources=(
             LiveSourceCandidate(
                 "https://www.slceas.org.tw/index.php/scholarship/scholarship01",
@@ -406,6 +429,5 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
 }
 
 
-# 回傳方案的 production live 契約；未列入者使用一般來源契約。
 def live_contract(program_id: str) -> LiveProgramContract:
     return LIVE_PROGRAM_CONTRACTS.get(program_id, LiveProgramContract())

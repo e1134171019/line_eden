@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-import sqlite3
 
 from src.collectors.base_collector import BaseCollector
 from src.evaluators.eligibility_evaluator import ELIGIBLE, EligibilityDecision
 from src.models.scholarship import Scholarship
 from src.profiles.student_profile import StudentProfile
 from src.repositories.scholarship_repository import ScholarshipRepository
+from src.repositories.sqlite_connection import open_database
 from src.services.revision_aware_scholarship_service import (
     RevisionAwareScholarshipService,
 )
@@ -50,10 +50,10 @@ def _profile() -> StudentProfile:
         department="電子工程系",
         year=2,
         employed=True,
-        average_grade=None,
-        conduct_grade=None,
-        class_rank=None,
-        class_size=None,
+        average_grade=0,
+        conduct_grade=0,
+        class_rank=0,
+        class_size=0,
         residence="新北市",
         special_statuses=tuple(),
         research_keywords=("電力電子",),
@@ -111,7 +111,7 @@ def test_first_revision_baseline_does_not_resend_existing_notice(tmp_path: Path)
     result = _service(item, repository, _body()).run(dry_run=True)
 
     assert result.pending_items == []
-    with sqlite3.connect(repository.db_path) as conn:
+    with open_database(repository.db_path) as conn:
         notified = conn.execute(
             "SELECT notified_at FROM scholarships WHERE content_hash = ?",
             [item.content_hash],
@@ -137,7 +137,7 @@ def test_changed_revision_reopens_and_reuses_fetched_content(tmp_path: Path) -> 
 
     assert len(result.pending_items) == 1
     assert result.pending_items[0].hard_eligibility_status == "eligible"
-    with sqlite3.connect(repository.db_path) as conn:
+    with open_database(repository.db_path) as conn:
         notified = conn.execute(
             "SELECT notified_at FROM scholarships WHERE content_hash = ?",
             [item.content_hash],
@@ -156,6 +156,6 @@ def test_source_failure_does_not_create_empty_revision(tmp_path: Path) -> None:
 
     _service(item, repository, "", fail=True).run(dry_run=True)
 
-    with sqlite3.connect(repository.db_path) as conn:
+    with open_database(repository.db_path) as conn:
         count = conn.execute("SELECT COUNT(1) FROM announcement_revisions").fetchone()
     assert count == (0,)

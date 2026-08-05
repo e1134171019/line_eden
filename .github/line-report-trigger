@@ -1,7 +1,8 @@
-2026-08-02T14:35:00+08:00
-reason=validate-production-final-acceptance-v14
-source_contract_run=30735828006
-expected_program_count=38
-expected_severe_program_count=0
-expected_auden_programs=matched
-expected_songliang_actionable=false
+2026-08-02T15:25:00+08:00
+reason=merge-pr98-after-production-acceptance-pass
+quality_required=true
+strict_live_contract=38-of-38
+source_contract=passed
+production_acceptance=passed
+songliang_authoritative_status=ineligible
+unresolved_hard_conflicts=0

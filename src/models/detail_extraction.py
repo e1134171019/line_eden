@@ -138,6 +138,39 @@ _CCF_POLICY = DetailExtractionPolicy(
     ),
     _COMMON_REMOVE,
 )
+_YZU_POLICY = DetailExtractionPolicy(
+    "yzu-announcement-html",
+    "1",
+    ExtractionMode.PREFER_SELECTORS,
+    (
+        ".item-page",
+        ".com-content-article",
+        ".com-content-article__body",
+        "[itemprop='articleBody']",
+        ".article-content",
+        "article",
+        "main",
+        "body",
+    ),
+    _COMMON_REMOVE,
+    80,
+)
+_HT_POLICY = DetailExtractionPolicy(
+    "ht-policy-html",
+    "1",
+    ExtractionMode.PREFER_SELECTORS,
+    (
+        "#content",
+        ".main-content",
+        ".content",
+        ".article-content",
+        "article",
+        "main",
+        "body",
+    ),
+    _COMMON_REMOVE,
+    80,
+)
 
 
 # 依 host 選擇版本化正文政策；未知網站使用通用 policy。
@@ -149,4 +182,8 @@ def policy_for_url(source_url: str) -> DetailExtractionPolicy:
         return _AUDEN_POLICY
     if host.endswith("ccft.org.tw"):
         return _CCF_POLICY
+    if host == "announce.yzu.edu.tw":
+        return _YZU_POLICY
+    if host.endswith("ht.org.tw"):
+        return _HT_POLICY
     return _DEFAULT_POLICY

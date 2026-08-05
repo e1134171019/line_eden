@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import sqlite3
+
+from src.repositories.sqlite_connection import open_database
 
 REVISION_BASELINED = "baselined"
 REVISION_UNCHANGED = "unchanged"
@@ -35,9 +36,8 @@ class AnnouncementRevisionRepository:
             observed_at TEXT NOT NULL
         )
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             conn.execute(query)
-            conn.commit()
 
     def observe(
         self,
@@ -46,7 +46,7 @@ class AnnouncementRevisionRepository:
         revision_hash: str,
     ) -> RevisionObservation:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute(
                 "SELECT revision_hash FROM announcement_revisions WHERE content_hash = ?",
                 [content_hash],
@@ -60,7 +60,6 @@ class AnnouncementRevisionRepository:
                     """,
                     [content_hash, announcement_id, revision_hash, now],
                 )
-                conn.commit()
                 return RevisionObservation(REVISION_BASELINED, "", revision_hash)
 
             previous = str(row[0])
@@ -73,7 +72,6 @@ class AnnouncementRevisionRepository:
                     """,
                     [announcement_id, now, content_hash],
                 )
-                conn.commit()
                 return RevisionObservation(REVISION_UNCHANGED, previous, revision_hash)
 
             conn.execute(
@@ -103,11 +101,10 @@ class AnnouncementRevisionRepository:
                 """,
                 [content_hash],
             )
-            conn.commit()
             return RevisionObservation(REVISION_CHANGED, previous, revision_hash)
 
     def get_revision_hash(self, content_hash: str) -> str:
-        with sqlite3.connect(self.db_path) as conn:
+        with open_database(self.db_path) as conn:
             row = conn.execute(
                 "SELECT revision_hash FROM announcement_revisions WHERE content_hash = ?",
                 [content_hash],
