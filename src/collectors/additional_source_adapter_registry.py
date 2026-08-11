@@ -2,14 +2,15 @@
 
 from typing import Protocol
 
-from src.catalogs.additional_source_catalog import AdditionalScholarshipSource
+from src.catalogs.additional_source_catalog import (
+    AdditionalScholarshipSource,
+    AdditionalSourceAdapterId,
+)
 from src.collectors.additional_scholarship_source_collector import (
     AdditionalScholarshipSourceCollector,
 )
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
-
-_GENERIC_ANCHOR_LIST = "generic_anchor_list"
 
 
 class AdditionalSourceAdapterRegistryProtocol(Protocol):
@@ -37,7 +38,7 @@ class AdditionalSourceAdapterRegistry:
         collection_mode: CollectionMode,
         max_pages: int,
     ) -> BaseCollector:
-        if config.adapter_id == _GENERIC_ANCHOR_LIST:
+        if config.adapter_id is AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST:
             return AdditionalScholarshipSourceCollector(
                 config,
                 timeout_seconds,
