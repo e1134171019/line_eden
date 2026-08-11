@@ -8,6 +8,7 @@ class AdditionalSourceAdapterId(StrEnum):
     """additional source 可選的解析策略識別碼。"""
 
     GENERIC_ANCHOR_LIST = "generic_anchor_list"
+    WORDPRESS_ARCHIVE = "wordpress_archive"
 
 
 @dataclass(frozen=True)
