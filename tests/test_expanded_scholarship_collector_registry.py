@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from src.catalogs.additional_source_catalog import AdditionalScholarshipSource
+from src.catalogs.additional_source_catalog import (
+    AdditionalScholarshipSource,
+    AdditionalSourceAdapterId,
+)
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
 from src.collectors.expanded_scholarship_collector import ExpandedScholarshipCollector
@@ -62,7 +65,7 @@ def _config(source_id: str) -> AdditionalScholarshipSource:
         entry_url=f"https://example.com/{source_id}",
         allowed_hosts=("example.com",),
         review_reason="測試來源。",
-        adapter_id="generic_anchor_list",
+        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
     )
 
 
