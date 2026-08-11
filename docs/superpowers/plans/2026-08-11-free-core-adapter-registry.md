@@ -4,57 +4,69 @@
 
 **Goal:** Introduce a deterministic, no-cost source/adapter composition layer without changing existing collection output semantics.
 
-**Architecture:** Existing additional-source contracts gain an explicit `adapter_id`. A focused adapter registry resolves that ID to a collector factory. `ExpandedScholarshipCollector` delegates additional-source collector construction to the registry, while dedicated collectors and `MultiSourceCollector` remain unchanged.
+**Architecture:** Additional-source contracts require an explicit `adapter_id`. `AdditionalSourceRegistry` exposes approved source groups, `AdditionalSourceAdapterRegistry` resolves each source contract to a collector implementation, and the existing `MultiSourceCollector` remains the runner. No redundant runner wrapper is added.
 
-**Tech Stack:** Python, dataclasses, pytest, existing collector classes, GitHub Actions.
+**Tech Stack:** Python, dataclasses, Protocol, pytest, existing collector classes, GitHub Actions.
 
 ## Global Constraints
 
 - No paid runtime service or new AI dependency.
 - No new package dependency.
 - Preserve existing source IDs, URLs, eligibility behavior, Gemini behavior, LINE behavior, and `MultiSourceCollector` semantics.
-- Fail closed for unknown adapter IDs.
+- Fail closed for missing or unknown adapter IDs.
 - Follow repository `AGENTS.md` and run the full existing test suite before completion.
 
 ---
 
-### Task 1: Contract and adapter registry
+### Task 1: Explicit adapter contract and registry
 
 **Files:**
 - Modify: `src/catalogs/additional_source_catalog.py`
 - Create: `src/collectors/additional_source_adapter_registry.py`
 - Test: `tests/test_additional_source_adapter_registry.py`
+- Test: `tests/test_additional_scholarship_source_collector.py`
 
-**Interfaces:**
-- Produces: `AdditionalScholarshipSource.adapter_id: str`
-- Produces: `AdditionalSourceAdapterRegistry.build(config, timeout_seconds, user_agent, collection_mode, max_pages) -> BaseCollector`
+- [x] Write RED tests for the adapter registry and unsupported adapter behavior.
+- [x] Add `adapter_id` to `AdditionalScholarshipSource`.
+- [x] Remove the implicit adapter default so every additional source must declare its strategy.
+- [x] Explicitly map the 19 existing sources to `generic_anchor_list` to preserve current behavior.
+- [x] Implement `AdditionalSourceAdapterRegistry` and fail closed for unknown adapter IDs.
+- [x] Verify the focused behavior through CI.
 
-- [ ] Write a failing test asserting the default contract adapter ID is `generic_anchor_list`, the registry returns `AdditionalScholarshipSourceCollector`, and an unknown adapter ID raises `ValueError`.
-- [ ] Run the focused test and verify failure is caused by the missing field/registry.
-- [ ] Add `adapter_id` to the contract and implement the minimal registry with the `generic_anchor_list` factory.
-- [ ] Run the focused test and verify it passes.
-
-### Task 2: Route expanded collection through the registry
+### Task 2: Route additional collector creation through adapter registry
 
 **Files:**
 - Modify: `src/collectors/expanded_scholarship_collector.py`
 - Test: `tests/test_expanded_scholarship_collector_registry.py`
 
-**Interfaces:**
-- Consumes: `AdditionalSourceAdapterRegistry.build(...)`
-- Produces: unchanged `ExpandedScholarshipCollector.collect() -> list[Scholarship]`
+- [x] Write a RED test proving the current constructor cannot inject an adapter registry.
+- [x] Add an adapter-registry Protocol dependency with a default production implementation.
+- [x] Route `_additional_collector` through the adapter registry.
+- [x] Verify the behavior through CI.
 
-- [ ] Write a failing test that injects or substitutes the registry and proves additional official/broad source collectors are requested through it.
-- [ ] Run the focused test and verify it fails against the current direct construction path.
-- [ ] Add a registry dependency with a default production registry and replace `_additional_collector` direct construction with registry resolution.
-- [ ] Run the focused test and verify it passes.
-
-### Task 3: Regression verification
+### Task 3: Introduce source registry and remove catalog coupling
 
 **Files:**
-- Modify only if required by legitimate regressions discovered by tests.
+- Create: `src/catalogs/additional_source_registry.py`
+- Modify: `src/collectors/expanded_scholarship_collector.py`
+- Test: `tests/test_additional_source_registry.py`
+- Test: `tests/test_expanded_scholarship_collector_registry.py`
 
-- [ ] Run `pytest tests/` in CI for the feature branch.
-- [ ] Confirm no existing collection/eligibility/notification tests regress.
-- [ ] Review the diff for accidental paid-service or AI coupling.
-- [ ] Keep the change on the feature branch and open a pull request for review; do not merge to `main` automatically.
+- [x] Write a RED test for the missing source registry.
+- [x] Implement `AdditionalSourceRegistry` for approved official/additional and broad source groups.
+- [x] Write a RED integration test proving `ExpandedScholarshipCollector` still depends directly on catalog groups.
+- [x] Inject the source registry and load additional-source groups through it.
+- [x] Keep the existing `MultiSourceCollector` as the runner instead of adding a redundant wrapper.
+- [x] Verify the behavior through CI.
+
+### Task 4: Regression and governance verification
+
+**Files:**
+- Modify only documentation if required to keep the design consistent with the implemented architecture.
+
+- [ ] Run the final full quality workflow on Python 3.11 and 3.13.
+- [ ] Confirm Ruff and Pyright are clean.
+- [ ] Confirm the coverage threshold remains satisfied.
+- [ ] Check source-contract and production-acceptance workflows for regressions.
+- [ ] Review the final PR diff for accidental paid-service or AI coupling.
+- [ ] Keep the change on the feature branch and draft PR; do not merge to `main` automatically.
