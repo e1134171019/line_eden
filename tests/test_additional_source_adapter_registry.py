@@ -16,6 +16,9 @@ from src.collectors.additional_source_adapter_registry import (
     AdditionalSourceAdapterRegistry,
 )
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.wordpress_archive_scholarship_collector import (
+    WordPressArchiveScholarshipCollector,
+)
 
 
 def _config(**overrides: object) -> AdditionalScholarshipSource:
@@ -54,6 +57,23 @@ def test_registry_builds_generic_anchor_collector() -> None:
     )
 
     assert isinstance(collector, AdditionalScholarshipSourceCollector)
+    assert collector.config.source_id == "test-source"
+
+
+def test_registry_builds_wordpress_archive_collector() -> None:
+    registry = AdditionalSourceAdapterRegistry()
+    wordpress_adapter = cast(AdditionalSourceAdapterId, "wordpress_archive")
+    config = replace(_config(), adapter_id=wordpress_adapter)
+
+    collector = registry.build(
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
+    )
+
+    assert isinstance(collector, WordPressArchiveScholarshipCollector)
     assert collector.config.source_id == "test-source"
 
 
