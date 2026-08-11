@@ -53,6 +53,7 @@ def test_expanded_collector_routes_additional_source_through_registry() -> None:
         entry_url="https://example.com/scholarships",
         allowed_hosts=("example.com",),
         review_reason="測試來源。",
+        adapter_id="generic_anchor_list",
     )
 
     built = collector._additional_collector(config)
