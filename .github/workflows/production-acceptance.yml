@@ -83,7 +83,7 @@ jobs:
           echo "將從 workflow run $run_id 還原正式狀態。"
 
       - name: Download encrypted cloud state
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: scholarship-agent-state
           path: cloud-state
