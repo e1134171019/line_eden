@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
-from src.catalogs.additional_source_catalog import AdditionalScholarshipSource
+from src.catalogs.additional_source_catalog import (
+    AdditionalScholarshipSource,
+    AdditionalSourceAdapterId,
+)
 from src.collectors.additional_scholarship_source_collector import (
     AdditionalScholarshipSourceCollector,
 )
@@ -21,7 +25,7 @@ def _config(**overrides: object) -> AdditionalScholarshipSource:
         "entry_url": "https://example.com/scholarships",
         "allowed_hosts": ("example.com",),
         "review_reason": "測試來源。",
-        "adapter_id": "generic_anchor_list",
+        "adapter_id": AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
     }
     values.update(overrides)
     return AdditionalScholarshipSource(**values)  # type: ignore[arg-type]
@@ -55,7 +59,8 @@ def test_registry_builds_generic_anchor_collector() -> None:
 
 def test_registry_fails_closed_for_unknown_adapter() -> None:
     registry = AdditionalSourceAdapterRegistry()
-    config = replace(_config(), adapter_id="unknown-adapter")
+    unknown_adapter = cast(AdditionalSourceAdapterId, "unknown-adapter")
+    config = replace(_config(), adapter_id=unknown_adapter)
 
     with pytest.raises(ValueError, match="unknown-adapter"):
         registry.build(
