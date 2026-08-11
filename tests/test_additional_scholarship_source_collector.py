@@ -7,6 +7,7 @@ import pytest
 from src.catalogs.additional_source_catalog import (
     ADDITIONAL_SCHOLARSHIP_SOURCES,
     AdditionalScholarshipSource,
+    AdditionalSourceAdapterId,
 )
 from src.collectors.additional_scholarship_source_collector import (
     AdditionalScholarshipSourceCollector,
@@ -23,7 +24,7 @@ def _config(**overrides: object) -> AdditionalScholarshipSource:
         "entry_url": "https://scholar.example/list",
         "allowed_hosts": ("scholar.example",),
         "review_reason": "測試來源已完成有效性審查。",
-        "adapter_id": "generic_anchor_list",
+        "adapter_id": AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         "max_pages": 3,
     }
     values.update(overrides)
@@ -182,9 +183,8 @@ def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> Non
     assert len(entry_urls) == 19
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
-    assert all(item.adapter_id.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert {item.adapter_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES} == {
-        "generic_anchor_list"
+        AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST
     }
     assert {
         "pan-wen-yuan-scholarship",
