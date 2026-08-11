@@ -21,13 +21,21 @@ def _config(**overrides: object) -> AdditionalScholarshipSource:
         "entry_url": "https://example.com/scholarships",
         "allowed_hosts": ("example.com",),
         "review_reason": "測試來源。",
+        "adapter_id": "generic_anchor_list",
     }
     values.update(overrides)
     return AdditionalScholarshipSource(**values)  # type: ignore[arg-type]
 
 
-def test_additional_source_defaults_to_generic_anchor_adapter() -> None:
-    assert _config().adapter_id == "generic_anchor_list"
+def test_additional_source_requires_explicit_adapter_id() -> None:
+    with pytest.raises(TypeError, match="adapter_id"):
+        AdditionalScholarshipSource(  # type: ignore[call-arg]
+            source_id="test-source",
+            display_name="測試來源",
+            entry_url="https://example.com/scholarships",
+            allowed_hosts=("example.com",),
+            review_reason="測試來源。",
+        )
 
 
 def test_registry_builds_generic_anchor_collector() -> None:
