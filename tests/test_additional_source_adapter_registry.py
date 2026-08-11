@@ -16,6 +16,9 @@ from src.collectors.additional_source_adapter_registry import (
     AdditionalSourceAdapterRegistry,
 )
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.rulingdigital_list_scholarship_collector import (
+    RulingDigitalListScholarshipCollector,
+)
 from src.collectors.wordpress_archive_scholarship_collector import (
     WordPressArchiveScholarshipCollector,
 )
@@ -76,6 +79,25 @@ def test_registry_builds_wordpress_archive_collector() -> None:
     )
 
     assert isinstance(collector, WordPressArchiveScholarshipCollector)
+    assert collector.config.source_id == "test-source"
+
+
+def test_registry_builds_rulingdigital_list_collector() -> None:
+    registry = AdditionalSourceAdapterRegistry()
+    config = replace(
+        _config(),
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
+    )
+
+    collector = registry.build(
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
+    )
+
+    assert isinstance(collector, RulingDigitalListScholarshipCollector)
     assert collector.config.source_id == "test-source"
 
 
