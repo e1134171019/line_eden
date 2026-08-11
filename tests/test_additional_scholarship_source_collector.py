@@ -177,23 +177,15 @@ def test_additional_source_collect_raises_when_fetch_failed(
 def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
     entry_urls = {item.entry_url for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
-    sources_by_id = {item.source_id: item for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
-    wordpress_ids = {"tp2e-awards", "hku-external-scholarships"}
 
     assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 19
     assert len(source_ids) == 19
     assert len(entry_urls) == 19
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
-    assert {
-        source_id
-        for source_id, item in sources_by_id.items()
-        if item.adapter_id is AdditionalSourceAdapterId.WORDPRESS_ARCHIVE
-    } == wordpress_ids
     assert all(
         item.adapter_id is AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST
-        for source_id, item in sources_by_id.items()
-        if source_id not in wordpress_ids
+        for item in ADDITIONAL_SCHOLARSHIP_SOURCES
     )
     assert {
         "pan-wen-yuan-scholarship",
