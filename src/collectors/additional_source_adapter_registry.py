@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from typing import Protocol
+
 from src.catalogs.additional_source_catalog import AdditionalScholarshipSource
 from src.collectors.additional_scholarship_source_collector import (
     AdditionalScholarshipSourceCollector,
@@ -8,6 +10,19 @@ from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
 
 _GENERIC_ANCHOR_LIST = "generic_anchor_list"
+
+
+class AdditionalSourceAdapterRegistryProtocol(Protocol):
+    """additional source collector 建立介面。"""
+
+    def build(
+        self,
+        config: AdditionalScholarshipSource,
+        timeout_seconds: float,
+        user_agent: str,
+        collection_mode: CollectionMode,
+        max_pages: int,
+    ) -> BaseCollector: ...
 
 
 class AdditionalSourceAdapterRegistry:
