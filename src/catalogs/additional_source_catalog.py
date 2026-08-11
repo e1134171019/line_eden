@@ -9,6 +9,7 @@ class AdditionalSourceAdapterId(StrEnum):
 
     GENERIC_ANCHOR_LIST = "generic_anchor_list"
     WORDPRESS_ARCHIVE = "wordpress_archive"
+    RULINGDIGITAL_LIST = "rulingdigital_list"
 
 
 @dataclass(frozen=True)
