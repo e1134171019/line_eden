@@ -7,8 +7,9 @@ from src.catalogs.additional_source_catalog import (
     OFFICIAL_ADDITIONAL_SOURCES,
     AdditionalScholarshipSource,
 )
-from src.collectors.additional_scholarship_source_collector import (
-    AdditionalScholarshipSourceCollector,
+from src.collectors.additional_source_adapter_registry import (
+    AdditionalSourceAdapterRegistry,
+    AdditionalSourceAdapterRegistryProtocol,
 )
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
@@ -46,6 +47,9 @@ class ExpandedScholarshipCollector(LhuCollector):
         max_pages: int = 20,
         fetch_workers: int = 1,
         *,
+        additional_source_adapter_registry: (
+            AdditionalSourceAdapterRegistryProtocol | None
+        ) = None,
         source_discovery: ProgramSourceDiscoveryService | None = None,
         source_discovery_min_score: int = 100,
         source_discovery_max_candidates: int = 5,
@@ -58,6 +62,9 @@ class ExpandedScholarshipCollector(LhuCollector):
             max_pages,
         )
         self.fetch_workers = fetch_workers
+        self.additional_source_adapter_registry = (
+            additional_source_adapter_registry or AdditionalSourceAdapterRegistry()
+        )
         self.source_discovery = source_discovery
         self.source_discovery_min_score = source_discovery_min_score
         self.source_discovery_max_candidates = source_discovery_max_candidates
@@ -126,8 +133,8 @@ class ExpandedScholarshipCollector(LhuCollector):
     def _additional_collector(
         self,
         config: AdditionalScholarshipSource,
-    ) -> AdditionalScholarshipSourceCollector:
-        return AdditionalScholarshipSourceCollector(
+    ) -> BaseCollector:
+        return self.additional_source_adapter_registry.build(
             config,
             self.timeout_seconds,
             self.user_agent,
