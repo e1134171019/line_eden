@@ -34,7 +34,7 @@ OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://tp2e.org/category/bulletin/news/events-news/",
         allowed_hosts=("tp2e.org",),
         review_reason="電力與能源專業官方來源，與使用者研究方向高度相關。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.WORDPRESS_ARCHIVE,
         max_pages=5,
     ),
     AdditionalScholarshipSource(
@@ -115,7 +115,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         ),
         allowed_hosts=("lf.hk.edu.tw",),
         review_reason="歷史與近期公告量充足，可補足基金會及地方型方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.WORDPRESS_ARCHIVE,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
