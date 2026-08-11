@@ -62,8 +62,10 @@ def test_registry_builds_generic_anchor_collector() -> None:
 
 def test_registry_builds_wordpress_archive_collector() -> None:
     registry = AdditionalSourceAdapterRegistry()
-    wordpress_adapter = cast(AdditionalSourceAdapterId, "wordpress_archive")
-    config = replace(_config(), adapter_id=wordpress_adapter)
+    config = replace(
+        _config(),
+        adapter_id=AdditionalSourceAdapterId.WORDPRESS_ARCHIVE,
+    )
 
     collector = registry.build(
         config,
