@@ -70,7 +70,7 @@ OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
             "新北市政府年度官方方案，與使用者設籍地直接相關；"
             "即時來源契約產出1筆、接受1筆、健康分數100。"
         ),
-        adapter_id=AdditionalSourceAdapterId.GENERERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         max_pages=1,
         entry_title="新北市就讀高級中等以上學校學生獎學金",
     ),
