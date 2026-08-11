@@ -11,6 +11,9 @@ from src.collectors.additional_scholarship_source_collector import (
 )
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.wordpress_archive_scholarship_collector import (
+    WordPressArchiveScholarshipCollector,
+)
 
 
 class AdditionalSourceAdapterRegistryProtocol(Protocol):
@@ -40,6 +43,14 @@ class AdditionalSourceAdapterRegistry:
     ) -> BaseCollector:
         if config.adapter_id is AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST:
             return AdditionalScholarshipSourceCollector(
+                config,
+                timeout_seconds,
+                user_agent,
+                collection_mode,
+                max_pages,
+            )
+        if config.adapter_id is AdditionalSourceAdapterId.WORDPRESS_ARCHIVE:
+            return WordPressArchiveScholarshipCollector(
                 config,
                 timeout_seconds,
                 user_agent,
