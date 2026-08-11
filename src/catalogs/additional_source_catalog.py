@@ -12,6 +12,7 @@ class AdditionalScholarshipSource:
     entry_url: str
     allowed_hosts: tuple[str, ...]
     review_reason: str
+    adapter_id: str = "generic_anchor_list"
     max_pages: int = 10
     entry_title: str = ""
 
