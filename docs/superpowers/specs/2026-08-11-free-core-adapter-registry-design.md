@@ -2,40 +2,71 @@
 
 ## Goal
 
-Refactor the scholarship collection entry path so adding sources does not require the orchestration layer to know every concrete collector, while keeping the production core deterministic and free of paid AI dependencies.
+Refactor the scholarship collection entry path so adding an additional source does not require the orchestration layer to know its concrete collector implementation, while keeping the production core deterministic and free of paid AI dependencies.
 
 ## Scope
 
-This change is intentionally limited to collection composition. It does not redesign eligibility rules, Gemini document extraction, LINE notification delivery, persistence, or source-discovery AI.
+This is a staged collection-composition refactor. It does not redesign eligibility rules, Gemini document extraction, LINE notification delivery, persistence, cross-source entity resolution, or AI-assisted source discovery.
+
+Dedicated legacy collectors such as LHU, HelpDreams and TUN remain in the existing composition root for this phase. The new registry path applies to the `AdditionalScholarshipSource` catalog first so the architecture can be introduced without changing production collection semantics.
 
 ## Architecture
 
-The production path becomes:
+The additional-source production path is:
 
-`SourceRegistry -> AdapterRegistry -> CollectorRunner -> existing MultiSourceCollector`
+`AdditionalSourceRegistry -> AdditionalSourceAdapterRegistry -> existing MultiSourceCollector`
 
-`SourceRegistry` owns enabled source contracts. `AdapterRegistry` maps an `adapter_id` to a factory that can build the correct collector for a source contract. The orchestration layer asks the registries for collectors instead of directly constructing every additional-source collector.
+- `AdditionalSourceRegistry` exposes the approved official/additional and broad-portal source contract groups.
+- `AdditionalSourceAdapterRegistry` maps each contract's explicit `adapter_id` to a collector implementation.
+- `ExpandedScholarshipCollector` composes those resolved collectors with the existing dedicated collectors.
+- `MultiSourceCollector` remains the runner responsible for source isolation, diagnostics and current cross-source deduplication. A second `CollectorRunner` wrapper is intentionally not introduced.
 
-Existing dedicated collectors remain valid. `AdditionalScholarshipSourceCollector` is retained as one adapter implementation for sources that genuinely share that parsing structure; it is no longer treated as the universal mechanism for every future source.
+## Adapter policy
 
-## Data model
+`AdditionalScholarshipSourceCollector` is retained as the implementation behind `generic_anchor_list`. A generic adapter is not a universal fallback.
 
-Extend the existing additional-source contract with `adapter_id`. The default for currently supported additional sources is `generic_anchor_list`, preserving behavior while making the parsing strategy explicit.
+Every `AdditionalScholarshipSource` must explicitly declare `adapter_id`; there is no default. An unknown adapter ID fails closed. This prevents future sources from silently inheriting a parser whose DOM assumptions were never validated.
+
+The 19 existing additional sources explicitly declare `generic_anchor_list` only to preserve current behavior in this first refactor. Moving heterogeneous sites to structure-family or dedicated adapters is a separate follow-up task and requires site-level verification.
+
+Candidate future adapter families include:
+
+- `generic_anchor_list`
+- `simple_table`
+- `wordpress_rss`
+- `json_api`
+- `javascript_api`
+- dedicated site adapters when a structure cannot safely share a parser
+
+These are design directions, not automatically registered production adapters.
+
+## Cost boundary
+
+The production collection path remains pure program logic:
+
+- no paid adapter service;
+- no new AI dependency;
+- no new package dependency in this refactor;
+- no requirement for an LLM to select selectors or parse routine daily listings.
+
+Existing Gemini integration remains optional and limited to the repository's difficult-document review path.
 
 ## Compatibility
 
-- No paid service is introduced.
-- No new runtime dependency is introduced.
 - Existing source IDs and URLs remain unchanged.
-- Existing `MultiSourceCollector` behavior remains unchanged in this first refactor.
-- Existing Gemini integration remains optional and outside the collection composition path.
+- Existing dedicated collectors remain unchanged.
+- Existing `MultiSourceCollector` behavior remains unchanged.
+- Eligibility, LINE notification and Gemini behavior are outside this refactor.
+- Unknown adapter strategies fail closed rather than guessing.
 
 ## Verification
 
 Tests must prove that:
 
-1. a source contract exposes an explicit adapter ID;
-2. the adapter registry builds the expected collector from that ID;
+1. an additional-source contract cannot be created without an explicit `adapter_id`;
+2. the adapter registry builds the expected collector for a supported adapter ID;
 3. unknown adapter IDs fail closed;
-4. the expanded collector obtains additional-source collectors through the registry path rather than directly constructing them;
-5. the existing test suite remains green.
+4. the source registry exposes the approved source groups;
+5. `ExpandedScholarshipCollector` obtains additional-source groups from the source registry;
+6. `ExpandedScholarshipCollector` resolves each additional source through the adapter registry;
+7. the full existing test suite remains green on supported Python versions.
