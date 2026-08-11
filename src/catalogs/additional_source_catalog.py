@@ -34,7 +34,7 @@ OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://tp2e.org/category/bulletin/news/events-news/",
         allowed_hosts=("tp2e.org",),
         review_reason="電力與能源專業官方來源，與使用者研究方向高度相關。",
-        adapter_id=AdditionalSourceAdapterId.WORDPRESS_ARCHIVE,
+        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         max_pages=5,
     ),
     AdditionalScholarshipSource(
@@ -70,7 +70,7 @@ OFFICIAL_ADDITIONAL_SOURCES: tuple[AdditionalScholarshipSource, ...] = (
             "新北市政府年度官方方案，與使用者設籍地直接相關；"
             "即時來源契約產出1筆、接受1筆、健康分數100。"
         ),
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.GENERERIC_ANCHOR_LIST,
         max_pages=1,
         entry_title="新北市就讀高級中等以上學校學生獎學金",
     ),
@@ -115,7 +115,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         ),
         allowed_hosts=("lf.hk.edu.tw",),
         review_reason="歷史與近期公告量充足，可補足基金會及地方型方案。",
-        adapter_id=AdditionalSourceAdapterId.WORDPRESS_ARCHIVE,
+        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
