@@ -23,6 +23,7 @@ def _config(**overrides: object) -> AdditionalScholarshipSource:
         "entry_url": "https://scholar.example/list",
         "allowed_hosts": ("scholar.example",),
         "review_reason": "測試來源已完成有效性審查。",
+        "adapter_id": "generic_anchor_list",
         "max_pages": 3,
     }
     values.update(overrides)
@@ -181,6 +182,10 @@ def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> Non
     assert len(entry_urls) == 19
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
+    assert all(item.adapter_id.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
+    assert {item.adapter_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES} == {
+        "generic_anchor_list"
+    }
     assert {
         "pan-wen-yuan-scholarship",
         "utaipei-external-scholarships",
