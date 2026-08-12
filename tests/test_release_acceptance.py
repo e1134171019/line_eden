@@ -176,16 +176,17 @@ def test_release_acceptance_blocks_apply_candidate() -> None:
     assert "松樑仍被列為可準備申請" in result.failures
 
 
-def test_release_acceptance_requires_auden_eligible_candidate() -> None:
+def test_release_acceptance_blocks_unresolved_auden_review() -> None:
     result = evaluate_release_acceptance(
         _source_report(),
         _audit_result(
             _record(
                 AUDEN,
-                "ineligible",
+                "review",
                 notice_kind="application",
-                action_status="reject",
-                reason="目前年級不在公告允許範圍。",
+                action_status="manual_review",
+                review_kind="profile_missing",
+                reason="公告需要已確認的個人資料。",
             ),
             _record(SONGLIANG, "ineligible"),
             include_auden=False,
@@ -193,8 +194,7 @@ def test_release_acceptance_requires_auden_eligible_candidate() -> None:
     )
 
     assert result.passed is False
-    assert any("耀登優秀人才" in failure for failure in result.failures)
-    assert any("年級" in failure for failure in result.failures)
+    assert any("耀登優秀人才尚未完成硬性資格判定" in failure for failure in result.failures)
 
 
 def test_release_acceptance_blocks_actionable_source_incomplete_review() -> None:

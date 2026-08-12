@@ -23,7 +23,8 @@ _ACADEMIC_YEAR_MARKERS = (
     "最近一學年",
     "學年度平均",
     "學年平均",
-    "114學年度",
+    "學年上下學期",
+    "學年度上下學期",
 )
 _CUMULATIVE_MARKERS = ("歷年平均", "歷年學業", "累積平均", "總平均")
 _SCORE_LABELS = ("學業平均", "平均成績", "學業成績")
@@ -58,7 +59,7 @@ _RECOMMENDATION_MARKERS = (
 
 # 檢查新個人事實欄位造成的硬性不符合。
 def find_extended_exclusions(text: str, profile: StudentProfile) -> list[str]:
-    reasons: list[str] = []
+    reasons = _bachelor_academic_year_average_exclusions(text, profile)
     for sentence in _requirement_sentences(text):
         reasons.extend(_nationality_exclusions(sentence, profile))
         reasons.extend(_enrollment_exclusions(sentence, profile))
@@ -74,7 +75,7 @@ def find_extended_exclusions(text: str, profile: StudentProfile) -> list[str]:
 
 # 缺少必要個資時維持 review，不把未知當成不符合。
 def find_extended_unknowns(text: str, profile: StudentProfile) -> list[str]:
-    reasons: list[str] = []
+    reasons = _bachelor_academic_year_average_unknowns(text, profile)
     for sentence in _requirement_sentences(text):
         reasons.extend(_nationality_unknowns(sentence, profile))
         reasons.extend(_enrollment_unknowns(sentence, profile))
@@ -90,7 +91,7 @@ def find_extended_unknowns(text: str, profile: StudentProfile) -> list[str]:
 
 # 已確認符合的新條件可作為輔助證據，但不能單獨證明適用對象。
 def find_extended_matches(text: str, profile: StudentProfile) -> list[str]:
-    reasons: list[str] = []
+    reasons = _bachelor_academic_year_average_matches(text, profile)
     for sentence in _requirement_sentences(text):
         if _requires_taiwan_nationality(sentence) and _is_taiwan_national(profile):
             reasons.append("中華民國國籍符合公告要求。")
@@ -262,11 +263,17 @@ def _period_average_requirement(sentence: str) -> tuple[str, float] | None:
     threshold = _extract_score(sentence, _SCORE_LABELS)
     if threshold is None:
         return None
-    if any(marker in sentence for marker in _ACADEMIC_YEAR_MARKERS):
+    if _has_academic_year_context(sentence):
         return "academic_year", threshold
     if any(marker in sentence for marker in _CUMULATIVE_MARKERS):
         return "cumulative", threshold
     return None
+
+
+def _has_academic_year_context(text: str) -> bool:
+    return any(marker in text for marker in _ACADEMIC_YEAR_MARKERS) or bool(
+        re.search(r"\d{3}\s*學年(?:度)?", text)
+    )
 
 
 def _extract_score(sentence: str, labels: tuple[str, ...]) -> float | None:
@@ -324,6 +331,54 @@ def _academic_period_matches(sentence: str, profile: StudentProfile) -> list[str
     actual = _period_average(profile, period)
     if actual > 0 and actual >= threshold:
         return [f"{_period_label(period)}符合 {threshold:g} 分門檻。"]
+    return []
+
+
+# 跨句型的「學年成績計算方式 + 學士班門檻」仍屬可確定的硬性條件。
+def _bachelor_academic_year_average_requirement(
+    text: str,
+    profile: StudentProfile,
+) -> float | None:
+    if "學士" not in profile.degree_level or not _has_academic_year_context(text):
+        return None
+    match = re.search(
+        r"學士班.{0,48}?(?:學期學科總平均分數|學期學科總平均|學業平均|平均成績|學業成績)"
+        r".{0,12}?(\d{1,3}(?:\.\d+)?)\s*分?\s*(?:以上|或以上)",
+        text,
+        flags=re.DOTALL,
+    )
+    return float(match.group(1)) if match else None
+
+
+def _bachelor_academic_year_average_exclusions(
+    text: str,
+    profile: StudentProfile,
+) -> list[str]:
+    threshold = _bachelor_academic_year_average_requirement(text, profile)
+    actual = profile.academic_year_average
+    if threshold is None or actual <= 0 or actual >= threshold:
+        return []
+    return [f"前一學年平均 {actual:g} 未達 {threshold:g} 分門檻。"]
+
+
+def _bachelor_academic_year_average_unknowns(
+    text: str,
+    profile: StudentProfile,
+) -> list[str]:
+    threshold = _bachelor_academic_year_average_requirement(text, profile)
+    if threshold is not None and profile.academic_year_average <= 0:
+        return ["公告有前一學年平均門檻，但 profile.json 未填該成績。"]
+    return []
+
+
+def _bachelor_academic_year_average_matches(
+    text: str,
+    profile: StudentProfile,
+) -> list[str]:
+    threshold = _bachelor_academic_year_average_requirement(text, profile)
+    actual = profile.academic_year_average
+    if threshold is not None and actual >= threshold:
+        return [f"前一學年平均符合 {threshold:g} 分門檻。"]
     return []
 
 

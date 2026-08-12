@@ -110,29 +110,33 @@ def _auden_failures(records: list[AuditRecord]) -> tuple[str, ...]:
     if not auden:
         return ("耀登優秀人才沒有可驗證的當期完整申請公告",)
 
-    eligible = [
-        record
-        for record in auden
-        if _hard_status(record) == ELIGIBLE
-        and record.item.action_status == APPLY_CANDIDATE
+    resolved = [
+        record for record in auden if _hard_status(record) in {ELIGIBLE, INELIGIBLE}
     ]
-    if eligible:
-        return tuple()
+    if not resolved:
+        reasons = sorted(
+            {
+                record.item.hard_eligibility_reason or record.item.eligibility_reason
+                for record in auden
+                if record.item.hard_eligibility_reason or record.item.eligibility_reason
+            }
+        )
+        detail = "｜".join(reasons) if reasons else "無原因"
+        return (f"耀登優秀人才尚未完成硬性資格判定（{detail}）",)
 
-    statuses = sorted({_hard_status(record) for record in auden})
-    reasons = sorted(
-        {
-            record.item.hard_eligibility_reason or record.item.eligibility_reason
-            for record in auden
-            if record.item.hard_eligibility_reason or record.item.eligibility_reason
-        }
-    )
-    detail = "｜".join(reasons) if reasons else "無原因"
-    return (
-        "耀登優秀人才必須產生 eligible + apply_candidate，實際為 "
-        + ", ".join(statuses)
-        + f"（{detail}）",
-    )
+    statuses = {_hard_status(record) for record in resolved}
+    if statuses == {ELIGIBLE, INELIGIBLE}:
+        return ("耀登優秀人才當期完整公告出現 eligible / ineligible 判定衝突",)
+
+    failures: list[str] = []
+    for record in resolved:
+        status = _hard_status(record)
+        action = record.item.action_status
+        if status == ELIGIBLE and action != APPLY_CANDIDATE:
+            failures.append("耀登優秀人才判定 eligible，但未列為 apply_candidate")
+        if status == INELIGIBLE and action == APPLY_CANDIDATE:
+            failures.append("耀登優秀人才判定 ineligible，卻仍列為 apply_candidate")
+    return tuple(dict.fromkeys(failures))
 
 
 def _songliang_failures(records: list[AuditRecord]) -> tuple[str, ...]:
