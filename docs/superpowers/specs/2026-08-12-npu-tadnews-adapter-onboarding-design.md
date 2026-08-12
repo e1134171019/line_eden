@@ -29,7 +29,7 @@ Verified public structure:
 - Detail URLs use the same host and `/sub/latestevent/Details.aspx?Parser=...` path.
 - The list exposes explicit multi-page navigation and detail pages carry `公布日期`.
 
-The adapter must accept only same-host `/sub/latestevent/Details.aspx` detail URLs whose query contains `Parser`.
+The adapter must accept only same-host `/sub/latestevent/Details.aspx` detail URLs whose query contains a non-empty `Parser` value. Path and query-key comparisons are case-insensitive; query values are not rewritten.
 
 ### NCHU Tadnews
 
@@ -40,7 +40,7 @@ Verified public structure:
 - Detail: same path with `ncsn=4&nsn=<id>`.
 - Each list item includes publication date, category marker `校外獎助學金`, application route marker, and title.
 
-The adapter must accept only same-host Tadnews detail URLs with a numeric `nsn` and preserve the configured `ncsn` category. Pagination support must recognize `g2p` as Tadnews's page query key.
+The adapter must accept only same-host Tadnews `index.php` detail URLs under a `/modules/tadnews/` path with a numeric `nsn` and preserve the configured `ncsn` category. Pagination support must recognize `g2p` as Tadnews's page query key.
 
 ## Design
 
@@ -103,7 +103,7 @@ Safer in the short term but unnecessary here. Both sites expose stable, named UR
 - No SSL verification changes.
 - No paid service, AI parser, Gemini, LINE, eligibility, persistence, or entity-resolution changes.
 - If live source evidence drops below baseline collected count, rollback only the failing mapping.
-- If parser hygiene improves but collected count drops without evidence that removed rows were false positives, treat it as regression and rollback.
+- Parser hygiene is accepted only when `rejected_rows` drops by at least 50% from the source baseline; a lower rejection count never compensates for a collected-count regression.
 
 ## TDD and Acceptance
 
@@ -118,9 +118,10 @@ Required RED/GREEN sequence:
 
 Live acceptance:
 
-- NPU collected count must be `>= 98` and candidate hygiene should improve materially from `1725/98/1627`.
-- NCHU collected count must be `>= 30`; pagination should discover more than the previous 2 pages when live site still exposes them; candidate hygiene should improve materially from `482/30/452`.
-- Roll back each mapping independently if its acceptance criteria fail.
+- NPU: collected count `>= 98`; rejected rows `<= 813` (at least 50% lower than baseline 1627).
+- NCHU: collected count `>= 30`; rejected rows `<= 226` (at least 50% lower than baseline 452). If the live Tadnews page still exposes more than 2 pages at verification time, `pages_detected` must be `> 2`.
+- For both sources, zero parser/fetch errors attributable to the new adapter are required.
+- Roll back each mapping independently if any source-specific criterion fails.
 
 ## Explicit Holds
 
