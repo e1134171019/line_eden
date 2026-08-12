@@ -6,14 +6,14 @@ from src.catalogs.additional_source_catalog import (
 )
 
 
-def test_nfu_source_uses_osa_canonical_scholarship_listing() -> None:
+def test_nfu_source_keeps_reachable_university_listing_after_osa_tls_failure() -> None:
     source = next(
         item
         for item in ADDITIONAL_SCHOLARSHIP_SOURCES
         if item.source_id == "nfu-scholarships"
     )
 
-    assert source.entry_url == "https://osa.nfu.edu.tw/zh_tw/4/sclink/scholarship"
-    assert "osa.nfu.edu.tw" in source.allowed_hosts
+    assert source.entry_url == "https://www.nfu.edu.tw/zh_tw/ann/art"
+    assert source.allowed_hosts == ("nfu.edu.tw", "www.nfu.edu.tw")
     assert source.adapter_id is AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST
     assert source.max_pages == 10
