@@ -5,7 +5,7 @@ on:
     branches:
       - "fix/ops-line-delivery-20260812"
     paths:
-      - "ops/profile-overlay.b64"
+      - "ops/profile-overlay.hex"
 
 permissions:
   contents: read
@@ -94,14 +94,27 @@ jobs:
         run: |
           set -euo pipefail
           test -s ops-key/private.pem.gpg
-          test -s ops/profile-overlay.b64
+          test -s ops/profile-overlay.hex
           printf '%s' "$STATE_PASSPHRASE" | \
             gpg --batch --yes --pinentry-mode loopback \
               --passphrase-fd 0 \
               --output ops-key/private.pem \
               --decrypt ops-key/private.pem.gpg
-          tr -d '[:space:]' < ops/profile-overlay.b64 | base64 -d > ops/profile-overlay.bin
-          test "$(wc -c < ops/profile-overlay.bin)" -eq 384
+          python - <<'PY'
+          from pathlib import Path
+
+          text = "".join(Path("ops/profile-overlay.hex").read_text(encoding="ascii").split())
+          if len(text) != 768:
+              raise SystemExit("Profile overlay ciphertext 長度不符 RSA-3072 契約。")
+          try:
+              ciphertext = bytes.fromhex(text)
+          except ValueError as exc:
+              raise SystemExit("Profile overlay ciphertext 不是有效 hex。") from exc
+          if len(ciphertext) != 384:
+              raise SystemExit("Profile overlay ciphertext bytes 長度不符。")
+          Path("ops/profile-overlay.bin").write_bytes(ciphertext)
+          print("Profile overlay ciphertext transport 驗證完成。")
+          PY
           openssl pkeyutl -decrypt \
             -inkey ops-key/private.pem \
             -pkeyopt rsa_padding_mode:oaep \
