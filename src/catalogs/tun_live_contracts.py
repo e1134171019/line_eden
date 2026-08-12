@@ -392,14 +392,21 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw",
-                SourceUrlType.RELAY_DETAIL,
-                "115年度正式大學轉載，含本期資格、期限與附件。",
+                "https://assistance.ncnu.edu.tw/p/403-1079-249-1.php?Lang=zh-tw",
+                SourceUrlType.RELAY_LIST,
+                "暨南校外獎助學金列表可跨年度重新發現；115年標題明確包含文向獎學金。",
             ),
             LiveSourceCandidate(
                 "https://assistance.ncnu.edu.tw/p/406-1079-36114%2Cr249.php?Lang=zh-tw",
                 SourceUrlType.RELAY_DETAIL,
-                "Production runner 已驗證可命中的正式大學轉載備援。",
+                "115年度正式大學轉載，含完整資格、期限與附件。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "115年度正式大學轉載備援；標題列出三個子方案。",
+                valid_through_year=2026,
             ),
         ),
         force_replace=True,
