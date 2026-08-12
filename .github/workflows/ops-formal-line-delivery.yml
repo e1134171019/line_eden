@@ -1,0 +1,189 @@
+name: Ops formal LINE delivery
+
+on:
+  push:
+    branches:
+      - "fix/ops-line-delivery-20260812"
+    paths:
+      - "ops/profile-overlay.b64"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ops-formal-line-delivery
+  cancel-in-progress: false
+
+jobs:
+  formal-line-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      STUDENT_PROFILE_B64: ${{ secrets.STUDENT_PROFILE_B64 }}
+      STATE_PASSPHRASE: ${{ secrets.STATE_PASSPHRASE }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+      LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+      GH_TOKEN: ${{ github.token }}
+      TZ: Asia/Taipei
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install runtime dependencies
+        run: python -m pip install --quiet -r requirements.txt
+
+      - name: Validate delivery secrets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+
+          required = (
+              "GEMINI_API_KEY",
+              "STUDENT_PROFILE_B64",
+              "STATE_PASSPHRASE",
+              "LINE_CHANNEL_ACCESS_TOKEN",
+              "LINE_USER_ID",
+          )
+          missing = [name for name in required if not os.getenv(name, "").strip()]
+          if missing:
+              raise SystemExit("缺少 GitHub Actions Secrets：" + ", ".join(missing))
+          print("正式 LINE delivery Secrets 檢查完成。")
+          PY
+
+      - name: Resolve profile overlay key artifact
+        id: key-artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/$GITHUB_REPOSITORY/actions/artifacts?name=profile-overlay-key&per_page=100" \
+              --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_branch == "fix/ops-line-delivery-20260812")] | sort_by(.created_at) | last | .workflow_run.id'
+          )"
+          if [[ -z "$run_id" || "$run_id" == "null" ]]; then
+            echo "找不到 profile-overlay-key artifact。" >&2
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "已定位一次性 profile overlay key artifact。"
+
+      - name: Download encrypted key handoff
+        uses: actions/download-artifact@v5
+        with:
+          name: profile-overlay-key
+          path: ops-key
+          repository: e1134171019/line_eden
+          run-id: ${{ steps.key-artifact.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Decrypt and validate profile overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s ops-key/private.pem.gpg
+          test -s ops/profile-overlay.b64
+          printf '%s' "$STATE_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 \
+              --output ops-key/private.pem \
+              --decrypt ops-key/private.pem.gpg
+          base64 -d ops/profile-overlay.b64 > ops/profile-overlay.bin
+          openssl pkeyutl -decrypt \
+            -inkey ops-key/private.pem \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -in ops/profile-overlay.bin \
+            -out ops/profile-overlay.json
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+
+          allowed = {"nationality", "enrollment_status", "academic_year_average"}
+          overlay = json.loads(Path("ops/profile-overlay.json").read_text(encoding="utf-8"))
+          if not isinstance(overlay, dict) or set(overlay) != allowed:
+              raise SystemExit("Profile overlay 欄位集合不符合批准契約。")
+          if not isinstance(overlay["nationality"], str) or not overlay["nationality"].strip():
+              raise SystemExit("Profile overlay nationality 無效。")
+          if not isinstance(overlay["enrollment_status"], str) or not overlay["enrollment_status"].strip():
+              raise SystemExit("Profile overlay enrollment_status 無效。")
+          academic_year_average = overlay["academic_year_average"]
+          if isinstance(academic_year_average, bool) or not isinstance(academic_year_average, (int, float)):
+              raise SystemExit("Profile overlay academic_year_average 型別無效。")
+          if not 0 < float(academic_year_average) <= 100:
+              raise SystemExit("Profile overlay academic_year_average 範圍無效。")
+
+          raw = base64.b64decode(os.environ["STUDENT_PROFILE_B64"], validate=True)
+          profile = json.loads(raw.decode("utf-8"))
+          if not isinstance(profile, dict):
+              raise SystemExit("STUDENT_PROFILE_B64 必須解碼為 JSON object。")
+          profile.update(overlay)
+          Path("profile.json").write_text(
+              json.dumps(profile, ensure_ascii=False, indent=2),
+              encoding="utf-8",
+          )
+          print("Private profile runtime overlay 已安全套用 3 個批准欄位。")
+          PY
+
+      - name: Run acceptance-gated formal LINE delivery
+        id: delivery
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          python -u -m src.automation.accepted_line_delivery \
+            2>&1 | tee ops-formal-line-delivery.log
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+      - name: Upload formal delivery evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: formal-line-delivery-${{ github.run_id }}
+          path: |
+            ops-formal-line-delivery.log
+            artifacts/structured-shadow-audit.csv
+            artifacts/structured-shadow-audit.json
+            artifacts/source-health.json
+            artifacts/pipeline-rejections.json
+            artifacts/production-acceptance.json
+            artifacts/production-acceptance.csv
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 6
+
+      - name: Cleanup private runtime material
+        if: always()
+        shell: bash
+        run: |
+          rm -f profile.json
+          rm -f ops/profile-overlay.json ops/profile-overlay.bin
+          rm -f ops-key/private.pem
+          rm -rf ops-key
+
+      - name: Enforce formal delivery result
+        shell: bash
+        run: |
+          exit_code="${{ steps.delivery.outputs.exit_code }}"
+          if [[ -z "$exit_code" ]]; then
+            echo "Formal LINE delivery 未產生 exit code。" >&2
+            exit 1
+          fi
+          exit "$exit_code"
