@@ -16,6 +16,9 @@ from src.collectors.additional_source_adapter_registry import (
     AdditionalSourceAdapterRegistry,
 )
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.rulingdigital_channel_scholarship_collector import (
+    RulingDigitalChannelScholarshipCollector,
+)
 from src.collectors.rulingdigital_list_scholarship_collector import (
     RulingDigitalListScholarshipCollector,
 )
@@ -98,6 +101,25 @@ def test_registry_builds_rulingdigital_list_collector() -> None:
     )
 
     assert isinstance(collector, RulingDigitalListScholarshipCollector)
+    assert collector.config.source_id == "test-source"
+
+
+def test_registry_builds_rulingdigital_channel_collector() -> None:
+    registry = AdditionalSourceAdapterRegistry()
+    config = replace(
+        _config(),
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST,
+    )
+
+    collector = registry.build(
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
+    )
+
+    assert isinstance(collector, RulingDigitalChannelScholarshipCollector)
     assert collector.config.source_id == "test-source"
 
 
