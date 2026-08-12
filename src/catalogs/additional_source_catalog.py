@@ -11,6 +11,8 @@ class AdditionalSourceAdapterId(StrEnum):
     WORDPRESS_ARCHIVE = "wordpress_archive"
     RULINGDIGITAL_LIST = "rulingdigital_list"
     RULINGDIGITAL_CHANNEL_LIST = "rulingdigital_channel_list"
+    NPU_LATESTEVENT_LIST = "npu_latestevent_list"
+    TADNEWS_CATEGORY_LIST = "tadnews_category_list"
 
 
 @dataclass(frozen=True)
