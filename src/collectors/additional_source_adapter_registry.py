@@ -11,6 +11,9 @@ from src.collectors.additional_scholarship_source_collector import (
 )
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.rulingdigital_channel_scholarship_collector import (
+    RulingDigitalChannelScholarshipCollector,
+)
 from src.collectors.rulingdigital_list_scholarship_collector import (
     RulingDigitalListScholarshipCollector,
 )
@@ -62,6 +65,14 @@ class AdditionalSourceAdapterRegistry:
             )
         if config.adapter_id is AdditionalSourceAdapterId.RULINGDIGITAL_LIST:
             return RulingDigitalListScholarshipCollector(
+                config,
+                timeout_seconds,
+                user_agent,
+                collection_mode,
+                max_pages,
+            )
+        if config.adapter_id is AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST:
+            return RulingDigitalChannelScholarshipCollector(
                 config,
                 timeout_seconds,
                 user_agent,
