@@ -126,7 +126,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://service.utaipei.edu.tw/p/412-1034-63.php?Lang=zh-tw",
         allowed_hosts=("service.utaipei.edu.tw",),
         review_reason="即時稽核產出53筆，能持續補充跨地區校外方案。",
-        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST,
+        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
