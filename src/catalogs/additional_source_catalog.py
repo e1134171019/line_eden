@@ -149,7 +149,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         ),
         allowed_hosts=("npu.edu.tw", "www.npu.edu.tw"),
         review_reason="即時稽核產出98筆，能補足大量地方與基金會方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -230,7 +230,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         ),
         allowed_hosts=("osa.nchu.edu.tw", "www.osa.nchu.edu.tw"),
         review_reason="候選審查第一頁實測解析18筆，且包含既有入口未覆蓋的方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST,
         max_pages=10,
     ),
 )
