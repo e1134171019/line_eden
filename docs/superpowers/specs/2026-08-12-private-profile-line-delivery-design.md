@@ -4,7 +4,7 @@
 Complete the three missing production profile facts without committing them in plaintext, rerun the exact production acceptance logic, and send LINE only when that same audit passes.
 
 ## Isolation
-- Work only on `ops/line-delivery-20260812`, created from validated head `8e91e191c256669f82afc57b847865f5fead39c5`.
+- Work only on `fix/ops-line-delivery-20260812`, created from validated head `8e91e191c256669f82afc57b847865f5fead39c5`.
 - Do not modify or merge `main`.
 - Do not modify PR #126.
 - Profile plaintext must not be committed, logged, or uploaded as an artifact.
