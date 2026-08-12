@@ -187,7 +187,14 @@ def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> Non
         "ntut-ee-scholarships",
     }
     rulingdigital_channel_ids = {"knu-external-scholarships"}
-    specialized_ids = rulingdigital_ids | rulingdigital_channel_ids
+    npu_latestevent_ids = {"npu-scholarship-portal"}
+    tadnews_ids = {"nchu-external-scholarships"}
+    specialized_ids = (
+        rulingdigital_ids
+        | rulingdigital_channel_ids
+        | npu_latestevent_ids
+        | tadnews_ids
+    )
 
     assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 19
     assert len(source_ids) == 19
@@ -204,6 +211,16 @@ def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> Non
         for source_id, item in sources_by_id.items()
         if item.adapter_id is AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST
     } == rulingdigital_channel_ids
+    assert {
+        source_id
+        for source_id, item in sources_by_id.items()
+        if item.adapter_id is AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST
+    } == npu_latestevent_ids
+    assert {
+        source_id
+        for source_id, item in sources_by_id.items()
+        if item.adapter_id is AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST
+    } == tadnews_ids
     assert all(
         item.adapter_id is AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST
         for source_id, item in sources_by_id.items()
