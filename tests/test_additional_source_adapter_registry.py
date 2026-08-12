@@ -16,11 +16,17 @@ from src.collectors.additional_source_adapter_registry import (
     AdditionalSourceAdapterRegistry,
 )
 from src.collectors.collection_diagnostics import CollectionMode
+from src.collectors.npu_latestevent_scholarship_collector import (
+    NpuLatestEventScholarshipCollector,
+)
 from src.collectors.rulingdigital_channel_scholarship_collector import (
     RulingDigitalChannelScholarshipCollector,
 )
 from src.collectors.rulingdigital_list_scholarship_collector import (
     RulingDigitalListScholarshipCollector,
+)
+from src.collectors.tadnews_category_scholarship_collector import (
+    TadnewsCategoryScholarshipCollector,
 )
 from src.collectors.wordpress_archive_scholarship_collector import (
     WordPressArchiveScholarshipCollector,
@@ -120,6 +126,44 @@ def test_registry_builds_rulingdigital_channel_collector() -> None:
     )
 
     assert isinstance(collector, RulingDigitalChannelScholarshipCollector)
+    assert collector.config.source_id == "test-source"
+
+
+def test_registry_builds_npu_latestevent_collector() -> None:
+    registry = AdditionalSourceAdapterRegistry()
+    config = replace(
+        _config(),
+        adapter_id=AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST,
+    )
+
+    collector = registry.build(
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
+    )
+
+    assert isinstance(collector, NpuLatestEventScholarshipCollector)
+    assert collector.config.source_id == "test-source"
+
+
+def test_registry_builds_tadnews_category_collector() -> None:
+    registry = AdditionalSourceAdapterRegistry()
+    config = replace(
+        _config(),
+        adapter_id=AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST,
+    )
+
+    collector = registry.build(
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
+    )
+
+    assert isinstance(collector, TadnewsCategoryScholarshipCollector)
     assert collector.config.source_id == "test-source"
 
 
