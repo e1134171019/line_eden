@@ -1,0 +1,77 @@
+name: Ops profile overlay keygen
+
+on:
+  push:
+    branches:
+      - "fix/ops-line-delivery-20260812"
+    paths:
+      - ".github/workflows/ops-profile-keygen.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-profile-overlay-keygen
+  cancel-in-progress: false
+
+jobs:
+  keygen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      STATE_PASSPHRASE: ${{ secrets.STATE_PASSPHRASE }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Validate state passphrase
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${STATE_PASSPHRASE:-}" ]]; then
+            echo "缺少 STATE_PASSPHRASE。" >&2
+            exit 1
+          fi
+          echo "STATE_PASSPHRASE 已存在。"
+
+      - name: Generate one-time RSA key material
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ops-key
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:3072 \
+            -out ops-key/private.pem
+          openssl pkey \
+            -in ops-key/private.pem \
+            -pubout \
+            -out ops-key/public.pem
+          printf '%s' "$STATE_PASSPHRASE" | \
+            gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-fd 0 \
+              --symmetric \
+              --cipher-algo AES256 \
+              --output ops-key/private.pem.gpg \
+              ops-key/private.pem
+          rm -f ops-key/private.pem
+          test -s ops-key/public.pem
+          test -s ops-key/private.pem.gpg
+          echo "一次性 RSA public key 與加密 private key 已建立。"
+
+      - name: Upload encrypted key handoff
+        uses: actions/upload-artifact@v7
+        with:
+          name: profile-overlay-key
+          path: |
+            ops-key/public.pem
+            ops-key/private.pem.gpg
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 6
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -rf ops-key
