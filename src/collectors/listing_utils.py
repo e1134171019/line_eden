@@ -20,7 +20,9 @@ _DYNA_URL_PREFIX_PATTERN = re.compile(
 _DYNA_TOTAL_PAGE_PATTERN = re.compile(r"totalPage\s*:\s*(?P<count>\d+)")
 _DYNA_CURRENT_PAGE_PATTERN = re.compile(r"currentPage\s*:\s*(?P<number>\d+)")
 _NEXT_LABELS = frozenset({"下一頁", "下頁", "next", ">", "»"})
-_PAGE_QUERY_KEYS = frozenset({"page", "pageno", "page_no", "pageindex", "page_index"})
+_PAGE_QUERY_KEYS = frozenset(
+    {"page", "pageno", "page_no", "pageindex", "page_index", "g2p"}
+)
 
 
 # 從文字抽取西元或民國日期並統一成 ISO 格式。
