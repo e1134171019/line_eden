@@ -13,10 +13,10 @@ def test_verified_rulingdigital_sources_use_exact_adapter_contracts() -> None:
         source_id
         for source_id, item in sources.items()
         if item.adapter_id is AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST
-    } == {
-        "utaipei-external-scholarships",
-        "knu-external-scholarships",
-    }
+    } == {"knu-external-scholarships"}
+    assert sources["utaipei-external-scholarships"].adapter_id is (
+        AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST
+    )
     assert sources["niu-scholarships"].adapter_id is (
         AdditionalSourceAdapterId.RULINGDIGITAL_LIST
     )
