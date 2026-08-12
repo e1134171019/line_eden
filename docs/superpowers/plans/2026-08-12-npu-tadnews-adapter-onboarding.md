@@ -36,7 +36,7 @@
 
 - [ ] **Step 1: Write the failing parser tests**
 
-Create `tests/test_npu_latestevent_scholarship_collector.py` with a local `_collector()` fixture and these cases:
+Create `tests/test_npu_latestevent_scholarship_collector.py`:
 
 ```python
 # -*- coding: utf-8 -*-
@@ -128,7 +128,7 @@ Commit message:
 test: define NPU LatestEvent adapter contract
 ```
 
-Expected Quality failure: import/module error for `src.collectors.npu_latestevent_scholarship_collector`; Ruff/Pyright should reveal no unrelated regression once collection reaches that phase.
+Expected Quality failure: `ModuleNotFoundError` for `src.collectors.npu_latestevent_scholarship_collector`.
 
 - [ ] **Step 3: Implement the minimal NPU collector**
 
@@ -214,7 +214,7 @@ def _independent_date_context(anchor: Tag) -> str:
 
 - [ ] **Step 4: Verify GREEN**
 
-Run through the Quality workflow. Expected: the three NPU tests pass; no production mapping has changed yet.
+Run the full Quality workflow. Expected: all NPU tests pass and no production mapping changes yet.
 
 - [ ] **Step 5: Commit the implementation**
 
@@ -237,7 +237,7 @@ feat: add NPU LatestEvent adapter parser
 **Interfaces:**
 - Produces: `TadnewsCategoryScholarshipCollector._parse_html(html: str, page_url: str) -> tuple[list[Scholarship], int]`.
 - Detail contract: same allowed host; path ends with `/modules/tadnews/index.php`; numeric `nsn`; when entry URL has `ncsn`, detail URL must contain the same `ncsn` value.
-- Pagination contract: `numbered_page_urls()` recognizes a numeric link whose same-path query contains `g2p` as a page URL; existing same-host/path guards remain unchanged.
+- Pagination contract: `numbered_page_urls()` recognizes a numeric link whose same-path query contains `g2p`; existing same-host/path guards remain unchanged.
 
 - [ ] **Step 1: Write the failing Tadnews parser tests**
 
@@ -354,20 +354,30 @@ Commit message:
 test: define Tadnews adapter and pagination contract
 ```
 
-Expected failures:
-- missing `src.collectors.tadnews_category_scholarship_collector` module;
-- after module import is satisfiable, `g2p` is not yet recognized by `numbered_page_urls`.
+Expected failures: missing `src.collectors.tadnews_category_scholarship_collector`; once that module exists, `g2p` remains unrecognized until the shared key set changes.
 
 - [ ] **Step 4: Implement the minimal Tadnews collector**
 
-Create `src/collectors/tadnews_category_scholarship_collector.py` using the same independent-date pattern as Task 1 and these exact guards:
+Create `src/collectors/tadnews_category_scholarship_collector.py`:
 
 ```python
-from urllib.parse import parse_qs, urljoin, urlparse
+# -*- coding: utf-8 -*-
 
-...
+from urllib.parse import parse_qsl, urljoin, urlparse
+
+from bs4 import BeautifulSoup, Tag
+
+from src.collectors.additional_scholarship_source_collector import (
+    AdditionalScholarshipSourceCollector,
+    _extract_date,
+    _normalize_text,
+)
+from src.models.scholarship import Scholarship
+
 
 class TadnewsCategoryScholarshipCollector(AdditionalScholarshipSourceCollector):
+    """解析 Tadnews 指定 category 中的正式 nsn 公告。"""
+
     def _parse_html(self, html: str, page_url: str) -> tuple[list[Scholarship], int]:
         soup = BeautifulSoup(html, "html.parser")
         records: list[Scholarship] = []
@@ -400,17 +410,44 @@ class TadnewsCategoryScholarshipCollector(AdditionalScholarshipSourceCollector):
         parsed = urlparse(url)
         if not parsed.path.casefold().endswith("/modules/tadnews/index.php"):
             return False
-        query = parse_qs(parsed.query, keep_blank_values=True)
-        nsn = _first_query_value(query, "nsn")
+        nsn = _query_value(url, "nsn")
         if not nsn.isdigit():
             return False
         expected_category = _query_value(self.config.entry_url, "ncsn")
         if not expected_category:
             return True
-        return _first_query_value(query, "ncsn") == expected_category
-```
+        return _query_value(url, "ncsn") == expected_category
 
-Define `_first_query_value`, `_query_value`, and `_independent_date_context` in the same file. Query-key matching must be case-insensitive; category values must compare exactly after stripping whitespace.
+
+def _query_value(url: str, name: str) -> str:
+    target = name.casefold()
+    for key, value in parse_qsl(urlparse(url).query, keep_blank_values=True):
+        if key.casefold() == target:
+            return value.strip()
+    return ""
+
+
+def _independent_date_context(anchor: Tag) -> str:
+    parent: Tag | None = anchor
+    for _ in range(4):
+        candidate = parent.parent
+        if not isinstance(candidate, Tag):
+            break
+        parent = candidate
+        parts: list[str] = []
+        for node in parent.find_all(string=True):
+            if any(node_parent is anchor for node_parent in node.parents):
+                continue
+            text = _normalize_text(str(node))
+            if text:
+                parts.append(text)
+        context = " ".join(parts)
+        if _extract_date(context, ""):
+            return context
+        if parent.name in {"li", "tr", "article"}:
+            break
+    return ""
+```
 
 - [ ] **Step 5: Add only `g2p` to the shared safe page-query key set**
 
@@ -422,11 +459,11 @@ _PAGE_QUERY_KEYS = frozenset(
 )
 ```
 
-Do not widen path/host rules and do not add other undocumented query keys.
+Do not widen path/host rules and do not add other query keys.
 
 - [ ] **Step 6: Verify GREEN**
 
-Run the focused tests through CI and then the full Quality workflow. Expected: Tadnews parser tests and `test_tadnews_g2p_query_is_numbered_pagination` pass, with existing pagination tests unchanged.
+Run the focused tests and full Quality workflow. Expected: Tadnews parser tests and `test_tadnews_g2p_query_is_numbered_pagination` pass, with existing pagination tests unchanged.
 
 - [ ] **Step 7: Commit the implementation**
 
@@ -449,11 +486,11 @@ feat: add Tadnews category adapter parser
 - Produces enum members:
   - `AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST = "npu_latestevent_list"`
   - `AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST = "tadnews_category_list"`
-- Registry maps them to `NpuLatestEventScholarshipCollector` and `TadnewsCategoryScholarshipCollector` respectively.
+- Registry maps them to `NpuLatestEventScholarshipCollector` and `TadnewsCategoryScholarshipCollector`.
 
 - [ ] **Step 1: Write RED registry tests**
 
-Add imports for the two new collector classes and append:
+Add the two collector imports and these tests to `tests/test_additional_source_adapter_registry.py`:
 
 ```python
 def test_registry_builds_npu_latestevent_collector() -> None:
@@ -462,11 +499,13 @@ def test_registry_builds_npu_latestevent_collector() -> None:
         _config(),
         adapter_id=AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST,
     )
-
     collector = registry.build(
-        config, 10.0, "test-agent", CollectionMode.INCREMENTAL, 20
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
     )
-
     assert isinstance(collector, NpuLatestEventScholarshipCollector)
 
 
@@ -476,11 +515,13 @@ def test_registry_builds_tadnews_category_collector() -> None:
         _config(),
         adapter_id=AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST,
     )
-
     collector = registry.build(
-        config, 10.0, "test-agent", CollectionMode.INCREMENTAL, 20
+        config,
+        10.0,
+        "test-agent",
+        CollectionMode.INCREMENTAL,
+        20,
     )
-
     assert isinstance(collector, TadnewsCategoryScholarshipCollector)
 ```
 
@@ -492,26 +533,45 @@ Commit message:
 test: require NPU and Tadnews adapter registry entries
 ```
 
-Expected failure: missing enum members and therefore unsupported registry paths.
+Expected failure: missing enum members.
 
-- [ ] **Step 3: Add enum members**
+- [ ] **Step 3: Add enum members without changing mappings**
 
-In `src/catalogs/additional_source_catalog.py`, extend only the enum:
+In `src/catalogs/additional_source_catalog.py` add:
 
 ```python
 NPU_LATESTEVENT_LIST = "npu_latestevent_list"
 TADNEWS_CATEGORY_LIST = "tadnews_category_list"
 ```
 
-Do not change production source mappings in this task.
+- [ ] **Step 4: Add registry factory branches**
 
-- [ ] **Step 4: Add registry imports and factory branches**
+In `src/collectors/additional_source_adapter_registry.py`, import the two collector classes and add:
 
-In `src/collectors/additional_source_adapter_registry.py`, import both new collectors and add two branches matching the existing registry style. Unknown IDs must still reach the existing `ValueError`.
+```python
+if config.adapter_id is AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST:
+    return NpuLatestEventScholarshipCollector(
+        config,
+        timeout_seconds,
+        user_agent,
+        collection_mode,
+        max_pages,
+    )
+if config.adapter_id is AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST:
+    return TadnewsCategoryScholarshipCollector(
+        config,
+        timeout_seconds,
+        user_agent,
+        collection_mode,
+        max_pages,
+    )
+```
+
+Keep the existing unknown-adapter `ValueError` as the final branch.
 
 - [ ] **Step 5: Verify GREEN and commit**
 
-Run the registry tests and full Quality workflow. Commit message:
+Run registry tests and the full Quality workflow. Commit message:
 
 ```text
 feat: register NPU and Tadnews adapters
@@ -529,7 +589,7 @@ feat: register NPU and Tadnews adapters
 **Interfaces:**
 - `npu-scholarship-portal` → `AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST`.
 - `nchu-external-scholarships` → `AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST`.
-- All source URLs, `allowed_hosts`, `max_pages`, and other source contracts remain unchanged.
+- All source URLs, `allowed_hosts`, `max_pages`, and other source fields remain unchanged.
 
 - [ ] **Step 1: Add exact RED mapping assertions**
 
@@ -559,7 +619,20 @@ def test_npu_and_nchu_use_only_their_verified_adapters() -> None:
     } == {"nchu-external-scholarships"}
 ```
 
-Also update `test_additional_source_catalog_has_nineteen_reviewed_unique_sources` so `specialized_ids` includes NPU and NCHU and the generic-only assertion remains exact.
+In `tests/test_additional_scholarship_source_collector.py`, extend `specialized_ids` with:
+
+```python
+npu_latestevent_ids = {"npu-scholarship-portal"}
+tadnews_ids = {"nchu-external-scholarships"}
+specialized_ids = (
+    rulingdigital_ids
+    | rulingdigital_channel_ids
+    | npu_latestevent_ids
+    | tadnews_ids
+)
+```
+
+Add exact adapter-set assertions for both new IDs before the generic-only assertion.
 
 - [ ] **Step 2: Commit tests and verify RED**
 
@@ -569,11 +642,11 @@ Commit message:
 test: require exact NPU and NCHU adapter mappings
 ```
 
-Expected failure: NPU and NCHU are still `GENERIC_ANCHOR_LIST`.
+Expected failure: both sources are still `GENERIC_ANCHOR_LIST`.
 
-- [ ] **Step 3: Switch only the two production adapter IDs**
+- [ ] **Step 3: Switch only the two adapter IDs**
 
-In `src/catalogs/additional_source_catalog.py`:
+In `src/catalogs/additional_source_catalog.py`, change only:
 
 ```python
 # npu-scholarship-portal
@@ -583,7 +656,7 @@ adapter_id=AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST,
 adapter_id=AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST,
 ```
 
-Do not change entry URLs or any other source.
+Do not alter entry URLs or any other source contract.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -607,78 +680,49 @@ refactor: route NPU and NCHU through verified adapters
 
 - [ ] **Step 1: Require terminal current-head Quality success**
 
-Verify:
-
-- Python 3.11 job success.
-- Python 3.13 job success.
-- Ruff success.
-- Pyright 0 errors/warnings.
-- Full pytest success.
-- Coverage `>= 85%`.
-
-Do not infer success from an in-progress run.
+Verify Python 3.11 and 3.13 jobs, Ruff, Pyright, full pytest, and coverage `>= 85%`. Do not infer success from an in-progress run.
 
 - [ ] **Step 2: Read terminal Scholarship Source Contract evidence**
 
-Download `source-health` artifact for the exact final head and record for NPU/NCHU:
-
-- `collected_count`
-- `raw_rows`
-- `parsed_rows`
-- `rejected_rows`
-- `pages_detected`
-- `pages_requested`
-- `pages_succeeded`
-- `completeness`
-- `error`
+For the exact final head, record NPU/NCHU `collected_count`, `raw_rows`, `parsed_rows`, `rejected_rows`, `pages_detected`, `pages_requested`, `pages_succeeded`, `completeness`, and `error` from the source-health artifact.
 
 - [ ] **Step 3: Evaluate NPU independently**
 
-Keep NPU mapping only when all are true:
+Keep NPU only when all are true:
 
 ```text
 collected_count >= 98
 rejected_rows <= 813
-error is empty / no adapter-attributable fetch or parse failure
+no adapter-attributable fetch or parse error
 ```
 
-Otherwise write a RED mapping test expecting `GENERIC_ANCHOR_LIST`, rollback only NPU, rerun Quality + Scholarship Source Contract.
+If any condition fails, first write a mapping test expecting `GENERIC_ANCHOR_LIST`, verify RED, rollback only NPU, then rerun Quality and Scholarship Source Contract.
 
 - [ ] **Step 4: Evaluate NCHU independently**
 
-Keep NCHU mapping only when all are true:
+Keep NCHU only when all are true:
 
 ```text
 collected_count >= 30
 rejected_rows <= 226
-error is empty / no adapter-attributable fetch or parse failure
-pages_detected > 2 when the live page still exposes >2 pages
+no adapter-attributable fetch or parse error
+pages_detected > 2 when the live page still exposes more than 2 pages
 ```
 
-Otherwise write a RED mapping test expecting `GENERIC_ANCHOR_LIST`, rollback only NCHU, rerun Quality + Scholarship Source Contract.
+If any condition fails, first write a mapping test expecting `GENERIC_ANCHOR_LIST`, verify RED, rollback only NCHU, then rerun Quality and Scholarship Source Contract.
 
 - [ ] **Step 5: Require terminal 38-program Live Source Contract success**
 
-Verify the exact final head's 38-program run is terminal `success`. If it fails, inspect logs before attributing the failure to this change.
+Verify the exact final head's 38-program run is terminal `success`. If it fails, inspect logs before attributing the failure to this batch.
 
-- [ ] **Step 6: Inspect Production Acceptance only as a separate gate**
+- [ ] **Step 6: Classify Production Acceptance separately**
 
-If Production Acceptance runs, distinguish collector failures from the known private-profile blocker. The known failure signature is the `耀登優秀人才` expectation receiving `review` because `profile.json` lacks nationality and enrollment status. Do not alter private profile secrets or eligibility behavior in this batch.
+If Production Acceptance runs, compare its failure signature to the known #85 private-profile blocker: `耀登優秀人才` remains `review` because `profile.json` lacks nationality and enrollment status. Do not alter private profile secrets or eligibility behavior in this batch.
 
 - [ ] **Step 7: Add governance evidence to PR #126**
 
-Post one comment containing:
-
-- exact final head SHA;
-- Quality result and test count/coverage;
-- old → new NPU metrics;
-- old → new NCHU metrics;
-- pagination improvement for NCHU;
-- any selective rollback performed;
-- 38-program Live Source Contract result;
-- Production Acceptance status/root-cause classification;
-- explicit statement that PR remains Draft/unmerged and no paid/AI runtime dependency was added.
+Post one comment containing exact final head SHA; Quality result and test count/coverage; old → new NPU metrics; old → new NCHU metrics; NCHU pagination result; any selective rollback; 38-program Live Source Contract result; Production Acceptance classification; and explicit confirmation that no paid/AI runtime dependency was added and PR remains Draft/unmerged.
 
 - [ ] **Step 8: Final PR state check**
 
-Confirm PR #126 is still `open`, `draft=true`, `merged=false`. Do not merge or mark ready automatically.
+Confirm PR #126 is `open`, `draft=true`, `merged=false`. Do not merge or mark ready automatically.
