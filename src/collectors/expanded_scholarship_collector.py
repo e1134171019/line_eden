@@ -2,13 +2,14 @@
 
 from collections import Counter
 
-from src.catalogs.additional_source_catalog import (
-    BROAD_SCHOLARSHIP_PORTALS,
-    OFFICIAL_ADDITIONAL_SOURCES,
-    AdditionalScholarshipSource,
+from src.catalogs.additional_source_catalog import AdditionalScholarshipSource
+from src.catalogs.additional_source_registry import (
+    AdditionalSourceRegistry,
+    AdditionalSourceRegistryProtocol,
 )
-from src.collectors.additional_scholarship_source_collector import (
-    AdditionalScholarshipSourceCollector,
+from src.collectors.additional_source_adapter_registry import (
+    AdditionalSourceAdapterRegistry,
+    AdditionalSourceAdapterRegistryProtocol,
 )
 from src.collectors.base_collector import BaseCollector
 from src.collectors.collection_diagnostics import CollectionMode
@@ -46,6 +47,10 @@ class ExpandedScholarshipCollector(LhuCollector):
         max_pages: int = 20,
         fetch_workers: int = 1,
         *,
+        additional_source_registry: AdditionalSourceRegistryProtocol | None = None,
+        additional_source_adapter_registry: (
+            AdditionalSourceAdapterRegistryProtocol | None
+        ) = None,
         source_discovery: ProgramSourceDiscoveryService | None = None,
         source_discovery_min_score: int = 100,
         source_discovery_max_candidates: int = 5,
@@ -58,6 +63,12 @@ class ExpandedScholarshipCollector(LhuCollector):
             max_pages,
         )
         self.fetch_workers = fetch_workers
+        self.additional_source_registry = (
+            additional_source_registry or AdditionalSourceRegistry()
+        )
+        self.additional_source_adapter_registry = (
+            additional_source_adapter_registry or AdditionalSourceAdapterRegistry()
+        )
         self.source_discovery = source_discovery
         self.source_discovery_min_score = source_discovery_min_score
         self.source_discovery_max_candidates = source_discovery_max_candidates
@@ -74,14 +85,7 @@ class ExpandedScholarshipCollector(LhuCollector):
             source_discovery_min_score=self.source_discovery_min_score,
             source_discovery_max_candidates=self.source_discovery_max_candidates,
         )
-        official_additions = [
-            self._additional_collector(config)
-            for config in OFFICIAL_ADDITIONAL_SOURCES
-        ]
-        broad_portals = [
-            self._additional_collector(config)
-            for config in BROAD_SCHOLARSHIP_PORTALS
-        ]
+        official_additions, broad_portals = self._additional_collectors()
         collectors: list[BaseCollector] = [
             _LhuOnlyCollector(self),
             HelpDreamsCollector(
@@ -123,11 +127,23 @@ class ExpandedScholarshipCollector(LhuCollector):
         self.multi_source = MultiSourceCollector(collectors)
         return self.multi_source.collect()
 
+    # 由來源 registry 取得分組，再交給 adapter registry 建立 collectors。
+    def _additional_collectors(self) -> tuple[list[BaseCollector], list[BaseCollector]]:
+        official = [
+            self._additional_collector(config)
+            for config in self.additional_source_registry.official_sources()
+        ]
+        broad = [
+            self._additional_collector(config)
+            for config in self.additional_source_registry.broad_sources()
+        ]
+        return official, broad
+
     def _additional_collector(
         self,
         config: AdditionalScholarshipSource,
-    ) -> AdditionalScholarshipSourceCollector:
-        return AdditionalScholarshipSourceCollector(
+    ) -> BaseCollector:
+        return self.additional_source_adapter_registry.build(
             config,
             self.timeout_seconds,
             self.user_agent,

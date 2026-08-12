@@ -7,6 +7,7 @@ import pytest
 from src.catalogs.additional_source_catalog import (
     ADDITIONAL_SCHOLARSHIP_SOURCES,
     AdditionalScholarshipSource,
+    AdditionalSourceAdapterId,
 )
 from src.collectors.additional_scholarship_source_collector import (
     AdditionalScholarshipSourceCollector,
@@ -23,6 +24,7 @@ def _config(**overrides: object) -> AdditionalScholarshipSource:
         "entry_url": "https://scholar.example/list",
         "allowed_hosts": ("scholar.example",),
         "review_reason": "測試來源已完成有效性審查。",
+        "adapter_id": AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         "max_pages": 3,
     }
     values.update(overrides)
@@ -175,12 +177,55 @@ def test_additional_source_collect_raises_when_fetch_failed(
 def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> None:
     source_ids = {item.source_id for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
     entry_urls = {item.entry_url for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
+    sources_by_id = {item.source_id: item for item in ADDITIONAL_SCHOLARSHIP_SOURCES}
+    rulingdigital_ids = {
+        "nutc-external-scholarships",
+        "ncnu-external-scholarships",
+        "nptu-external-scholarships",
+        "ncut-external-scholarships",
+        "niu-scholarships",
+        "ntut-ee-scholarships",
+    }
+    rulingdigital_channel_ids = {"knu-external-scholarships"}
+    npu_latestevent_ids = {"npu-scholarship-portal"}
+    tadnews_ids = {"nchu-external-scholarships"}
+    specialized_ids = (
+        rulingdigital_ids
+        | rulingdigital_channel_ids
+        | npu_latestevent_ids
+        | tadnews_ids
+    )
 
     assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 19
     assert len(source_ids) == 19
     assert len(entry_urls) == 19
     assert all(item.entry_url.startswith("https://") for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
     assert all(item.review_reason.strip() for item in ADDITIONAL_SCHOLARSHIP_SOURCES)
+    assert {
+        source_id
+        for source_id, item in sources_by_id.items()
+        if item.adapter_id is AdditionalSourceAdapterId.RULINGDIGITAL_LIST
+    } == rulingdigital_ids
+    assert {
+        source_id
+        for source_id, item in sources_by_id.items()
+        if item.adapter_id is AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST
+    } == rulingdigital_channel_ids
+    assert {
+        source_id
+        for source_id, item in sources_by_id.items()
+        if item.adapter_id is AdditionalSourceAdapterId.NPU_LATESTEVENT_LIST
+    } == npu_latestevent_ids
+    assert {
+        source_id
+        for source_id, item in sources_by_id.items()
+        if item.adapter_id is AdditionalSourceAdapterId.TADNEWS_CATEGORY_LIST
+    } == tadnews_ids
+    assert all(
+        item.adapter_id is AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST
+        for source_id, item in sources_by_id.items()
+        if source_id not in specialized_ids
+    )
     assert {
         "pan-wen-yuan-scholarship",
         "utaipei-external-scholarships",

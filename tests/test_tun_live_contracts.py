@@ -17,6 +17,8 @@ def test_live_contracts_cover_reported_failures_and_songliang() -> None:
         "hndasset-wenxiang",
         "harmony-stability",
         "songliang-aid",
+        "ht-student-aid",
+        "gfc-scholarship",
     }
 
     assert expected <= set(LIVE_PROGRAM_CONTRACTS)
@@ -74,13 +76,21 @@ def test_dapeng_uses_verified_live_detail_first() -> None:
     assert "大鵬獎助學金" in contract.aliases
 
 
-def test_wenxiang_prefers_current_115_relay() -> None:
+def test_wenxiang_prefers_cross_year_relay_list_before_annual_details() -> None:
     contract = live_contract("hndasset-wenxiang")
 
     assert contract.preferred_sources[0].url == (
+        "https://assistance.ncnu.edu.tw/p/403-1079-249-1.php?Lang=zh-tw"
+    )
+    assert contract.preferred_sources[0].source_url_type is SourceUrlType.RELAY_LIST
+    assert contract.preferred_sources[1].url == (
+        "https://assistance.ncnu.edu.tw/p/406-1079-36114%2Cr249.php?Lang=zh-tw"
+    )
+    assert contract.preferred_sources[1].valid_through_year == 2026
+    assert contract.preferred_sources[2].url == (
         "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw"
     )
-    assert contract.preferred_sources[0].source_url_type is SourceUrlType.RELAY_DETAIL
+    assert contract.preferred_sources[2].valid_through_year == 2026
     assert "115年度文向獎學金" in contract.aliases
 
 
@@ -102,3 +112,33 @@ def test_matcher_miss_contracts_add_source_scoped_aliases() -> None:
     assert "祥和文教基金會獎助學金" in live_contract(
         "lovepeace-disadvantaged"
     ).aliases
+
+
+def test_ht_student_aid_prefers_current_2026_application_notice_and_rules() -> None:
+    contract = live_contract("ht-student-aid")
+
+    assert contract.force_replace is True
+    assert contract.use_catalog_sources is False
+    assert contract.preferred_sources[0].url == "https://www.ht.org.tw/news454.htm"
+    assert contract.preferred_sources[0].source_url_type is SourceUrlType.ANNUAL_DETAIL
+    assert contract.preferred_sources[0].valid_through_year == 2026
+    assert contract.include_reference_evidence is True
+    assert contract.reference_sources[0].url == (
+        "https://www.ht.org.tw/p1_religion_3_67.htm"
+    )
+    assert contract.reference_sources[0].source_url_type is SourceUrlType.EVERGREEN
+
+
+def test_gfc_scholarship_prefers_2026_application_notice_not_award_result() -> None:
+    contract = live_contract("gfc-scholarship")
+
+    assert contract.force_replace is True
+    assert contract.use_catalog_sources is False
+    assert contract.preferred_sources[0].url == (
+        "https://www.gfc.org.tw/project-news/2735"
+    )
+    assert contract.preferred_sources[0].source_url_type is SourceUrlType.ANNUAL_DETAIL
+    assert contract.preferred_sources[0].valid_through_year == 2026
+    assert contract.preferred_sources[1].url == "https://www.gfc.org.tw/project/2636"
+    assert contract.preferred_sources[1].source_url_type is SourceUrlType.EVERGREEN
+    assert all("/news/10434" not in item.url for item in contract.preferred_sources)

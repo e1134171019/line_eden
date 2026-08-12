@@ -176,3 +176,32 @@ def test_pagination_rejects_external_and_unrelated_links() -> None:
     """
 
     assert numbered_page_urls(html, base_url) == []
+
+
+# Tadnews 的 g2p 必須被辨識成同一 category list 的數字分頁。
+def test_tadnews_g2p_query_is_numbered_pagination() -> None:
+    base_url = (
+        "https://example.edu.tw/osa/laa/sys/modules/tadnews/"
+        "index.php?ncsn=4"
+    )
+    html = """
+    <nav>
+      <a href="index.php?g2p=2&ncsn=4">2</a>
+      <a href="index.php?g2p=3&ncsn=4">3</a>
+      <a href="https://outside.example/index.php?g2p=4&ncsn=4">4</a>
+    </nav>
+    """
+
+    assert numbered_page_urls(html, base_url) == [
+        (
+            2,
+            "https://example.edu.tw/osa/laa/sys/modules/tadnews/"
+            "index.php?g2p=2&ncsn=4",
+        ),
+        (
+            3,
+            "https://example.edu.tw/osa/laa/sys/modules/tadnews/"
+            "index.php?g2p=3&ncsn=4",
+        ),
+    ]
+    assert detect_total_pages(html, base_url) == 3

@@ -293,6 +293,51 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         force_replace=True,
         use_catalog_sources=False,
     ),
+    "ht-student-aid": LiveProgramContract(
+        aliases=(
+            "〖行天宮助學金〗115-1期 9/1起受理申請",
+            "行天宮助學金115-1期",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://www.ht.org.tw/news454.htm",
+                SourceUrlType.ANNUAL_DETAIL,
+                "115-1官方受理公告；2026年內提供當期申請期間與送件資訊。",
+                valid_through_year=2026,
+            ),
+        ),
+        force_replace=True,
+        reference_sources=(
+            LiveSourceCandidate(
+                "https://www.ht.org.tw/p1_religion_3_67.htm",
+                SourceUrlType.EVERGREEN,
+                "官方固定實施辦法只作資格證據，與當期公告合併。",
+            ),
+        ),
+        include_reference_evidence=True,
+        use_catalog_sources=False,
+    ),
+    "gfc-scholarship": LiveProgramContract(
+        aliases=(
+            "2026第十三屆崇友實業獎學金申請辦法",
+            "第十三屆崇友實業獎學金申請辦法",
+        ),
+        preferred_sources=(
+            LiveSourceCandidate(
+                "https://www.gfc.org.tw/project-news/2735",
+                SourceUrlType.ANNUAL_DETAIL,
+                "2026官方申請辦法；含完整資格、截止日與附件。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                "https://www.gfc.org.tw/project/2636",
+                SourceUrlType.EVERGREEN,
+                "官方固定獎學金專案頁，跨年度提供方案 provenance 與當期申請導引。",
+            ),
+        ),
+        force_replace=True,
+        use_catalog_sources=False,
+    ),
     "lovepeace-disadvantaged": LiveProgramContract(
         aliases=(
             "祥和文教基金會獎助學金",
@@ -392,14 +437,21 @@ LIVE_PROGRAM_CONTRACTS: dict[str, LiveProgramContract] = {
         ),
         preferred_sources=(
             LiveSourceCandidate(
-                "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw",
-                SourceUrlType.RELAY_DETAIL,
-                "115年度正式大學轉載，含本期資格、期限與附件。",
+                "https://assistance.ncnu.edu.tw/p/403-1079-249-1.php?Lang=zh-tw",
+                SourceUrlType.RELAY_LIST,
+                "暨南校外獎助學金列表可跨年度重新發現；115年標題明確包含文向獎學金。",
             ),
             LiveSourceCandidate(
                 "https://assistance.ncnu.edu.tw/p/406-1079-36114%2Cr249.php?Lang=zh-tw",
                 SourceUrlType.RELAY_DETAIL,
-                "Production runner 已驗證可命中的正式大學轉載備援。",
+                "115年度正式大學轉載，含完整資格、期限與附件。",
+                valid_through_year=2026,
+            ),
+            LiveSourceCandidate(
+                "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw",
+                SourceUrlType.RELAY_DETAIL,
+                "115年度正式大學轉載備援；標題列出三個子方案。",
+                valid_through_year=2026,
             ),
         ),
         force_replace=True,
