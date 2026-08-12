@@ -126,7 +126,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://service.utaipei.edu.tw/p/412-1034-63.php?Lang=zh-tw",
         allowed_hosts=("service.utaipei.edu.tw",),
         review_reason="即時稽核產出53筆，能持續補充跨地區校外方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -171,10 +171,10 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
     AdditionalScholarshipSource(
         source_id="niu-scholarships",
         display_name="國立宜蘭大學獎助學金專區",
-        entry_url="https://niuosa.niu.edu.tw/p/412-1004-559.php",
+        entry_url="https://niuosa.niu.edu.tw/p/403-1004-1440-1.php",
         allowed_hosts=("niuosa.niu.edu.tw",),
         review_reason="具長期分頁與2026年近期公告，涵蓋一般、地方及基金會方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -207,7 +207,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://sa.knu.edu.tw/p/412-1005-2921.php?Lang=zh-tw",
         allowed_hosts=("sa.knu.edu.tw",),
         review_reason="候選審查第一頁實測解析5筆，並直接提供外部方案與申請期限。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_CHANNEL_LIST,
         max_pages=5,
     ),
     AdditionalScholarshipSource(
