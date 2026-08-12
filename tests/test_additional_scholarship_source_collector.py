@@ -186,10 +186,7 @@ def test_additional_source_catalog_has_nineteen_reviewed_unique_sources() -> Non
         "niu-scholarships",
         "ntut-ee-scholarships",
     }
-    rulingdigital_channel_ids = {
-        "utaipei-external-scholarships",
-        "knu-external-scholarships",
-    }
+    rulingdigital_channel_ids = {"knu-external-scholarships"}
     specialized_ids = rulingdigital_ids | rulingdigital_channel_ids
 
     assert len(ADDITIONAL_SCHOLARSHIP_SOURCES) == 19
