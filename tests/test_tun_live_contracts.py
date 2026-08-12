@@ -74,13 +74,21 @@ def test_dapeng_uses_verified_live_detail_first() -> None:
     assert "大鵬獎助學金" in contract.aliases
 
 
-def test_wenxiang_prefers_current_115_relay() -> None:
+def test_wenxiang_prefers_cross_year_relay_list_before_annual_details() -> None:
     contract = live_contract("hndasset-wenxiang")
 
     assert contract.preferred_sources[0].url == (
+        "https://assistance.ncnu.edu.tw/p/403-1079-249-1.php?Lang=zh-tw"
+    )
+    assert contract.preferred_sources[0].source_url_type is SourceUrlType.RELAY_LIST
+    assert contract.preferred_sources[1].url == (
+        "https://assistance.ncnu.edu.tw/p/406-1079-36114%2Cr249.php?Lang=zh-tw"
+    )
+    assert contract.preferred_sources[1].valid_through_year == 2026
+    assert contract.preferred_sources[2].url == (
         "https://osa.ndhu.edu.tw/p/406-1005-260542%2Cr402.php?Lang=zh-tw"
     )
-    assert contract.preferred_sources[0].source_url_type is SourceUrlType.RELAY_DETAIL
+    assert contract.preferred_sources[2].valid_through_year == 2026
     assert "115年度文向獎學金" in contract.aliases
 
 
