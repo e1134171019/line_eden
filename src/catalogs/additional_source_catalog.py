@@ -85,7 +85,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://student.nutc.edu.tw/p/403-1020-34-1.php?Lang=zh-tw",
         allowed_hosts=("student.nutc.edu.tw",),
         review_reason="高更新率校外獎學金入口，能發現多個基金會與科技類方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -94,7 +94,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://assistance.ncnu.edu.tw/p/403-1079-249-1.php?Lang=zh-tw",
         allowed_hosts=("assistance.ncnu.edu.tw",),
         review_reason="結構穩定且持續更新的校外獎助學金入口。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -103,7 +103,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://staf-life.nptu.edu.tw/p/403-1074-3893-1.php?Lang=zh-tw",
         allowed_hosts=("staf-life.nptu.edu.tw",),
         review_reason="能穩定產出多項校外方案，且公告格式適合自動解析。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -155,7 +155,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://osca.ncut.edu.tw/p/403-1010-611-1.php?Lang=zh-tw",
         allowed_hosts=("osca.ncut.edu.tw",),
         review_reason="2026年持續更新，第一頁涵蓋基金會、政府及工程類方案。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
         max_pages=10,
     ),
     AdditionalScholarshipSource(
@@ -182,7 +182,7 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
         entry_url="https://ee.ntut.edu.tw/p/403-1013-1598-1.php?Lang=zh-tw",
         allowed_hosts=("ee.ntut.edu.tw",),
         review_reason="持續發布電機、電網、科技企業與研究型獎學金，與使用者方向高度相關。",
-        adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
+        adapter_id=AdditionalSourceAdapterId.RULINGDIGITAL_LIST,
         max_pages=5,
     ),
     AdditionalScholarshipSource(
