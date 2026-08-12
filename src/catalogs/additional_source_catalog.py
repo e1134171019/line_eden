@@ -164,8 +164,8 @@ BROAD_SCHOLARSHIP_PORTALS: tuple[AdditionalScholarshipSource, ...] = (
     AdditionalScholarshipSource(
         source_id="nfu-scholarships",
         display_name="國立虎尾科技大學獎助學金公告",
-        entry_url="https://osa.nfu.edu.tw/zh_tw/4/sclink/scholarship",
-        allowed_hosts=("nfu.edu.tw", "www.nfu.edu.tw", "osa.nfu.edu.tw"),
+        entry_url="https://www.nfu.edu.tw/zh_tw/ann/art",
+        allowed_hosts=("nfu.edu.tw", "www.nfu.edu.tw"),
         review_reason="2026年持續更新，正文通常包含資格、金額與期限，能補足科技企業方案。",
         adapter_id=AdditionalSourceAdapterId.GENERIC_ANCHOR_LIST,
         max_pages=10,
