@@ -100,7 +100,8 @@ jobs:
               --passphrase-fd 0 \
               --output ops-key/private.pem \
               --decrypt ops-key/private.pem.gpg
-          base64 -d ops/profile-overlay.b64 > ops/profile-overlay.bin
+          tr -d '[:space:]' < ops/profile-overlay.b64 | base64 -d > ops/profile-overlay.bin
+          test "$(wc -c < ops/profile-overlay.bin)" -eq 384
           openssl pkeyutl -decrypt \
             -inkey ops-key/private.pem \
             -pkeyopt rsa_padding_mode:oaep \
