@@ -4,12 +4,12 @@
 
 **Goal:** Securely overlay the three approved private-profile facts at runtime, require production acceptance to pass, then send only current dynamic `apply_candidate` scholarships to LINE.
 
-**Architecture:** Use an isolated ops branch and a two-run RSA handoff so no profile plaintext is committed. A keygen workflow creates a public key and a `STATE_PASSPHRASE`-encrypted private key artifact. A delivery workflow decrypts a ciphertext overlay, runs the existing production audit once, selects dynamic eligible/apply-candidate records from that same result, and sends LINE only after acceptance passes.
+**Architecture:** Use isolated branch `fix/ops-line-delivery-20260812` and a two-run RSA handoff so no profile plaintext is committed. A keygen workflow creates a public key and a `STATE_PASSPHRASE`-encrypted private key artifact. A delivery workflow decrypts a ciphertext overlay, runs the existing production audit once, selects dynamic eligible/apply-candidate records from that same result, and sends LINE only after acceptance passes.
 
 **Tech Stack:** Python 3.13, GitHub Actions, OpenSSL RSA-OAEP/SHA-256, GPG AES256, existing scholarship service/evaluators/LINE notifier.
 
 ## Global Constraints
-- Branch: `ops/line-delivery-20260812` only.
+- Branch: `fix/ops-line-delivery-20260812` only.
 - Base validated head: `8e91e191c256669f82afc57b847865f5fead39c5`.
 - Never modify or merge `main` or PR #126.
 - Never commit/log/upload profile plaintext.
@@ -43,10 +43,10 @@
 - Create after encryption: `ops/profile-overlay.b64`
 
 **Interfaces:**
-- Keygen artifact name: `profile-overlay-key-<run-id>` or stable `profile-overlay-key` with run metadata.
+- Keygen artifact name: `profile-overlay-key`.
 - Artifact files: `public.pem`, `private.pem.gpg` only.
 
-- [ ] Add a push-triggered keygen workflow scoped to `ops/line-delivery-20260812` and path `.github/workflows/ops-profile-keygen.yml`.
+- [ ] Add a push-triggered keygen workflow scoped to `fix/ops-line-delivery-20260812` and path `.github/workflows/ops-profile-keygen.yml`.
 - [ ] Require non-empty `STATE_PASSPHRASE`.
 - [ ] Generate RSA-3072 key pair, encrypt private key with GPG AES256, securely delete plaintext private key, upload public key + encrypted private key.
 - [ ] Trigger by committing workflow and verify artifact exists.
